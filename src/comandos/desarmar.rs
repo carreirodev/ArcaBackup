@@ -170,7 +170,9 @@ fn montar_ensaio(dispositivo: &Dispositivo, caminho: &str) -> String {
 mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
-    use crate::duplos::{ArquivosEmMemoria, DiscosDeMentira, FirmwareDeMentira, RelogioParado};
+    use crate::duplos::{
+        ArquivosEmMemoria, DiscosDeMentira, FirmwareDeMentira, RelogioParado, SistemaDeMentira,
+    };
     use crate::erro::Erro;
     use crate::registro::Registro;
     use std::path::PathBuf;
@@ -200,6 +202,7 @@ mod testes {
         discos: DiscosDeMentira,
         firmware: FirmwareDeMentira,
         relogio: RelogioParado,
+        sistema: SistemaDeMentira,
         registro: Registro,
     }
 
@@ -218,6 +221,7 @@ mod testes {
                 discos,
                 firmware,
                 relogio: RelogioParado::em("2026-08-22T11:42:03"),
+                sistema: SistemaDeMentira::novo(),
                 registro: Registro::em(
                     std::env::temp_dir().join(format!(
                         "arca-desarmar-{}-{:?}",
@@ -237,6 +241,7 @@ mod testes {
                 discos: &self.discos,
                 arquivos: &self.arquivos,
                 relogio: &self.relogio,
+                sistema: &self.sistema,
             }
         }
     }

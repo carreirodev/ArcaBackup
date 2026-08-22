@@ -33,10 +33,12 @@ impl Discos for VolumesDoWindows {
     }
 
     fn discos_fisicos(&self) -> Resultado<Vec<DiscoFisico>> {
-        // E6: quem precisa disto e a regra de espaco de B-4, que compara o
-        // que esta em uso no disco de origem com o que cabe no dispositivo.
-        // Ate la, ninguem chama.
-        Ok(Vec::new())
+        // Pelo WMI, e nao pela API de volumes deste modulo: a distincao entre
+        // disco externo e interno, e o mapeamento de volume para disco fisico,
+        // nao saem daqui — sairiam do `IOCTL_STORAGE_QUERY_PROPERTY`, que
+        // precisa do handle que S-1 proibe. Ver
+        // [`crate::adaptadores::windows::wmi`].
+        super::wmi::ler(&super::wmi::consultar()?)
     }
 }
 

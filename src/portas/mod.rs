@@ -10,6 +10,16 @@
 //! mesma razao das outras: sem duplo, nenhum teste sobre o `estado.json`
 //! saberia que selo esperar.
 //!
+//! A E6 acrescentou [`sistema`], para o que **nao e firmware** e mesmo assim
+//! atravessa a fronteira: a Inicializacao Rapida (B-5) e o `chkdsk` (B-6).
+//! Pendura-las na porta do firmware faria ela mentir sobre o que e; deixa-las
+//! soltas num `Command::new` no meio de um comando tiraria o teste sem
+//! hardware de B-5 e B-6.
+//!
+//! "As tres fronteiras perigosas" era uma descricao do que havia, e nao um
+//! limite — o que a lista tem em comum e serem lugares onde o ARCA fala com o
+//! mundo, e cada um so entra aqui quando alguma etapa precisa dele.
+//!
 //! # S-1 e uma propriedade destas assinaturas
 //!
 //! Nenhuma assinatura deste modulo entrega um handle de dispositivo, um
@@ -29,6 +39,7 @@ pub mod entropia;
 pub mod firmware;
 pub mod privilegios;
 pub mod relogio;
+pub mod sistema;
 
 pub use arquivos::{Arquivos, Entrada};
 pub use discos::{DiscoFisico, Discos, TipoDeMidia, Volume};
@@ -36,3 +47,4 @@ pub use entropia::Entropia;
 pub use firmware::Firmware;
 pub use privilegios::Privilegios;
 pub use relogio::Relogio;
+pub use sistema::{SaidaDeFerramenta, Sistema};

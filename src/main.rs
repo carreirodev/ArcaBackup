@@ -113,6 +113,7 @@ fn executar(brutos: &[String]) -> Desfecho {
     let discos = VolumesDoWindows;
     let arquivos = ArquivosDoSistema;
     let relogio = RelogioDoSistema;
+    let sistema = sistema();
 
     let contexto = Contexto {
         dry_run: cli.dry_run,
@@ -121,6 +122,7 @@ fn executar(brutos: &[String]) -> Desfecho {
         discos: &discos,
         arquivos: &arquivos,
         relogio: &relogio,
+        sistema: sistema.as_ref(),
     };
 
     let saida = match app::executar(&cli, &contexto) {
@@ -141,6 +143,16 @@ fn executar(brutos: &[String]) -> Desfecho {
 #[cfg(windows)]
 fn privilegios() -> Box<dyn arca::portas::Privilegios> {
     Box::new(PrivilegiosDoWindows)
+}
+
+#[cfg(windows)]
+fn sistema() -> Box<dyn arca::portas::Sistema> {
+    Box::new(arca::adaptadores::windows::sistema::SistemaDoWindows)
+}
+
+#[cfg(not(windows))]
+fn sistema() -> Box<dyn arca::portas::Sistema> {
+    Box::new(arca::duplos::SistemaDeMentira::novo())
 }
 
 /// Fora do Windows o ARCA nao tem o que fazer, mas compilar em outra

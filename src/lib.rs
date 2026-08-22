@@ -10,21 +10,24 @@
 
 pub mod adaptadores;
 pub mod app;
+pub mod blkdev;
 pub mod cli;
 pub mod comandos;
 pub mod desarme;
 pub mod desfecho;
 pub mod dispositivo;
 pub mod duplos;
-pub mod estado;
 pub mod elevacao;
 pub mod erro;
+pub mod espaco;
+pub mod estado;
 pub mod firmware;
 pub mod formato;
 pub mod grub;
 pub mod imagens;
 pub mod nome;
 pub mod portas;
+pub mod prevoo;
 pub mod receita;
 pub mod registro;
 

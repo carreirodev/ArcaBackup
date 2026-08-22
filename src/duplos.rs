@@ -7,8 +7,8 @@
 
 use crate::erro::{Erro, Resultado, erro_de_arquivo};
 use crate::portas::{
-    Arquivos, DiscoFisico, Discos, Entrada, Entropia, Firmware, Privilegios, Relogio, TipoDeMidia,
-    Volume,
+    Arquivos, DiscoFisico, Discos, Entrada, Entropia, Firmware, Privilegios, Relogio,
+    SaidaDeFerramenta, Sistema, TipoDeMidia, Volume,
 };
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use std::cell::RefCell;
@@ -231,14 +231,18 @@ pub struct DiscosDeMentira {
 impl DiscosDeMentira {
     /// Um dispositivo ARCA inteiro: `ARCAVAULT` e `ARCABOOT`, como o §4 do PRD
     /// descreve.
+    ///
+    /// Os dois rotulos vem no **mesmo disco fisico**, como nesta mesa. Um
+    /// duplo em que eles estivessem em discos diferentes reprovaria o pre-voo
+    /// da E6 em todo teste.
     pub fn com_dispositivo() -> DiscosDeMentira {
         DiscosDeMentira {
             volumes: vec![
-                volume("Windows", 'C', 498_700_000_000, 361_400_000_000),
-                volume("ARCAVAULT", 'E', 254_000_000_000, 176_400_000_000),
-                volume("ARCABOOT", 'R', 1_700_000_000, 1_070_000_000),
+                volume("Windows", 'C', 498_701_692_928, 387_131_686_912),
+                volume("ARCAVAULT", 'E', 254_379_290_624, 176_291_147_776),
+                volume("ARCABOOT", 'R', 1_673_527_296, 1_101_361_152),
             ],
-            discos: Vec::new(),
+            discos: discos_desta_mesa(),
         }
     }
 
@@ -248,6 +252,36 @@ impl DiscosDeMentira {
             discos: Vec::new(),
         }
     }
+
+    pub fn com_discos(mut self, discos: Vec<DiscoFisico>) -> DiscosDeMentira {
+        self.discos = discos;
+        self
+    }
+}
+
+/// Os dois discos desta maquina, medidos pelo WMI em 22/08/2026.
+///
+/// Numeros de verdade, e nao redondos: um teste que passe com
+/// `498_700_000_000` e falhe com o tamanho real nao esta testando nada.
+pub fn discos_desta_mesa() -> Vec<DiscoFisico> {
+    vec![
+        DiscoFisico {
+            indice: 0,
+            modelo: "KINGSTON SNV3S500G".to_string(),
+            tamanho_bytes: 500_105_249_280,
+            em_uso_bytes: 112_973_562_368,
+            tipo_de_midia: TipoDeMidia::DiscoFixo,
+            letras: vec!['C'],
+        },
+        DiscoFisico {
+            indice: 1,
+            modelo: "KGSSE100 256 SCSI Disk Device".to_string(),
+            tamanho_bytes: 256_052_966_400,
+            em_uso_bytes: 78_660_457_472,
+            tipo_de_midia: TipoDeMidia::DiscoExterno,
+            letras: vec!['E', 'R'],
+        },
+    ]
 }
 
 impl Discos for DiscosDeMentira {
@@ -435,6 +469,68 @@ impl Arquivos for ArquivosEmMemoria {
 
     fn espaco_livre(&self, _caminho: &Path) -> Resultado<u64> {
         Ok(self.espaco_livre)
+    }
+}
+
+/// Um sistema de mentira: responde o que lhe ensinaram sobre a Inicializacao
+/// Rapida e sobre o `chkdsk`.
+///
+/// O padrao — `HiberbootEnabled = 0` e `chkdsk` com codigo 0 — e o que esta
+/// maquina respondeu em 22/08/2026: e o caso normal, e nao o caso conveniente.
+pub struct SistemaDeMentira {
+    pub inicializacao_rapida: Resultado<Option<u32>>,
+    pub chkdsk: Resultado<SaidaDeFerramenta>,
+    pub conferidos: RefCell<Vec<char>>,
+}
+
+impl Default for SistemaDeMentira {
+    fn default() -> SistemaDeMentira {
+        SistemaDeMentira {
+            inicializacao_rapida: Ok(Some(0)),
+            chkdsk: Ok(SaidaDeFerramenta {
+                codigo: 0,
+                texto: "Nao ha problemas no sistema de arquivos.\n".to_string(),
+            }),
+            conferidos: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl SistemaDeMentira {
+    pub fn novo() -> SistemaDeMentira {
+        SistemaDeMentira::default()
+    }
+
+    /// O valor bruto do registro. `None` reproduz o valor ausente, que **nao**
+    /// e o mesmo que desativada.
+    pub fn com_inicializacao_rapida(mut self, valor: Option<u32>) -> SistemaDeMentira {
+        self.inicializacao_rapida = Ok(valor);
+        self
+    }
+
+    pub fn com_chkdsk(mut self, codigo: i32, texto: &str) -> SistemaDeMentira {
+        self.chkdsk = Ok(SaidaDeFerramenta {
+            codigo,
+            texto: texto.to_string(),
+        });
+        self
+    }
+}
+
+impl Sistema for SistemaDeMentira {
+    fn inicializacao_rapida(&self) -> Resultado<Option<u32>> {
+        match &self.inicializacao_rapida {
+            Ok(valor) => Ok(*valor),
+            Err(erro) => Err(clonar_a_recusa(erro)),
+        }
+    }
+
+    fn conferir_volume(&self, letra: char) -> Resultado<SaidaDeFerramenta> {
+        self.conferidos.borrow_mut().push(letra);
+        match &self.chkdsk {
+            Ok(saida) => Ok(saida.clone()),
+            Err(erro) => Err(clonar_a_recusa(erro)),
+        }
     }
 }
 

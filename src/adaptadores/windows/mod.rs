@@ -14,6 +14,10 @@ pub mod firmware;
 #[cfg(windows)]
 pub mod privilegios;
 #[cfg(windows)]
+pub mod sistema;
+#[cfg(windows)]
 pub mod texto;
 #[cfg(windows)]
 pub mod volumes;
+#[cfg(windows)]
+pub mod wmi;

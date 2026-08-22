@@ -7,7 +7,7 @@
 use crate::cli::{Cli, Comando};
 use crate::comandos;
 use crate::erro::{Erro, Resultado};
-use crate::portas::{Arquivos, Discos, Firmware, Relogio};
+use crate::portas::{Arquivos, Discos, Firmware, Relogio, Sistema};
 use crate::registro::Registro;
 
 pub struct Contexto<'a> {
@@ -19,6 +19,10 @@ pub struct Contexto<'a> {
     pub discos: &'a dyn Discos,
     pub arquivos: &'a dyn Arquivos,
     pub relogio: &'a dyn Relogio,
+
+    /// As operacoes do proprio sistema: Inicializacao Rapida (B-5) e `chkdsk`
+    /// (B-6). Quem as usa e o pre-voo da etapa E6.
+    pub sistema: &'a dyn Sistema,
 }
 
 pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
@@ -56,7 +60,9 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
 mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
-    use crate::duplos::{ArquivosEmMemoria, DiscosDeMentira, FirmwareDeMentira, RelogioParado};
+    use crate::duplos::{
+        ArquivosEmMemoria, DiscosDeMentira, FirmwareDeMentira, RelogioParado, SistemaDeMentira,
+    };
     use clap::Parser;
 
     #[test]
@@ -65,6 +71,7 @@ mod testes {
         let discos = DiscosDeMentira::default();
         let firmware = FirmwareDeMentira::novo();
         let relogio = RelogioParado::em("2026-08-22T11:42:03");
+        let sistema = SistemaDeMentira::novo();
         let registro = Registro::em(
             std::env::temp_dir().join(format!("arca-despacho-{}", std::process::id())),
             Box::new(RelogioDoSistema),
@@ -77,10 +84,10 @@ mod testes {
             discos: &discos,
             arquivos: &arquivos,
             relogio: &relogio,
+            sistema: &sistema,
         };
 
         for (argumentos, etapa_esperada) in [
-            (vec!["arca", "backup", "n"], "E7"),
             (vec!["arca", "resultado"], "E8"),
             (vec!["arca", "restore"], "E9"),
             (vec!["arca", "verify", "n"], "E11"),
@@ -101,14 +108,20 @@ mod testes {
     }
 
     #[test]
-    fn list_e_status_ja_fazem_o_trabalho_em_vez_de_nomear_etapa() {
-        // Os dois ramos deixaram de nomear etapa: eles fazem o trabalho. Sem
-        // dispositivo conectado, o que devolvem e a recusa da descoberta — e
-        // nunca `AindaNaoImplementado`.
+    fn os_comandos_ja_construidos_fazem_o_trabalho_em_vez_de_nomear_etapa() {
+        // `list` e `status` desde a E1 e a E2; `backup` entrou nesta lista na
+        // **E6**, quando deixou de responder "armar e a E7" para rodar o
+        // pre-voo do §5.2. Ele continua terminando antes de armar — quem
+        // confirma e arma e a E7 —, mas o que ele faz ate la e trabalho de
+        // verdade, e nao um aviso.
+        //
+        // Sem dispositivo conectado, os tres devolvem a recusa da descoberta —
+        // e nunca `AindaNaoImplementado`.
         let arquivos = ArquivosEmMemoria::novo();
         let discos = DiscosDeMentira::default();
         let firmware = FirmwareDeMentira::novo();
         let relogio = RelogioParado::em("2026-08-22T11:42:03");
+        let sistema = SistemaDeMentira::novo();
         let registro = Registro::em(
             std::env::temp_dir().join(format!("arca-list-{}", std::process::id())),
             Box::new(RelogioDoSistema),
@@ -121,13 +134,18 @@ mod testes {
             discos: &discos,
             arquivos: &arquivos,
             relogio: &relogio,
+            sistema: &sistema,
         };
 
-        for comando in ["list", "status"] {
-            let erro = executar(&Cli::parse_from(["arca", comando]), &contexto).unwrap_err();
+        for argumentos in [
+            vec!["arca", "list"],
+            vec!["arca", "status"],
+            vec!["arca", "backup", "2026-08-22_Apps"],
+        ] {
+            let erro = executar(&Cli::parse_from(&argumentos), &contexto).unwrap_err();
             assert!(
                 matches!(erro, Erro::DispositivoAusente),
-                "`arca {comando}`: esperava a recusa da descoberta, veio {erro}"
+                "{argumentos:?}: esperava a recusa da descoberta, veio {erro}"
             );
         }
 

@@ -31,6 +31,23 @@ pub enum Erro {
     #[error("receita recusada (C-2): {0}")]
     ReceitaRecusada(crate::receita::RecusaDaReceita),
 
+    /// O pre-voo recusou a operacao **antes** de qualquer gravacao (B-3, B-4,
+    /// C-6, C-10). Como o de C-2, este erro nunca chega depois de algo ter
+    /// sido tocado.
+    #[error("o pre-voo recusou: {0}")]
+    PreVooRecusou(crate::prevoo::RecusaDoPreVoo),
+
+    /// A enumeracao de discos nao achou o disco onde o Windows mora, ou achou
+    /// so o proprio dispositivo.
+    ///
+    /// Sem ele nao ha o que clonar, e nao ha como calcular o espaco de B-4.
+    /// **Nao se supoe que e o disco 0**: numa maquina com dois discos isso
+    /// daria a origem errada, e a origem errada e o que a receita nomeia.
+    #[error(
+        "a enumeracao de discos nao achou o disco onde o Windows esta, separado do dispositivo ARCA. Sem ele nao ha origem para o backup, e o ARCA nao supoe que seja o disco 0 — numa maquina com dois discos isso nomearia o disco errado na receita"
+    )]
+    OrigemDesconhecida,
+
     /// O `estado.json` do `ARCABOOT` nao pode ser lido nem escrito sem
     /// adivinhacao.
     ///

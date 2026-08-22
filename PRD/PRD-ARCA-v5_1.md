@@ -3,8 +3,9 @@
 **Automatizador de Clonezilla para backup e restauração de imagem de disco.**
 
 Versão 5.1 · 22/08/2026 · Substitui a v4
-Última revisão: 22/08/2026, etapa E5 — §4.3 ganhou o **formato do selo** e os três lugares por onde ele passa; §5.5 ganhou a linha do `arca-fim.txt` **sem selo nenhum**, que a tabela não tinha
-Revisão anterior: etapa E4 — §3.2 ganhou o `set default`, que é o que faz o boot ser desatendido e não estava documentado; §4.4 define o **estado inerte**, que o §5.2, o §5.4 e o §6.3 pressupunham; §8 ganhou `arca desarmar`; P-18 aberta sobre a §3.1
+Última revisão: 22/08/2026, etapa E6 — §4.5 diz **de onde sai o nome do disco de origem**, que o documento nunca disse; §5.2 corrigido contra medição (o `498,7 GB` era a partição `C:`, não o disco); B-4, B-5, B-6, C-6 e C-10 ganharam o que a medição mostrou
+Revisão anterior: etapa E5 — §4.3 ganhou o **formato do selo** e os três lugares por onde ele passa; §5.5 ganhou a linha do `arca-fim.txt` **sem selo nenhum**, que a tabela não tinha
+E antes: etapa E4 — §3.2 ganhou o `set default`, que é o que faz o boot ser desatendido e não estava documentado; §4.4 define o **estado inerte**, que o §5.2, o §5.4 e o §6.3 pressupunham; §8 ganhou `arca desarmar`; P-18 aberta sobre a §3.1
 E antes: etapa E3 — §3.1, §3.2, §3.5, §10 e os requisitos B-8, B-9, C-6, R-4, R-5, R-6, S-4 reescritos contra as receitas preservadas em `recursos/capturas/`
 Uso pessoal · Um usuário · Sem distribuição
 
@@ -259,6 +260,41 @@ Ver [ADR-0005](../docs/adr/0005-o-estado-inerte-se-reconstroi-do-grub-cfg-corren
 para por que `live-default` e não `0`, e para os dois caminhos descartados —
 embutir a cópia no binário e guardá-la no dispositivo.
 
+### 4.5 — O nome do disco de origem vem de dentro de uma imagem
+
+Construído na etapa E6. O documento nunca disse de onde sai o `nvme0n1` que a
+receita nomeia, e o problema é maior do que parece: **`nvme0n1` é o nome do
+disco no Linux, e o Windows não o conhece.** Nenhuma API do Windows responde
+por ele.
+
+O que existe para ligar os dois lados:
+
+| Fonte | O que diz | Medido? |
+|---|---|---|
+| `blkdev.list` **dentro de cada imagem** | `nvme0n1` ↔ `KINGSTON SNV3S500G`, `sda` ↔ `KGSSE100256` | **Sim** — conferido nas duas imagens do dispositivo |
+| `Win32_DiskDrive` do WMI | o disco onde o `C:` mora é `KINGSTON SNV3S500G`, índice 0 | **Sim** |
+| `BusType` + `Index` → `nvmeNn1` | plausível | **Não** |
+
+**O ARCA usa as duas primeiras e recusa a terceira.** O modelo é a chave: o
+WMI diz qual disco tem o `C:`, o `blkdev.list` diz que nome o Linux dá àquele
+modelo, e o nome sai de uma medição. A derivação por índice ficou de fora
+porque **o índice do Windows não é o do Linux por construção** — aqui os dois
+coincidem porque a máquina tem um NVMe só, e numa com dois um `nvme1n1` viraria
+`nvme0n1` e a receita nomearia o disco errado.
+
+O preço é que o oráculo **só existe depois do primeiro backup**. Não havendo
+imagem de onde ler, o nome fica *por determinar*, e o pré-voo diz isso com
+todas as letras em vez de chutar. Isso é uma resposta, e não uma falha a
+contornar: este documento já registrou três vezes (P-16 e os ADRs 0003, 0004 e
+0005) que chamar de fundação validada o que veio do trabalho de validação em
+volta dela é o erro que mais custou neste projeto. Inventar uma derivação e
+documentá-la como descoberta seria a quarta.
+
+**A saída sempre diz de onde o nome veio** — `nvme0n1 · lido de
+2026-08-21_WindowsCompleto/blkdev.list, casando o modelo …`. Uma receita
+destrutiva que nomeie um disco sem dizer a origem do nome é pior do que não
+imprimir nada.
+
 ## 5. Fluxo: backup
 
 ### 5.1 — O que o usuário faz
@@ -277,19 +313,21 @@ embutir a cópia no binário e guardá-la no dispositivo.
 
 ### 5.2 — Diálogo
 
+Executado de verdade em 22/08/2026, até a linha antes da confirmação:
+
 ```
 > arca backup 2026-08-22_Apps
 
-Dispositivo ARCA: ARCAVAULT (E:) · 183 GB livres
-Origem: KINGSTON SNV3S500G · 498,7 GB · 92 GB em uso
-Imagem estimada: ~36 GB · espaco suficiente
+Dispositivo ARCA: ARCAVAULT (E:) · 164 GB livres
+Origem: KINGSTON SNV3S500G · 465,8 GB · 105,6 GB em uso
+Imagem estimada: ~47,5 GB · espaco suficiente
+Imagem: 2026-08-22_Apps
 
-
-  Desarmando receita anterior ..... ok · R:\boot\grub\grub.cfg
+  Desarmando receita anterior ..... ok · ja estava inerte · R:\boot\grub\grub.cfg
   Inicializacao rapida ............ desativada   ok
   chkdsk /scan .................... limpo        ok
   Nome disponivel ................. ok
-  Receita validada ................ ok
+  Disco de origem ................. nvme0n1 · lido de 2026-08-21_WindowsCompleto/blkdev.list, casando o modelo `KINGSTON SNV3S500G`
 
 A maquina vai reiniciar agora e desligar sozinha ao terminar.
 AO TERMINAR: remova o SSD antes de religar.
@@ -299,11 +337,36 @@ Digite o nome do backup para confirmar: 2026-08-22_Apps
 Reiniciando...
 ```
 
-> **A primeira linha traz o caminho, e não só `ok`.** Enquanto `discos_fisicos`
-> não existir (E6), nada prova que o `ARCAVAULT` e o `ARCABOOT` encontrados são
-> do mesmo dispositivo físico — C-10 recusa rótulo **repetido**, não rótulo
-> órfão. Com dois dispositivos meio prontos na mesa, a letra errada aparece na
-> tela de quem está olhando. É a única defesa possível sem enumerar disco.
+As três últimas linhas são a **etapa E7**; o pré-voo da E6 termina antes delas.
+
+> **Os números desta tela eram de outra máquina, e três estavam errados.**
+> Corrigidos na etapa E6, contra medição de 22/08/2026:
+>
+> | O que dizia | O que é | De onde vinha o erro |
+> |---|---|---|
+> | `498,7 GB` de disco | **465,8 GB** | `498.701.697.024` é o tamanho da **partição `C:`**, em base 1000, apresentado como o do disco. O disco tem `500.105.249.280` bytes, que são 465,8 GiB — e `src/formato.rs` usa base 1024 por decisão medida |
+> | `92 GB em uso` | **105,6 GB** | Não era erro, era tempo passando |
+> | `183 GB livres` | **164 GB** | Idem |
+>
+> O primeiro merece nome: não é um número inventado, é um número **medido na
+> coisa errada**. Quem o repetir vai errar de novo pelo mesmo caminho — o
+> tamanho do volume do sistema não é o tamanho do disco, e a diferença são as
+> outras três partições.
+>
+> **A linha do desarmar diz o que de fato aconteceu**, e não só `ok`. Ela
+> distingue "já estava inerte" de "havia receita armada", e no `--dry-run` diz
+> que não desarmou — um `ok` sobre uma ação que não aconteceu é a mesma mentira
+> que o `--dry-run` deste projeto já contou uma vez (§11).
+>
+> **O caminho continua na linha**, e o motivo original acabou: a E6 enumera
+> discos físicos e prova que o `ARCAVAULT` e o `ARCABOOT` estão no mesmo, o que
+> fecha a brecha de C-10 recusar rótulo **repetido** e não rótulo órfão. O
+> caminho fica porque continua sendo útil ver em que disco se mexeu.
+>
+> **A linha `Receita validada` saiu.** Ela pertence ao momento de armar, e não
+> ao pré-voo: a receita é montada com o nome e o disco já decididos, e no
+> pré-voo o disco pode nem ter nome. O que a substitui é `Disco de origem`,
+> que diz **de onde o nome do disco veio** — ver §4.5.
 
 ### 5.3 — O que acontece sem intervenção
 
@@ -467,11 +530,11 @@ Todos exigem privilégio administrativo.
 | C-3 | Nunca confiar no retorno do `bcdedit`; sempre conferir com `/enum` e parsear **por valor** |
 | C-4 | Procurar a entrada `ARCA`; não havendo, migrar a legada `Clonezilla` em vez de criar outra |
 | C-5 | Boot único — nunca alterar a ordem permanente |
-| C-6 | **Recusar mídia removível como alvo de entrada de boot; orientar F12.** A recusa não se lê numa etiqueta do `bcdedit` — essas palavras não saem dele (§3.1). Verifica-se de dois jeitos: o `GetDriveType` do Windows dá o sinal antecipado, e a releitura de C-3 revela a rejeição como um `device` que não mudou |
+| C-6 | **Recusar mídia removível como alvo de entrada de boot; orientar F12.** A recusa não se lê numa etiqueta do `bcdedit` — essas palavras não saem dele (§3.1). Verifica-se de dois jeitos: o **`MediaType` do WMI** dá o sinal antecipado, e a releitura de C-3 revela a rejeição como um `device` que não mudou. *(Etapa E6: o sinal antecipado era o `GetDriveType`, que classifica o SSD externo desta mesa como disco **fixo** e não distingue nada. O `MediaType` responde literalmente `External hard disk media` e `Removable Media` — são as palavras da §3.1, e é de lá que elas saem.)* |
 | C-7 | Repassar os argumentos ao relançar com elevação por UAC |
 | C-8 | Escapar aspas com **barra invertida**, não crase — quem reparte a linha é o parser do Windows |
 | C-9 | Avisar, antes de reiniciar, para remover o SSD ao terminar |
-| C-10 | **Recusar mais de um dispositivo ARCA conectado.** Dois `ARCAVAULT` ou dois `ARCABOOT` tornam o destino ambíguo, e é por LABEL que a receita resolve (S-3) |
+| C-10 | **Recusar mais de um dispositivo ARCA conectado.** Dois `ARCAVAULT` ou dois `ARCABOOT` tornam o destino ambíguo, e é por LABEL que a receita resolve (S-3). **E recusar também o dispositivo partido**: os dois rótulos em discos físicos diferentes são dois dispositivos meio prontos, e não um — cada rótulo aparece uma vez, a contagem passa, e a receita iria para um enquanto as imagens estão no outro. *(A brecha do rótulo órfão ficou aberta da E1 à E5, com a letra impressa na tela como única defesa; a enumeração de discos da E6 a fecha.)* |
 | C-11 | **Gerar um selo ao armar**, gravá-lo no `estado.json` e embuti-lo na receita; aceitar como desfecho apenas o `arca-fim.txt` cujo selo case (§4.3) |
 | C-12 | **Ausência de desfecho é falha, nunca silêncio.** Havendo job pendente e nenhum `arca-fim.txt`, reportar as duas causas possíveis: o boot não ocorreu, ou o Clonezilla abriu menu (§5.5) |
 
@@ -482,9 +545,9 @@ Todos exigem privilégio administrativo.
 | B-1 | Localizar o dispositivo pela partição `ARCAVAULT` |
 | B-2 | Recusar nome com espaço, acento ou caractere inválido para nome de pasta. **Por lista de permissão** (`A-Z a-z 0-9 . _ -`), e não de recusa: uma lista de recusa só está certa enquanto ninguém esquecer um caractere. Recusar também: nome reservado do Windows (`CON`, `COM0`–`COM9`, `LPT0`–`LPT9`, …), as pastas de serviço do dispositivo (`ARCA-LOGS`, `ARCA-DOCS`), nome começando com `-` (o `ocs-sr` o leria como opção) ou com `.`, e nome acima de 48 caracteres (§10.2.3) |
 | B-3 | **Recusar nome cuja pasta já exista** — mesmo sem `MD5SUMS`. Pasta sem `MD5SUMS` é resíduo de backup interrompido; o usuário apaga à mão |
-| B-4 | Espaço mínimo: o maior entre `maior imagem do dispositivo × 1,3` e `em uso × 0,45`. Entre 1× e 1,5× disso: avisar e pedir confirmação digitada |
-| B-5 | Verificar Inicialização Rápida; oferecer `powercfg /h off` |
-| B-6 | Rodar `chkdsk /scan`; oferecer agendar `/f` se acusar erro |
+| B-4 | Espaço mínimo: o maior entre `maior imagem do dispositivo × 1,3` e `em uso × 0,45`. Entre 1× e 1,5× disso: avisar e pedir confirmação digitada. **`em uso` é do disco, e não dos volumes com letra**: o disco desta máquina tem quatro partições e só o `C:` tem letra — as outras três somam ~1,3 GB que a soma por volume ignora, e o `Win32_DiskPartition` nem enxerga a MSR. Contado como `tamanho do disco menos o livre nos volumes com letra`, o que superestima, e superestimar é o lado seguro de "cabe uma imagem?" |
+| B-5 | Verificar Inicialização Rápida; oferecer `powercfg /h off`. **A leitura é do registro** (`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power` → `HiberbootEnabled`, um `REG_DWORD`), e nunca do `powercfg /a`: ele responde traduzido, e parsear frase traduzida é o erro que a E2 nomeou. Valor ausente é **"não se sabe"**, nunca "desativada". **Oferecer é dizer o comando e o que ele custa** — o ARCA não o roda, e a oferta diz que `powercfg /h off` desliga a hibernação **inteira**, não só a Inicialização Rápida |
+| B-6 | Rodar `chkdsk /scan`; oferecer agendar `/f` se acusar erro. **Julgado pelo código de saída, nunca pelo texto** — ele responde traduzido. Confere o volume do **sistema**, que é o que o Clonezilla vai ler. Medido: elevado, `chkdsk C: /scan` sai com código 0 em 16,3 s, e o texto vem em CP850 mesmo chamado de um console em UTF-8 |
 | B-7 | Receita com nome e disco embutidos — **sem `ask_user`** |
 | B-8 | Sempre `-q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true`, **nesta ordem** — é a sequência que rodou nos dois backups validados. `-batch` é o que suprime as perguntas (§3.2). `-p true` é o que impede o `ocs-sr` de reiniciar antes de o `ocs-chkimg` rodar, já que o padrão de `-p` é `reboot`. **Nunca `-scs`**: ele é `--skip-check-restorable` e pula a conferência nativa, o oposto do que B-9 quer |
 | B-9 | Sempre chamar `ocs-chkimg` explicitamente, com saída redirecionada para arquivo, **dentro do ramo de êxito do `savedisk`**: com o backup falhando, a pasta da imagem pode nem existir, e o redirecionamento falharia junto |

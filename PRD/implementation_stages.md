@@ -14,7 +14,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E3 | Geração e validação da receita | II | ✅ | 2026-08-22 16:04 |
 | E4 | Desarmar | II | ✅ | 2026-08-22 17:36 |
 | E5 | Estado e selo | II | ✅ | 2026-08-22 18:37 |
-| E6 | Pré-voo | III | ⬜ | — |
+| E6 | Pré-voo | III | ✅ | 2026-08-22 19:24 |
 | E7 | Armar e disparar | III | ⬜ | — |
 | E8 | Colher o desfecho | III | ⬜ | — |
 | E9 | Restauração | IV | ⬜ | — |
@@ -362,6 +362,193 @@ Tudo que §5.2 mostra antes da confirmação: nome válido (B-2) e ainda não us
 
 **Cobre**: B-2, B-3, B-4, B-5, B-6
 **Entrega**: o diálogo de §5.2 inteiro, terminando **antes** de armar.
+
+**Executado de verdade em 22/08/2026, com o dispositivo conectado.** `arca
+backup 2026-08-22_Apps` imprime o diálogo do §5.2 inteiro e para antes da
+confirmação. O `grub.cfg` saiu com o mesmo SHA256 e nenhum `estado.json` foi
+criado — esta etapa não arma nada.
+
+**O achado que mudou a etapa: o WMI resolve três coisas de uma vez.** Uma
+consulta, sem elevação e sem abrir handle nenhum, e ela fecha três pendências
+que o plano tratava como separadas:
+
+1. **A pendência de `src/dispositivo.rs` fechou.** `ARCAVAULT` e `ARCABOOT`
+   estão os dois no Disco #1, e agora há como provar. C-10 recusava rótulo
+   **repetido** e não rótulo órfão; o pré-voo recusa o dispositivo partido.
+2. **`MediaType` traz literalmente `External hard disk media`** — as palavras
+   da §3.1 que o `bcdedit` não produz (D10). É o sinal antecipado de C-6, e é
+   melhor que o `GetDriveType`, que classifica este mesmo SSD externo como
+   disco **fixo** e não distingue nada.
+3. **O tamanho e as letras por disco**, que é o que B-4 precisa.
+
+**Medido nesta etapa, e não previsto pelo plano:**
+
+- **O CLIXML do PowerShell vai para o stderr, e o stdout sai limpo.** Com
+  `-EncodedCommand`, o PowerShell despeja 628 bytes de registros de progresso
+  em CLIXML no stderr. Isso importa porque o adaptador do `bcdedit` **concatena
+  stdout e stderr** — copiar aquele padrão colaria XML antes do JSON. O
+  adaptador do WMI lê stdout e só, e a consulta começa com
+  `$ProgressPreference='SilentlyContinue'`, que zera o stderr: medido, sai com
+  zero byte. As duas coisas juntas, e não uma; a segunda é o que torna um
+  stderr **não vazio** uma informação de verdade.
+- **`ConvertTo-Json` do PowerShell 5.1 não escapa não-ASCII.** Medido: um valor
+  acentuado sai com bytes crus na página de código do console. A esperança de
+  que o JSON fosse ASCII por construção estava errada, e `de_pagina_de_codigo`
+  continua obrigatório — o `Model` de um disco é texto livre do fabricante.
+- **`powercfg /a` fala, sim, de Inicialização Rápida** — o briefing supunha que
+  não. Ela aparece sob "estados de suspensão não disponíveis", com a frase
+  *"Esta ação está desabilitada na política do sistema atual"*. Isso torna a
+  leitura pior, e não melhor: é frase traduzida, e ela não separa "desativada
+  pelo usuário" de "indisponível por outro motivo". O registro responde com um
+  número, e número não tem idioma. `HiberbootEnabled = 0` nesta máquina.
+- **`chkdsk C: /scan` elevado sai com código 0 em 16,3 s**, e o texto vem em
+  **CP850 mesmo chamado de um console em UTF-8** — o mesmo caso do `bcdedit` da
+  E2. Julgado pelo código de saída, nunca pelo texto.
+- **O `498,7 GB` do §5.2 não era um número inventado: era `498.701.697.024`, o
+  tamanho da partição `C:` em base 1000, apresentado como o do disco.** O disco
+  tem `500.105.249.280` bytes — 465,8 GiB na base que `src/formato.rs` usa.
+  Saber a origem importa mais do que o valor certo: quem repetir vai errar pelo
+  mesmo caminho, e a diferença são as outras três partições.
+- **O `Win32_DiskPartition` não enxerga a partição MSR.** O disco tem quatro
+  partições pelo `Get-Partition` e três pelo WMI. Por isso `em_uso_bytes` é
+  contado como `tamanho do disco menos o livre nos volumes com letra`, e não
+  como a soma do que os volumes usam: assim o nome do campo passa a ser verdade
+  e a conta não depende de o WMI ver toda partição.
+- **As duas estimativas de B-4 caem a menos de 1% uma da outra** nesta máquina
+  — 50,47 GB pela maior imagem, 50,84 GB pela compressão. É coincidência desta
+  máquina, e não propriedade da regra, mas é um bom sinal sobre as duas.
+
+**Decidido nesta etapa:**
+
+- **O ARCA fala com o WMI por processo filho**, com `Get-CimInstance` pedindo
+  JSON, e não por COM. O `Cargo.toml` tem `Win32_System_Com` desde a E0 e
+  ninguém usou: COM seria centenas de linhas de `unsafe` sobre vtables cruas —
+  o `windows-sys` não tem os auxiliares que o `windows` tem — para **uma**
+  consulta. O terceiro caminho está fechado por S-1, e não por preferência.
+- **O script vai por `-EncodedCommand`**, em UTF-16LE/base64 escrito à mão.
+  Não há aspa a escapar nem linha a repartir, e C-8 deixa de ter o que morder.
+- **O `DeviceID` do `Win32_DiskDrive` é descartado.** Ele é o caminho de
+  dispositivo bruto do disco. Recebê-lo como dado não seria abrir o
+  dispositivo — o teste de S-1 varre o **fonte**, não valores de runtime —, mas
+  escrever a string no fonte para casar com ela faria o teste falhar, e falhar
+  com razão. O `Index` responde tudo que ele responderia. O que não se pede não
+  chega.
+- **Uma porta nova, `Sistema`**, para o que não é firmware: B-5 e B-6.
+  Pendurá-las na porta do firmware faria ela mentir sobre o que é; deixá-las
+  num `Command::new` solto tiraria o teste sem hardware das duas.
+- **B-5 lê o registro, e não o `powercfg`.** Valor ausente é `NaoSeSabe`, e
+  nunca "desativada" — ausência de prova não vira o desfecho conveniente, o
+  mesmo que o ADR-0003 decidiu para imagem sem veredito.
+- **"Oferecer" é dizer o comando e o que ele custa, e não rodá-lo.** O §5.2
+  mostra B-5 e B-6 como linha de status, sem pergunta, e o pré-voo termina
+  antes da confirmação. A oferta de `powercfg /h off` diz que ele desliga a
+  **hibernação inteira**, e não só a Inicialização Rápida: quem aceitasse
+  perderia o "Hibernar" do menu Iniciar. Rodá-lo por conta própria seria o ARCA
+  mexer em mais coisa do que anunciou.
+- **O nome do disco vem do `blkdev.list` de uma imagem, e a derivação por
+  índice foi recusada.** O WMI diz o modelo do disco onde o `C:` mora; o
+  `blkdev.list` diz que nome o Linux dá àquele modelo. As duas pontas são
+  medidas. `BusType NVMe + Index 0 → nvme0n1` é plausível e **não é medido** —
+  o índice do Windows não é o do Linux por construção, e aqui coincide porque a
+  máquina tem um NVMe só. Não havendo imagem de onde ler, o nome fica **por
+  determinar**, e o pré-voo diz isso: é uma resposta, e a E7 herda. Aplicado ao
+  PRD como §4.5.
+- **O modelo é casado sem caixa e sem pontuação, tirando o sufixo
+  `SCSI Disk Device`** que o Windows acrescenta a disco sem driver próprio.
+  Medido: `KGSSE100 256 SCSI Disk Device` e `KGSSE100256` casam assim. Não
+  casar é **recusa**, e nunca um palpite — um nome de disco errado numa receita
+  destrutiva é o pior desfecho possível deste módulo.
+- **A origem não é o disco 0 por suposição.** Ela é o disco que tem o `C:` e
+  não é o dispositivo. Numa máquina em que o dispositivo ARCA fosse o disco 0,
+  supor o índice faria a receita clonar o próprio disco de backup.
+
+**O que a execução real pegou, e os testes não pegavam:**
+
+- **A primeira linha do §5.2 mentia.** O pré-voo imprimia
+  `Desarmando receita anterior ..... ok` e **não desarmava nada** — eu tinha
+  tratado o desarmar como um passo do armar, que é a E7. C-1 não é condicional
+  a chegar ao armar: desarmar é o primeiro passo de todo comando. Um
+  dispositivo armado com receita velha sairia daqui com "pré-voo concluído,
+  pronto para a E7" e continuaria armado. O comando passou a desarmar de
+  verdade, reusando o que a E4 mediu, e a linha passou a distinguir "já estava
+  inerte" de "havia receita armada". No `--dry-run` ela diz que **não**
+  desarmou: um `ok` sobre ação que não aconteceu é a mesma mentira que o
+  `--dry-run` deste projeto já contou uma vez (§11).
+- **O teste de S-1 pegou um comentário meu.** O cabeçalho do adaptador do WMI
+  explicava por que o caminho por `DeviceIoControl` está fechado — e soletrava
+  o nome. A varredura é de texto e não distingue menção de uso, e **está
+  certa**: o que torna essas varreduras confiáveis é serem burras demais para
+  serem enganadas. Ensiná-la a ignorar comentários seria o primeiro passo para
+  ela deixar passar o que importa. O comentário foi reescrito; o nome mora no
+  próprio arquivo de teste.
+- **Dois testes meus provavam nada.** O de nome inválido no `blkdev.list`
+  montava uma tabela à mão com as colunas desalinhadas: a linha era descartada
+  **antes** de chegar ao validador, e o teste passava pelo motivo errado.
+  Reescrito sobre o arquivo de verdade, trocando só o nome, e com uma asserção
+  a mais cobrando que a linha continue sendo lida. É a lição da revisão da E4
+  outra vez — *o caso construído era mais fácil do que o real*.
+- **Uma asserção de aritmética estava errada, e no lado que importa.** O teste
+  de `proporcao` afirmava `(v / 1000) * 450`, que descarta o resto — exatamente
+  o que a função existe para não fazer.
+
+**O que a revisão pegou, e o mais grave é o espelho do anterior:**
+
+- **A correção do desarmar criou o defeito seguinte.** Corrigida a linha que
+  dizia `ok` sem desarmar, o desarmar passou a acontecer **antes** das recusas
+  do pré-voo — e, com a recusa subindo como erro, nada era impresso. Quem
+  rodasse `arca backup <nome-que-já-existe>` num dispositivo armado veria só
+  *"já há uma imagem chamada…"*, e o job armado teria sumido em silêncio.
+  Antes a saída mentia sobre uma ação que não aconteceu; agora a ação
+  acontecia e a saída não contava. **É o mesmo eixo, invertido** — e é o
+  padrão que o ADR-0004 nomeou: uma melhoria produzindo o defeito.
+  Mover o desarmar para depois do julgamento fuaria C-1, que diz
+  incondicionalmente; a saída foi partir o diálogo em duas metades e imprimir
+  a primeira **antes** de julgar.
+- **O nome do disco saía da coluna errada do `blkdev.list`.** `ler` calculava
+  o deslocamento de `NAME`, avisava num comentário que confundi-lo com `KNAME`
+  daria a coluna errada, e então **descartava o deslocamento** para pegar o
+  primeiro campo da linha — que é o `KNAME`. Passava porque os dois coincidem
+  para `sda` e `nvme0n1`. Num multipath (`NAME=mpatha`, `KNAME=dm-0`) o nome
+  lido seria o do dispositivo de baixo.
+- **O leitor de JSON do WMI não honrava `\"`, e falhava em silêncio.** `Model`
+  é texto livre do fabricante, e `SAMSUNG 2.5" SSD` é plausível. Uma aspa
+  escapada é um número **ímpar** de `"`: ignorar a barra inverte a paridade do
+  resto do arquivo, o `}` de cada objeto passa a ser lido como dentro de texto,
+  e **dois discos se fundem num só**. Se o que sumisse fosse o do dispositivo,
+  as duas recusas que dependem de saber em que disco cada letra mora — C-6 e
+  C-10 — passariam sem dizer nada.
+- **Dois dos cinco campos do WMI adivinhavam** onde os outros três recusavam:
+  `Model` ausente virava `""` e viajava até a linha `Origem:`; `Livre` ausente
+  virava zero. O doc do módulo dizia "recusa o que não entende em vez de
+  adivinhar". Os quatro obrigatórios passaram a ser obrigatórios.
+- **`letra_do_sistema` era `'C'` fixo**, numa função que recebia dois
+  parâmetros e os ignorava. É o mesmo erro que esta etapa combate em dois
+  outros lugares — não supor que a origem é o disco 0, não derivar o nome
+  Linux do índice — cometido no terceiro. Agora vem de `%SystemDrive%`.
+- **`folga_em_milesimos` saiu.** Sem chamador, e com o doc prometendo saturar
+  em zero enquanto o código devolvia `u64::MAX`.
+- **E a revisão anotou um caso que não é achado e merece registro:** ela viu
+  uma falha de teste que não reproduziu em dezoito execuções. Os `Registro::em`
+  dos testes montam diretórios temporários por PID, e o Windows recicla PID.
+  Conferido: `Registro::em` recebe **diretório** e `caminho()` é
+  `<dir>/arca.log`, então o `remove_dir_all(parent)` do `Drop` apaga o
+  diretório do próprio teste — e não `%TEMP%`, que era a suspeita ao ler o
+  código de fora. Fica anotado como flakiness conhecida, fora deste diff.
+
+**Aberto nesta etapa, e não resolvido aqui:**
+
+- **O `nvme0n1` fica por determinar num dispositivo sem imagem.** É a herança
+  explícita da E6 para a E7: quem armar o primeiro backup de um dispositivo
+  novo não tem `blkdev.list` de onde ler o nome. A E7 decide o que fazer —
+  pedir o nome, ou recusar. O que ela **não** pode fazer é derivar do índice,
+  pelo motivo que o §4.5 do PRD registra.
+- **`disco_de_origem` acha o disco que tem `%SystemDrive%` e não é o
+  dispositivo.** Numa máquina com dois Windows a escolha ficaria ambígua e
+  hoje o primeiro ganha; com nenhum, recusa alto. Não é caso deste projeto, e
+  fica escrito para quem encontrar.
+- **B-5 e B-6 relatam e não agem.** "Oferecer" foi implementado como dizer o
+  comando e o que ele custa. Se o uso mostrar que a oferta devia ser
+  interativa, ela cabe na E7 — que é onde já há confirmação digitada.
 
 ### E7 · Armar e disparar
 
