@@ -1,8 +1,8 @@
-# PRD — ARCA v5
+# PRD — ARCA v5.1
 
 **Automatizador de Clonezilla para backup e restauração de imagem de disco.**
 
-Versão 0.5 · 22/08/2026 · Substitui a v4
+Versão 5.1 · 22/08/2026 · Substitui a v4
 Uso pessoal · Um usuário · Sem distribuição
 
 > **As fundações não são hipótese.** O mecanismo descrito neste documento foi
@@ -51,7 +51,7 @@ O procedimento manual exige ~20 telas em modo texto, em inglês técnico, sendo 
 - ❌ Agendamento
 - ❌ Retenção automática
 - ❌ Interface gráfica
-- ❌ Criador de partições (ver [RF-P1](#71--o-arca-não-cria-partições))
+- ❌ Criador de partições (ver [P1](#71--o-arca-não-cria-partições))
 - ❌ Suporte a BIOS legada, BitLocker, RAID, Storage Spaces
 
 **Princípio:** se a informação já existe na listagem de diretórios do dispositivo, não há o que armazenar.
@@ -143,6 +143,14 @@ A máquina boota nele **antes** de a imagem ser restaurada. Um ambiente que só 
 
 Custo de mantê-lo fora: **zero** — a imagem não engorda por causa dele.
 
+### 4.3 — O selo liga o job ao desfecho
+
+Ao armar, o ARCA gera um identificador aleatório — o **selo** — grava no `estado.json` e o embute na receita. O Clonezilla o devolve na primeira linha do `arca-fim.txt`. Na volta, só é aceito o desfecho cujo selo case com o job pendente.
+
+Isso existe porque **não há relógio comum**: o Clonezilla lê o RTC (hora local do Windows) como UTC e fica 3 h adiantado, permanentemente. Uma trava construída sobre comparação de datas já reprovou um backup perfeito.
+
+O selo resolve quatro casos com um mecanismo só: desfecho de um job anterior, desfecho vindo de dentro de uma imagem antiga (§11, job fantasma), desfecho ausente porque o boot nunca aconteceu, e arquivo truncado por desligamento no meio.
+
 ## 5. Fluxo: backup
 
 ### 5.1 — O que o usuário faz
@@ -207,6 +215,19 @@ Imagens em ARCAVAULT:
 183 GB livres
 ```
 
+### 5.5 — Desfechos possíveis
+
+Vale para backup e para restauração. Nenhuma linha desta tabela é silêncio: toda combinação tem mensagem própria.
+
+| O que se encontra | Significado | O que o ARCA faz |
+|---|---|---|
+| Selo bate, `ARCA_FIM` presente, desfecho `OK` | Operação concluída | Mostra o veredito da imagem |
+| Selo bate, desfecho `FALHOU` | O Clonezilla falhou e disse | Reporta falha e aponta o log |
+| Selo bate, sem `ARCA_FIM` | Truncado — desligamento no meio | Falha; a pasta é resíduo (B-3) |
+| Selo não bate | Job fantasma | Ignora o arquivo e avisa |
+| Sem `arca-fim.txt`, com job pendente | O boot não aconteceu, ou o Clonezilla abriu menu | Falha, nomeando as duas causas |
+| Sem `arca-fim.txt`, sem job pendente | Não há nada a colher | Diz isso e para |
+
 ## 6. Fluxo: restauração
 
 ### 6.1 — Windows funcionando
@@ -248,7 +269,9 @@ Não há `arca restore` a rodar. Boote pelo dispositivo com F12 e use o menu do 
 
 ### 7.1 — O ARCA não cria partições
 
-O princípio P1 diz que o ARCA não faz o que é perigoso. Particionar um disco é a operação mais destrutiva do fluxo, e é feita **uma vez por dispositivo**.
+> **Princípio P1.** O ARCA não executa a operação mais destrutiva do fluxo. O que se faz uma vez por dispositivo, e destrói tudo quando sai errado, fica com o usuário e com a ferramenta do sistema.
+
+Particionar um disco é exatamente isso: a operação mais destrutiva do fluxo, feita **uma vez por dispositivo**.
 
 `arca prepare` **exige** uma partição FAT32 vazia de ≥ 1 GB. Não havendo, imprime as instruções para criá-la no Gerenciamento de Disco e para.
 
@@ -275,7 +298,15 @@ arca backup <nome>        # monta a receita, arma o boot, reinicia
 arca resultado            # le o veredito e desarma o SSD
 arca list                 # imagens no dispositivo conectado
 arca restore              # lista, confirma e reinicia para restaurar
-arca verify <nome>        # revalida uma imagem existente
+arca verify <nome>        # confere os MD5SUMS, sem reiniciar
+arca status               # diagnostico: dispositivo, firmware, job pendente
+```
+
+Duas flags:
+
+```
+--dry-run                 # imprime a receita e o que faria; nao arma nada
+--completo                # em verify: arma boot unico para o ocs-chkimg
 ```
 
 Todos exigem privilégio administrativo.
@@ -295,6 +326,9 @@ Todos exigem privilégio administrativo.
 | C-7 | Repassar os argumentos ao relançar com elevação por UAC |
 | C-8 | Escapar aspas com **barra invertida**, não crase — quem reparte a linha é o parser do Windows |
 | C-9 | Avisar, antes de reiniciar, para remover o SSD ao terminar |
+| C-10 | **Recusar mais de um dispositivo ARCA conectado.** Dois `ARCAVAULT` ou dois `ARCABOOT` tornam o destino ambíguo, e é por LABEL que a receita resolve (S-3) |
+| C-11 | **Gerar um selo ao armar**, gravá-lo no `estado.json` e embuti-lo na receita; aceitar como desfecho apenas o `arca-fim.txt` cujo selo case (§4.3) |
+| C-12 | **Ausência de desfecho é falha, nunca silêncio.** Havendo job pendente e nenhum `arca-fim.txt`, reportar as duas causas possíveis: o boot não ocorreu, ou o Clonezilla abriu menu (§5.5) |
 
 ### 9.2 — Backup
 
@@ -307,7 +341,7 @@ Todos exigem privilégio administrativo.
 | B-5 | Verificar Inicialização Rápida; oferecer `powercfg /h off` |
 | B-6 | Rodar `chkdsk /scan`; oferecer agendar `/f` se acusar erro |
 | B-7 | Receita com nome e disco embutidos — **sem `ask_user`** |
-| B-8 | Sempre `-q2 -j2 -z9p -i 4096 -gm -sfsck -senc -scs` |
+| B-8 | Sempre `-batch -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -scs`. O `-batch` é o que suprime as perguntas (§3.2) — sem ele, a receita abre tela |
 | B-9 | Sempre chamar `ocs-chkimg` explicitamente, com saída redirecionada para arquivo |
 | B-10 | Nunca apagar nada |
 
@@ -318,20 +352,38 @@ Todos exigem privilégio administrativo.
 | R-1 | Listar as imagens **no Windows**; a escolha acontece antes do reinício |
 | R-2 | Conferir o destino contra `disk`/`blkdev.list` da imagem |
 | R-3 | Exigir o nome da imagem digitado por extenso |
-| R-4 | Sempre `-k0 -iefi -j2`, sempre **sem** `-g auto` |
+| R-4 | Sempre `-batch -k0 -iefi -j2`, sempre **sem** `-g auto` |
 | R-5 | Receita com `if/then/else`: escrever `ARCA_RESTORE=OK` ou `ARCA_RESTORE=FALHOU` |
-| R-6 | Ler esse arquivo na volta, **inclusive no ramo do job fantasma** |
+| R-6 | Ler esse arquivo na volta e **conferir o selo antes de acreditar nele** (C-11) |
+| R-7 | Destino diferente do disco de origem é **permitido**, com confirmação que nomeia o disco de destino. Recusar sempre que o destino for **menor** que a origem: `-k0` copia a tabela inteira e, num disco menor, corrompe em vez de falhar. Em disco novo, `-iefi` não encontra entrada correspondente e o `bcdboot` volta a ser necessário — ao contrário do que §3.4 mediu no disco original |
 
 ### 9.4 — Segurança
 
 | ID | Requisito |
 |---|---|
-| S-1 | O ARCA nunca abre o disco de origem em modo escrita |
+| S-1 | O ARCA nunca abre o disco de origem em **acesso raw** de escrita. Chamar `powercfg` ou `chkdsk` (B-5, B-6) não é isso: são operações do próprio sistema, pelas quais o Windows responde |
 | S-2 | Operação destrutiva exige texto digitado, nunca só `s` |
 | S-3 | Destino sempre por LABEL — nunca por letra, `sda` ou número de série |
 | S-4 | Veredito sempre gravado em arquivo, nunca só em tela |
 | S-5 | Falha parcial é tratada como falha total |
-| S-6 | **Nunca comparar uma data escrita pelo Windows com outra escrita pelo Linux** |
+| S-6 | **Nunca comparar uma data escrita pelo Windows com outra escrita pelo Linux.** O que liga um job ao seu desfecho é o selo (C-11), nunca o tempo |
+
+### 9.5 — Consulta e verificação
+
+| ID | Requisito |
+|---|---|
+| L-1 | `arca list` lê o dispositivo, nunca um catálogo — se a informação está na listagem de diretórios, não há o que armazenar |
+| L-2 | Pasta sem `MD5SUMS` aparece como **resíduo**, não como imagem, e nunca é oferecida para restaurar |
+| V-1 | `arca verify <nome>` confere os `MD5SUMS` no Windows, em segundos, sem reiniciar. Pega corrupção de mídia e cópia truncada |
+| V-2 | `arca verify <nome> --completo` arma boot único que só roda `ocs-chkimg`. É outra força de verificação: **não substitui B-9**, que continua obrigatória em todo backup |
+
+### 9.6 — Preparação de dispositivo
+
+| ID | Requisito |
+|---|---|
+| PR-1 | Versão do Clonezilla **fixada**, com o SHA256 esperado **compilado no binário do ARCA** — nunca baixado junto do arquivo, o que não verificaria nada. Não batendo, recusar e parar |
+| PR-2 | `arca prepare --iso <caminho>` instala de arquivo local. É o que salva quando a máquina que precisa preparar o dispositivo é justamente a que está sem Windows |
+| PR-3 | Guardar no `ARCAVAULT` uma cópia do pacote usado. Dispositivo autocontido inclui poder reconstruir o dispositivo |
 
 ## 10. Implementação
 
@@ -341,14 +393,17 @@ Todos exigem privilégio administrativo.
 #!/bin/bash
 NOME="2026-08-22_Apps"
 DISCO="nvme0n1"
+SELO="a3f1c9e07b2d4856"
 LOG="/home/partimag/ARCA-LOGS/$NOME"
 mkdir -p "$LOG"
 
-if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -scs -p true \
+echo "ARCA_SELO=$SELO" > "$LOG/arca-fim.txt"
+
+if ocs-sr -batch -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -scs -p true \
           savedisk "$NOME" "$DISCO"; then
-  echo "ARCA_BACKUP=OK" > "$LOG/arca-fim.txt"
+  echo "ARCA_BACKUP=OK" >> "$LOG/arca-fim.txt"
 else
-  echo "ARCA_BACKUP=FALHOU" > "$LOG/arca-fim.txt"
+  echo "ARCA_BACKUP=FALHOU" >> "$LOG/arca-fim.txt"
 fi
 
 ocs-chkimg -b -or /home/partimag "$NOME" \
@@ -362,15 +417,25 @@ poweroff
 ### 10.2 — Receita de restauração
 
 ```bash
+#!/bin/bash
+NOME="2026-08-22_Apps"
+SELO="7e02b4d1af963c85"
+LOG="/home/partimag/ARCA-LOGS/$NOME"
+mkdir -p "$LOG"
+
+echo "ARCA_SELO=$SELO" > "$LOG/arca-fim.txt"
+
 if ocs-sr -batch -j2 -k0 -iefi -p true restoredisk "$NOME" nvme0n1; then
-  echo "ARCA_RESTORE=OK" > "$LOG/arca-fim.txt"
+  echo "ARCA_RESTORE=OK" >> "$LOG/arca-fim.txt"
 else
-  echo "ARCA_RESTORE=FALHOU" > "$LOG/arca-fim.txt"
+  echo "ARCA_RESTORE=FALHOU" >> "$LOG/arca-fim.txt"
 fi
 echo "ARCA_FIM" >> "$LOG/arca-fim.txt"
 sleep 20
 poweroff
 ```
+
+O `LOG` mora no `ARCAVAULT`, que a restauração não toca — a imagem substitui o `nvme0n1`, e o desfecho sobrevive num disco que não estava no caminho.
 
 > **Por que `if/then/else` e não `;`.** Encadear com `;` não olha código de saída: uma restauração que falhasse produziria exatamente o mesmo rastro de uma que desse certo.
 
@@ -398,7 +463,7 @@ Cada uma custou uma execução real para aparecer.
 | Relógio do Clonezilla 3h adiantado | Ele lê o RTC (hora local do Windows) como UTC. Uma trava construída sobre comparação de datas reprovou um backup perfeito | S-6 |
 | Argumentos perdidos na reelevação | `--dry-run` virou execução real, sem aviso | C-7 |
 | Crase como escape | O parser do Windows reparte a linha, não o do PowerShell | C-8 |
-| Job fantasma | Toda imagem carrega dentro de si um `estado.json` pendente apontando para si mesma | R-6 |
+| Job fantasma | Imagem feita quando o ARCA ainda morava no `C:` carrega dentro de si um `estado.json` pendente apontando para si mesma. §4.1 elimina a causa daqui para frente; imagens antigas continuam trazendo o problema de volta | C-11 |
 | ARCA dentro da imagem | Restaurar devolve versões antigas com defeitos já corrigidos | §4.1 |
 | Pasta sem `MD5SUMS` | Resíduo de backup interrompido; recusar só imagem válida empurra o usuário a regravar por cima dos fragmentos | B-3 |
 | Boot no removível após `poweroff` | Não reproduzido, causa não determinada | C-9 |
@@ -420,6 +485,11 @@ Cada uma custou uma execução real para aparecer.
 | Verificação sempre, veredito em arquivo | Imagem não verificada é suposição |
 | O ARCA não cria partições | Princípio P1 |
 | `toram` mantido | Evita acoplar o live system ao dispositivo que ele remonta |
+| Job ligado ao desfecho por selo, nunca por data | Não há relógio comum entre Windows e Clonezilla (P-7) |
+| A receita continua sendo string no `grub.cfg`, não arquivo | É o mecanismo medido em hardware. Trocá-lo por um `custom-ocs` em arquivo exigiria remedir, e `toram` pode desmontar o medium |
+| Restaurar em disco diferente é permitido, recusado só se menor | O disco de origem morrer é o motivo de existir backup de imagem |
+| Clonezilla com versão fixada e checksum embutido | Checksum baixado do mesmo servidor que o arquivo não verifica nada |
+| O binário roda de onde estiver; só o estado é obrigado a morar no `ARCABOOT` | O que a restauração não pode devolver é o julgamento, não o executável |
 
 ### Pendências
 
@@ -428,6 +498,7 @@ Cada uma custou uma execução real para aparecer.
 | P-6 | O `ocs-sr` devolve código ≠ 0 quando falha? Fecha com falha forçada em VM |
 | P-7 | O deslocamento de 3 h é permanente. Existe para a próxima pessoa que for comparar datas |
 | P-14 | `arca resultado` deve rodar sozinho no logon? Começar sem, decidir com uso |
+| P-15 | A receita de backup publicada em §10.1 divergia da fundação §3.2 quanto ao `-batch`. Adotado o `-batch`, alinhando à fundação medida — mas **qual das duas rodou no hardware não está registrado**. Confirmar na primeira execução pelo ARCA |
 
 ---
 
