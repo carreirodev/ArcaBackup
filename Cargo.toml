@@ -1,0 +1,50 @@
+[package]
+name = "arca"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Automatizador de Clonezilla para backup e restauracao de imagem de disco"
+license = "MIT"
+publish = false
+
+[lib]
+name = "arca"
+path = "src/lib.rs"
+
+[[bin]]
+name = "arca"
+path = "src/main.rs"
+# O manifesto `requireAdministrator` vale para todo artefato deste alvo,
+# inclusive o executavel de teste — que o `cargo test` nao consegue rodar sem
+# disparar UAC. Nao ha perda: `src/main.rs` e fino de proposito, e tudo que
+# tem teste mora na lib.
+test = false
+bench = false
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+thiserror = "2"
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.61"
+features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+# `CommandLineToArgvW` e chamado de verdade nos testes de C-7: quem julga se o
+# escape esta certo e o parser do Windows, nao uma reimplementacao nossa dele.
+[target.'cfg(windows)'.dev-dependencies.windows-sys]
+version = "0.61"
+features = ["Win32_Foundation", "Win32_UI_Shell"]
+
+[profile.release]
+strip = true
