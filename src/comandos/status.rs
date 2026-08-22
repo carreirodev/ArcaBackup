@@ -44,6 +44,16 @@ pub enum EstadoDoJob {
         desfecho: Encontrado,
     },
 
+    /// Ha `estado.json` e o job **ja foi colhido**. Nao ha nada esperando.
+    ///
+    /// Acrescentado na etapa E8, e e o que fecha o par que a E5 deixou aberto:
+    /// depois de um `arca desarmar`, esta secao mostrava "Boot unico: nao
+    /// armado" ao lado de um job pendente, e ninguem encerrava o job. Quem
+    /// encerra e o `arca resultado`, ao colher; o arquivo continua no
+    /// dispositivo porque ele e o unico registro que liga um selo a um nome
+    /// (ver [`crate::estado::Situacao`]).
+    Colhido { estado: Estado },
+
     /// O `estado.json` esta la e nao da para entender. **Nao e "nao ha job"**:
     /// o dispositivo pode estar armado, e o que dizia qual job era este se
     /// perdeu.
@@ -93,6 +103,12 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
             EstadoDoJob::Nenhum => "nenhum".to_string(),
             EstadoDoJob::Pendente { estado, desfecho } => format!(
                 "{} `{}` · selo {} · desfecho: {desfecho}",
+                estado.comando.nome(),
+                estado.nome,
+                estado.selo
+            ),
+            EstadoDoJob::Colhido { estado } => format!(
+                "{} `{}` · selo {} · ja colhido",
                 estado.comando.nome(),
                 estado.nome,
                 estado.selo
@@ -157,6 +173,15 @@ fn ler_o_job(
             };
         }
     };
+
+    // Um job colhido nao tem desfecho a procurar: ele ja foi lido e dito. Ir
+    // olhar de novo faria o `arca status` reabrir uma pergunta que o
+    // `arca resultado` fechou — e, pior, um `arca-fim.txt` que a proxima
+    // operacao truncasse apareceria aqui como "o boot nao aconteceu" para um
+    // job que aconteceu.
+    if estado.situacao == crate::estado::Situacao::Colhido {
+        return EstadoDoJob::Colhido { estado };
+    }
 
     let onde = estado::caminho_do_desfecho(raiz_do_vault, estado.comando, &estado.nome);
 
@@ -345,10 +370,27 @@ fn confere_com_o_arcaboot(alvo: &Alvo, dispositivo: &Dispositivo) -> String {
 /// `estado.json`** — desarmar nao consulta estado nenhum (C-1) e nao escreve
 /// nele. Depois dele esta secao mostra "Boot unico: nao armado" ao lado de um
 /// job pendente, e isso e exatamente o que aconteceu: o dispositivo esta
-/// inerte, e o job continua registrado por colher. Quem encerra o job e a E8,
-/// ao colher o desfecho.
+/// inerte, e o job continua registrado por colher. Quem encerra o job e o
+/// `arca resultado`, ao colher o desfecho.
+///
+/// # O titulo varia com o estado, e a revisao explicou por que
+///
+/// Ele era `Job pendente` fixo. Com a linha nova da E8, um job **colhido**
+/// saia sob esse titulo — "Job pendente / Estado no ARCABOOT: ja colhido,
+/// nada esperando" —, que e uma versao menor exatamente da contradicao que a
+/// E8 existia para fechar. Uma peca nova encaixada numa peca antiga que
+/// ninguem releu ao encaixar, pela quarta vez neste projeto.
 fn secao_do_job(leitura: &Leitura, estado: &EstadoDoJob) -> String {
-    let mut saida = String::from("Job pendente\n");
+    let titulo = match estado {
+        EstadoDoJob::Pendente { .. } => "Job pendente",
+        EstadoDoJob::Colhido { .. } => "Ultimo job, ja colhido",
+        // Sem estado legivel, o titulo nao pode afirmar nem uma coisa nem
+        // outra: o que se sabe e que se foi olhar.
+        EstadoDoJob::Nenhum | EstadoDoJob::Ilegivel { .. } | EstadoDoJob::SemOndeOlhar { .. } => {
+            "Job"
+        }
+    };
+    let mut saida = format!("{titulo}\n");
 
     saida.push_str(&linha(
         "Boot unico",
@@ -364,8 +406,13 @@ fn secao_do_job(leitura: &Leitura, estado: &EstadoDoJob) -> String {
         &match estado {
             EstadoDoJob::Nenhum => "nenhum".to_string(),
             EstadoDoJob::Pendente { estado, .. } => {
-                format!("{} `{}`", estado.comando.nome(), estado.nome)
+                format!("{} `{}` · POR COLHER", estado.comando.nome(), estado.nome)
             }
+            EstadoDoJob::Colhido { estado } => format!(
+                "{} `{}` · ja colhido, nada esperando",
+                estado.comando.nome(),
+                estado.nome
+            ),
             EstadoDoJob::Ilegivel { .. } => "presente e ILEGIVEL".to_string(),
             // O motivo vai na linha, e nao uma frase fixa: com o `ARCABOOT`
             // sem letra, dizer "sem ARCABOOT" mandaria alguem procurar um
@@ -389,6 +436,19 @@ fn secao_do_job(leitura: &Leitura, estado: &EstadoDoJob) -> String {
                 &desfecho::pasta_do_job(estado.comando, &estado.nome),
             ));
             saida.push_str(&linha("Desfecho", &desfecho.to_string()));
+        }
+        EstadoDoJob::Colhido { estado } => {
+            saida.push_str(&linha("Selo", estado.selo.como_texto()));
+            saida.push_str(&linha("Disco alvo", estado.disco.como_texto()));
+            saida.push_str(&linha(
+                "Armado em",
+                &format!("{} · informativo, nunca comparado", estado.armado_em),
+            ));
+            saida.push_str(concat!(
+                "\n  Este job ja foi colhido: o `arca resultado` leu o desfecho dele e disse\n",
+                "  o que era. O `estado.json` fica no dispositivo de proposito — e o unico\n",
+                "  registro que liga este selo a este nome, e o ARCA nao apaga nada (B-10).\n"
+            ));
         }
         EstadoDoJob::Ilegivel { motivo } => {
             saida.push_str(&format!(
@@ -507,7 +567,13 @@ mod testes {
             saida.contains("{f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}"),
             "faltou a entrada de firmware"
         );
-        assert!(saida.contains("Job pendente"), "faltou o job");
+        // Sem `estado.json`, o titulo e `Job` — nao `Job pendente`, que
+        // afirmaria haver um, nem `Ultimo job`, que afirmaria ter havido.
+        assert!(saida.contains("Boot unico"), "faltou o job:\n{saida}");
+        assert!(
+            !saida.contains("Job pendente"),
+            "disse que ha job pendente sem estado nenhum:\n{saida}"
+        );
     }
 
     #[test]
@@ -617,8 +683,74 @@ mod testes {
             .contains("presente e ILEGIVEL")
         );
         assert!(
-            com_estado(job_pendente(Encontrado::SemArquivo))
-                .contains(&linha("Estado no ARCABOOT", "backup `2026-08-22_Apps`"))
+            com_estado(job_pendente(Encontrado::SemArquivo)).contains(&linha(
+                "Estado no ARCABOOT",
+                "backup `2026-08-22_Apps` · POR COLHER"
+            ))
+        );
+        // A E8 acrescentou a sexta linha, e ela e a que fecha o par que a E5
+        // deixou aberto: um job colhido nao e um job esperando.
+        assert!(
+            com_estado(EstadoDoJob::Colhido {
+                estado: Estado {
+                    situacao: Situacao::Colhido,
+                    ..estado_gravado()
+                }
+            })
+            .contains(&linha(
+                "Estado no ARCABOOT",
+                "backup `2026-08-22_Apps` · ja colhido, nada esperando"
+            ))
+        );
+    }
+
+    #[test]
+    fn um_job_colhido_nao_aparece_como_pendente() {
+        // A contradicao que a E5 nomeou e nao fechou: depois de desarmar, o
+        // status mostrava "Boot unico: nao armado" ao lado de um job pendente.
+        // Colhido o job, as duas linhas passam a dizer a mesma coisa.
+        let saida = com_estado(EstadoDoJob::Colhido {
+            estado: Estado {
+                situacao: Situacao::Colhido,
+                ..estado_gravado()
+            },
+        });
+
+        assert!(saida.contains("ja colhido"), "{saida}");
+        assert!(saida.contains(&linha("Selo", DO_JOB)), "{saida}");
+        assert!(
+            !saida.contains("Desfecho"),
+            "o status foi procurar desfecho de um job ja colhido:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn o_status_nao_procura_desfecho_de_um_job_ja_colhido() {
+        // Ir olhar de novo reabriria uma pergunta que o `arca resultado`
+        // fechou — e um `arca-fim.txt` truncado pela operacao seguinte
+        // apareceria aqui como "o boot nao aconteceu" para um job que
+        // aconteceu.
+        let estado = Estado {
+            situacao: Situacao::Colhido,
+            ..estado_gravado()
+        };
+        let arquivos = ArquivosEmMemoria::novo()
+            .com(ESTADO, &estado.como_json().unwrap())
+            .com(
+                r"E:\ARCA-LOGS\backup-2026-08-22_Apps\arca-fim.txt",
+                "lixo que nao e desfecho",
+            );
+
+        let dispositivo =
+            crate::dispositivo::encontrar(&crate::duplos::DiscosDeMentira::com_dispositivo())
+                .unwrap();
+
+        let colhido = ler_o_job(&arquivos, &dispositivo, std::path::Path::new(r"E:\"));
+
+        assert!(matches!(colhido, EstadoDoJob::Colhido { .. }));
+        assert!(
+            !arquivos.foi_consultado(r"E:\ARCA-LOGS\backup-2026-08-22_Apps\arca-fim.txt"),
+            "foi procurar o desfecho de um job que ja tinha sido colhido"
         );
     }
 

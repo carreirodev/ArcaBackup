@@ -59,7 +59,7 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
         // o nome ainda precisa ser julgado por B-2 antes de qualquer resposta.
         Comando::Backup { nome } => return comandos::backup::executar(contexto, nome),
 
-        Comando::Resultado => ("resultado", "E8"),
+        Comando::Resultado => return comandos::resultado::executar(contexto),
         Comando::Restore => ("restore", "E9"),
         Comando::Verify { .. } => ("verify", "E11"),
         Comando::Prepare { .. } => ("prepare", "E10"),
@@ -73,8 +73,8 @@ mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
     use crate::duplos::{
-        ArquivosEmMemoria, DiscosDeMentira, ConsoleDeMentira, EntropiaDeMentira, FirmwareDeMentira, RelogioParado,
-        SistemaDeMentira,
+        ArquivosEmMemoria, ConsoleDeMentira, DiscosDeMentira, EntropiaDeMentira, FirmwareDeMentira,
+        RelogioParado, SistemaDeMentira,
     };
     use clap::Parser;
 
@@ -135,7 +135,6 @@ mod testes {
         let contexto = bancada.contexto();
 
         for (argumentos, etapa_esperada) in [
-            (vec!["arca", "resultado"], "E8"),
             (vec!["arca", "restore"], "E9"),
             (vec!["arca", "verify", "n"], "E11"),
             (vec!["arca", "prepare"], "E10"),
@@ -156,10 +155,10 @@ mod testes {
     fn os_comandos_ja_construidos_fazem_o_trabalho_em_vez_de_nomear_etapa() {
         // `list` e `status` desde a E1 e a E2; `backup` entrou na E6, quando
         // deixou de responder "armar e a E7" para rodar o pre-voo do §5.2, e
-        // passou a armar de verdade na **E7**.
+        // passou a armar de verdade na **E7**. O `resultado` entrou na **E8**.
         //
-        // Sem dispositivo conectado, os tres devolvem a recusa da descoberta —
-        // e nunca `AindaNaoImplementado`.
+        // Sem dispositivo conectado, os quatro devolvem a recusa da descoberta
+        // — e nunca `AindaNaoImplementado`.
         let bancada = Bancada::nova("construidos");
         let contexto = bancada.contexto();
 
@@ -167,6 +166,7 @@ mod testes {
             vec!["arca", "list"],
             vec!["arca", "status"],
             vec!["arca", "backup", "2026-08-22_Apps"],
+            vec!["arca", "resultado"],
         ] {
             let erro = executar(&Cli::parse_from(&argumentos), &contexto).unwrap_err();
             assert!(

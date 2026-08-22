@@ -149,6 +149,14 @@ pub enum Erro {
     )]
     ConfirmacaoNaoBate { esperado: String, digitado: String },
 
+    /// S-5: o backup terminou e alguma parte dele nao deu certo.
+    ///
+    /// Falha parcial e falha total. A saida do §5.4 ja foi impressa inteira
+    /// quando este erro sobe — ele existe para o codigo de saida, e para que
+    /// quem chamou o ARCA de um script nao leia um desfecho ruim como exito.
+    #[error("{0}")]
+    OperacaoNaoConcluida(String),
+
     /// C-3 na pratica: mandou-se apagar a marca de boot unico, e a releitura
     /// mostra que ela continua la. O sucesso do `bcdedit` nunca foi prova; a
     /// releitura e, e ela reprovou.

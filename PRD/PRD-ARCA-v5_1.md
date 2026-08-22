@@ -3,7 +3,7 @@
 **Automatizador de Clonezilla para backup e restauração de imagem de disco.**
 
 Versão 5.1 · 22/08/2026 · Substitui a v4
-Última revisão: 22/08/2026, etapa E7 — §3.1 ganhou a **tabela de ordem de boot** desta máquina, que mostra a ordem permanente alterada pelo menos três vezes e dá a P-18 uma terceira explicação; §10.2.1 corrigido (o `menuentry` base é o **`live-toram`**, e o `toram` nunca foi acrescentado); §5.2 ganhou as cinco linhas do armar e a ordem certa entre confirmação, aviso e reinício; §4.5 decide o que fazer sem nome de disco (**recusar**)
+Última revisão: 22/08/2026, etapas E7 e E8 — §3.1 ganhou a **tabela de ordem de boot** desta máquina, que mostra a ordem permanente alterada pelo menos três vezes e dá a P-18 uma terceira explicação; §10.2.1 corrigido (o `menuentry` base é o **`live-toram`**, e o `toram` nunca foi acrescentado); §5.2 ganhou as cinco linhas do armar e a ordem certa entre confirmação, aviso e reinício; §4.5 decide o que fazer sem nome de disco (**recusar**); §4.3 e §5.4 ganharam o `estado.json` de seis campos e a linha `Job: encerrado`
 Revisão anterior: etapa E6 — §4.5 diz **de onde sai o nome do disco de origem**, que o documento nunca disse; §5.2 corrigido contra medição (o `498,7 GB` era a partição `C:`, não o disco); B-4, B-5, B-6, C-6 e C-10 ganharam o que a medição mostrou
 Revisão anterior: etapa E5 — §4.3 ganhou o **formato do selo** e os três lugares por onde ele passa; §5.5 ganhou a linha do `arca-fim.txt` **sem selo nenhum**, que a tabela não tinha
 E antes: etapa E4 — §3.2 ganhou o `set default`, que é o que faz o boot ser desatendido e não estava documentado; §4.4 define o **estado inerte**, que o §5.2, o §5.4 e o §6.3 pressupunham; §8 ganhou `arca desarmar`; P-18 aberta sobre a §3.1
@@ -274,12 +274,14 @@ o marcador — quem quiser mudar a forma mexe nos dois primeiros.
 violação exija uma linha deliberada em vez de um descuido —
 `tests/s6_o_tempo_nao_decide.rs` cobra isso a cada build.
 
-**O `estado.json` tem seis campos desde a etapa E7**, e o sexto é `situacao`:
-`armado` ou `colhido`. Armar o escreve como `armado`; quem o muda é a colheita
-da E8, que encerra o job marcando o campo em vez de apagar o arquivo — o
-`estado.json` é o único lugar que liga um selo a um nome de imagem. Ele **não é
-uma data** de propósito: dois instantes lado a lado num arquivo cujo tipo de
-tempo existe para tornar a comparação difícil seriam um convite a subtraí-los.
+**O `estado.json` tem seis campos desde a etapa E8**, e o sexto é `situacao`:
+`armado` ou `colhido`. Colher o desfecho encerra o job marcando esse campo, e
+não apagando o arquivo — o `estado.json` é o único lugar que liga um selo a um
+nome de imagem, e apagá-lo faria "job fantasma" virar a resposta para tudo. Ele
+**não é uma data** de propósito: dois instantes lado a lado num arquivo cujo
+tipo de tempo existe para tornar a comparação difícil seriam um convite a
+subtraí-los. Ver
+[ADR-0008](../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md).
 
 ### 4.4 — O estado inerte
 
@@ -466,17 +468,45 @@ Firmware carrega o Clonezilla → monta `LABEL=ARCAVAULT` em `/home/partimag` �
 > arca resultado
 
 Backup 2026-08-22_Apps
-  22/08/2026 · 36,2 GB
+  22/08 · 36,2 GB
+  Desfecho: concluida — o selo bate e a receita chegou ao fim
   Verificacao: APROVADA
+  Selo: a3f1c9e07b2d4856
 
-  Desarmando SSD .................. ok
+  Desarmando SSD .................. ok · R:\boot\grub\grub.cfg
+  Job ............................. encerrado · o desfecho foi lido e dito
 
 Imagens em ARCAVAULT:
   2026-08-21_WindowsCompleto   21/08 · 36,2 GB · aprovada
   2026-08-22_Apps              22/08 · 36,2 GB · aprovada
 
-183 GB livres
+164 GB livres
 ```
+
+> **O `Desfecho` e a `Verificacao` são duas linhas, e S-5 é o motivo.** A
+> versão anterior desta tela mostrava só a verificação, o que faria um backup
+> com `ARCA_BACKUP=OK` e imagem **reprovada** sair parecendo um problema de
+> verificação — quando é uma falha da operação inteira. Os dois sinais são
+> independentes (§4.3, ADR-0003) e nenhum pode esconder o outro. Quando os dois
+> não estão bons, o comando ainda imprime a tela inteira e **sai com código
+> diferente de zero**: quem chamou o ARCA de um script não pode ler um desfecho
+> ruim como êxito.
+>
+> **`Job: encerrado` é a linha que fecha o par que a etapa E5 deixou aberto.**
+> Colher encerra o job — o `estado.json` é marcado como colhido, e nunca
+> apagado (B-10 não precisa ser discutido, e o registro que liga o selo ao nome
+> sobrevive). Depois disto, `arca status` diz "já colhido, nada esperando" em
+> vez de "job por colher" ao lado de um boot único não armado. Ver
+> [ADR-0008](../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md).
+>
+> A linha diz `CONTINUA PENDENTE` no único caso em que o job **não** se
+> encerra: o `arca-fim.txt` está lá e não se deixou ler. "Não consegui olhar"
+> não é veredito, e encerrar ali perderia o selo que liga o desfecho ao job.
+>
+> **Os números desta tela ainda não são de uma execução real do ARCA.** A tela
+> do §5.2 foi corrigida contra medição na etapa E6; esta espera o marco em
+> hardware da E8. O que já está medido é o `164 GB livres`, do dispositivo
+> desta mesa em 22/08/2026.
 
 ### 5.5 — Desfechos possíveis
 
@@ -596,6 +626,13 @@ dispositivo continua armado e não havia nada a rodar, porque `arca resultado`
 exige desfecho e `arca backup` armaria de novo. É também a única forma de
 exercitar a idempotência de C-1 sem armar. Acrescentado na etapa E4.
 
+> *(Etapa E8: aquele caso passou a ter outra saída — `arca resultado` agora
+> **atende** a ausência de desfecho, reportando as duas causas de C-12,
+> desarmando e encerrando o job. O `arca desarmar` continua valendo pelo resto:
+> desarmar sem colher, e exercitar C-1 sem armar. `arca resultado` **não**
+> desarma quando não há job nenhum a colher — misturar "colhi" com "arrumei"
+> tiraria de quem lê a saída a informação de qual das duas aconteceu.)*
+
 Duas flags:
 
 ```
@@ -622,7 +659,7 @@ Todos exigem privilégio administrativo.
 | C-9 | Avisar, antes de reiniciar, para remover o SSD ao terminar. **Depois de armado e antes do reinício** — é a última coisa que alguém lê antes de a tela apagar, e não há tela do outro lado (§5.2) |
 | C-10 | **Recusar mais de um dispositivo ARCA conectado.** Dois `ARCAVAULT` ou dois `ARCABOOT` tornam o destino ambíguo, e é por LABEL que a receita resolve (S-3). **E recusar também o dispositivo partido**: os dois rótulos em discos físicos diferentes são dois dispositivos meio prontos, e não um — cada rótulo aparece uma vez, a contagem passa, e a receita iria para um enquanto as imagens estão no outro. *(A brecha do rótulo órfão ficou aberta da E1 à E5, com a letra impressa na tela como única defesa; a enumeração de discos da E6 a fecha.)* |
 | C-11 | **Gerar um selo ao armar**, gravá-lo no `estado.json` e embuti-lo na receita; aceitar como desfecho apenas o `arca-fim.txt` cujo selo case (§4.3) |
-| C-12 | **Ausência de desfecho é falha, nunca silêncio.** Havendo job pendente e nenhum `arca-fim.txt`, reportar as duas causas possíveis: o boot não ocorreu, ou o Clonezilla abriu menu (§5.5) |
+| C-12 | **Ausência de desfecho é falha, nunca silêncio.** Havendo job pendente e nenhum `arca-fim.txt`, reportar as duas causas possíveis: o boot não ocorreu, ou o Clonezilla abriu menu (§5.5). *(Etapa E8: ausência de desfecho **encerra** o job, porque é um veredito. O que não encerra é o `arca-fim.txt` que está lá e não se deixou ler — "não consegui olhar" não é veredito, e encerrar ali perderia o selo. Ver [ADR-0008](../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md).)* |
 
 ### 9.2 — Backup
 
@@ -659,7 +696,7 @@ Todos exigem privilégio administrativo.
 | S-2 | Operação destrutiva exige texto digitado, nunca só `s`. **Comparação exata**, sem ignorar caixa e sem aceitar prefixo: B-2 permite maiúscula e minúscula, e `2026-08-22_apps` é uma imagem diferente de `2026-08-22_Apps`. Uma tentativa só — quem digitou errado repete o comando, que até ali não armou nada. `--dry-run` pula a confirmação **e** o armar, e não diz que armou |
 | S-3 | Destino sempre por LABEL — nunca por letra, `sda` ou número de série |
 | S-4 | Veredito e desfecho sempre gravados em arquivo, nunca só em tela — o `arca-check.log` e o `arca-fim.txt`, ambos escritos pela receita. **Código novo**: nenhuma receita real chegou a escrever `arca-fim.txt` (P-16) |
-| S-5 | Falha parcial é tratada como falha total |
+| S-5 | Falha parcial é tratada como falha total. *(Etapa E8: o desfecho e o veredito saem em **duas linhas** da §5.4, e nenhuma esconde a outra. Um `ARCA_BACKUP=OK` com imagem reprovada, sem veredito, resíduo, ou sem pasta nenhuma — os quatro são falha, e o comando sai com código diferente de zero depois de imprimir a tela inteira.)* |
 | S-6 | **Nunca comparar uma data escrita pelo Windows com outra escrita pelo Linux.** O que liga um job ao seu desfecho é o selo (C-11), nunca o tempo |
 
 ### 9.5 — Consulta e verificação
@@ -880,6 +917,7 @@ Cada uma custou uma execução real para aparecer.
 | O `set default` volta sempre para `live-default`, nunca para `0` | `"0"` aponta por posição, e a posição muda quando o bloco do ARCA entra (§4.4) |
 | O `menuentry` do ARCA **deriva** do `live-toram` do próprio dispositivo, e não é transcrito de nenhuma cópia | Mesma razão do estado inerte: o `grub.cfg` carrega a configuração daquele hardware. Medido: a `teste-02` é o `live-toram` com as cinco substituições de §10.2.1, e a `teste-03` — a única que provavelmente rodou desatendida — perdeu nove parâmetros, inclusive o de NVMe ([ADR-0007](../docs/adr/0007-o-bloco-do-arca-deriva-do-live-toram.md)) |
 | Sem nome de disco determinado, `arca backup` **recusa**; não pergunta nem deriva | Um nome do Linux digitado do lado Windows não tem contra o que ser conferido, e a receita que o nomeia é destrutiva na E9 (§4.5) |
+| Colher **marca** o `estado.json` como colhido, e nunca o apaga | O arquivo é o único registro que liga um selo a um nome. Marcar fecha o par que a E5 deixou aberto sem reabrir B-10 ([ADR-0008](../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md)) |
 | Armar não cria entrada de firmware; migra a que existe, ou recusa | Criar uma do zero é código sem original. O lugar disso é o `arca prepare` (C-4) |
 
 ### Pendências

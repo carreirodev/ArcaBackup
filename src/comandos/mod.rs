@@ -8,4 +8,5 @@
 pub mod backup;
 pub mod desarmar;
 pub mod list;
+pub mod resultado;
 pub mod status;

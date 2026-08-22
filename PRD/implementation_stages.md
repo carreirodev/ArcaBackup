@@ -16,7 +16,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E5 | Estado e selo | II | ✅ | 2026-08-22 18:37 |
 | E6 | Pré-voo | III | ✅ | 2026-08-22 19:24 |
 | E7 | Armar e disparar | III | 🟨 | escrita 2026-08-22 21:12 · falta o marco |
-| E8 | Colher o desfecho | III | ⬜ | — |
+| E8 | Colher o desfecho | III | 🟨 | escrita 2026-08-22 21:12 · falta o marco |
 | E9 | Restauração | IV | ⬜ | — |
 | E10 | `arca prepare` | IV | ⬜ | — |
 | E11 | `arca verify` | IV | ⬜ | — |
@@ -25,8 +25,8 @@ Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua 
 
 **🟨 é escrita, revisada e commitada, com o marco em hardware devendo.** O
 estado nasceu na E7, e ele existe porque ✅ seria mentira e ⬜ seria pior: quem
-lesse ⬜ suporia que não há código. Toda seção 🟨 termina com **o que falta,
-nomeado** — e o que falta aqui custa um reinício que apaga a sessão que o
+lesse ⬜ suporia que não há código. Cada seção 🟨 termina com **o que falta,
+nomeado** — e o que falta, nas duas, custa um reinício que apaga a sessão que o
 dispararia. A E4 já tinha entregue o critério dela "cumprido pela metade
 verificável"; a diferença é que lá a outra metade era barata, e aqui ela é o
 marco inteiro.
@@ -656,12 +656,10 @@ disco de origem é NVMe. Isso é argumento a favor de derivar, e não contra.
   entrada e relê: um `device` que não mudou é a rejeição, e o armar para ali.
 
 **O que o `estado.json` ganhou aqui, e por quê.** Um sexto campo, `situacao`,
-que a E7 escreve como `armado`. Quem o lê e o muda é a E8, ao colher — mas ele
-nasce aqui porque armar é quando o job passa a existir, e um estado que não diz
-se já foi colhido não pode ser escrito depois sem reabrir o arquivo. O ADR-0006
-avisava que a discussão sobre escrever o JSON à mão voltaria com o campo novo
-na mesa; ela voltou, e o campo passa — **porque ele tem alfabeto fechado**, que
-é por que ele é um estado e não uma data.
+que a E7 escreve como `armado`. Quem o lê e o muda é a E8 — ver
+[ADR-0008](../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md) — mas
+ele nasce aqui porque armar é quando o job passa a existir, e um estado que não
+diz se já foi colhido não pode ser escrito depois sem reabrir o arquivo.
 
 **O que a revisão pegou, e o que ela mostra sobre o método.** Três achados
 nesta etapa, e o mais grave é sobre um **teste** e não sobre o código:
@@ -734,6 +732,103 @@ A tabela de estados terminais que o PRD não tem (D8):
 **Cobre**: S-4, S-5, D8
 **Marco em hardware**: backup e colheita, ponta a ponta, sem intervenção.
 
+**Escrita, testada e commitada em 22/08/2026 — e o marco depende do da E7.**
+Não há desfecho a colher enquanto o primeiro backup não rodar.
+
+**A etapa é mais de fiação do que de código novo, e isso é o desenho dando
+certo.** A E5 construiu o julgamento, a E3 o leitor do veredito, a E4 o
+desarmar, a E1 a listagem. A E8 os liga na ordem certa e não reescreve nenhum
+deles — duas versões da mesma regra divergem na primeira mudança, que é o
+motivo de `arca status` já reusar `list::montar`.
+
+**A decisão da etapa: colher marca o `estado.json`, e nunca o apaga.**
+Registrada em
+[ADR-0008](../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md). Das
+três saídas, apagar obrigaria a refazer a discussão de B-10 com um argumento
+que não se transporta — a marca de boot único é uma **intenção** do ARCA, e o
+`estado.json` colhido é **registro**, o único lugar que liga um selo a um nome.
+Distinguir por outro sinal falharia justamente onde mais importa: um job cujo
+boot não aconteceu não tem `arca-fim.txt` nenhum, e ficaria pendente para
+sempre.
+
+E o campo **não é uma data**, de propósito: poria mais um instante ao lado do
+`armado_em` num arquivo cujo tipo de tempo existe para tornar a comparação
+difícil (ADR-0006, S-6). Duas datas lado a lado são um convite a subtraí-las.
+
+**O que fecha aqui, e é o par que a E5 deixou aberto.** Depois de um
+`arca desarmar`, o `arca status` mostrava "Boot único: não armado" ao lado de um
+job pendente, e ninguém encerrava o job. Agora colher encerra, e o `status` diz
+"já colhido, nada esperando". Ele também **para de procurar o desfecho** de um
+job já colhido — ir olhar de novo reabriria uma pergunta que o `arca resultado`
+fechou, e um `arca-fim.txt` truncado pela operação seguinte apareceria como "o
+boot não aconteceu" para um job que aconteceu.
+
+**A distinção que custou mais cuidado.** Encerra o job quem chegou a um
+**veredito** sobre ele — inclusive "não há `arca-fim.txt`", que é C-12 na letra
+e é uma resposta. **Não** encerra quando o arquivo está lá e não se deixou ler:
+"não consegui olhar" não é veredito, e encerrar ali perderia o selo que liga o
+desfecho ao job. É a mesma distinção que a revisão da E5 pagou caro para
+existir, aplicada de novo — e desta vez ela apareceu antes do defeito, e não
+depois.
+
+**S-5 saiu em duas linhas, e não numa conclusão.** O desfecho e o veredito são
+independentes, e a §5.4 mostra os dois sem que um esconda o outro. Quatro
+combinações são falha com desfecho `OK`: imagem reprovada, imagem sem veredito,
+pasta que é resíduo, e pasta que não existe. Todas imprimem a tela inteira e
+saem com código diferente de zero — quem chamou o ARCA de um script não pode
+ler um desfecho ruim como êxito.
+
+**O que a revisão pegou, e os três são do mesmo tipo.** Uma peça nova encaixada
+numa peça antiga que ninguém releu ao encaixar — o padrão que a E3 nomeou e que
+já apareceu em quatro etapas:
+
+- **O título da seção do job dizia `Job pendente` para um job colhido.** A
+  linha nova saía sob ele como *"Job pendente / Estado no ARCABOOT: já colhido,
+  nada esperando"* — uma versão menor exatamente da contradição que esta etapa
+  existia para fechar. O título passou a variar com o estado, e ganhou um
+  terceiro caso: sem `estado.json` legível ele é só `Job`, porque `pendente`
+  afirmaria haver um e `último` afirmaria ter havido.
+- **O relatório inteiro se perdia quando a gravação falhava.** Gravar antes de
+  imprimir é o certo — uma linha `Job: encerrado` impressa antes da gravação
+  seria um `ok` sobre uma ação que não aconteceu (§11) —, mas gravar com `?`
+  descartava a §5.4 já computada. O ARCA teria lido o desfecho do backup e o
+  jogado fora. As duas propriedades cabem juntas, e a saída é um tipo:
+  grava-se antes, e **o que a gravação respondeu vai para a linha**. Há agora
+  um terceiro estado, `NAO FOI POSSIVEL ENCERRAR`, distinto do
+  `CONTINUA PENDENTE` — um é acidente e pede conserto, o outro é o desenho
+  funcionando.
+- **O sexto campo obrigatório torna ilegível todo `estado.json` anterior**, e a
+  consequência não era benigna: `arca resultado` recusa antes de desarmar, então
+  um dispositivo genuinamente armado pela versão anterior não podia ser nem
+  colhido nem desarmado pelo comando. Não há arquivo assim em lugar nenhum
+  hoje — o `R:\arca\` está vazio, e as duas etapas saem juntas —, mas a forma
+  do problema é real. A saída não foi afrouxar o leitor: seria abrir mão da
+  propriedade que o torna confiável, e é a mesma escolha que o ADR-0006 já fez
+  para chave desconhecida. Foi **a mensagem de erro dizer o que fazer** —
+  `arca desarmar` não consulta estado nenhum (C-1) e por isso funciona
+  justamente ali.
+
+**O que falta para o marco, nomeado:**
+
+- **P-16 fecha aqui, ou não fecha.** O `arca-fim.txt`, o selo dentro da
+  receita, o `ARCA_FIM` e o `if/then/else` nunca rodaram. Se o arquivo não
+  aparecer, ou aparecer sem selo, ou com o selo errado, **isso é o achado da
+  etapa** e vale mais que a saída bonita.
+- **O `arca-fim.txt` que voltar tem de ser guardado** em
+  `recursos/capturas/`, com procedência. Ele é o primeiro original que o
+  mecanismo de desfecho produziu, e a E9 vai querer compará-lo.
+- **A §5.4, a §3.5 e o §11 esperam a execução real.** Os números da §5.4 ainda
+  não são de uma execução do ARCA, e isso está dito na própria seção — como o
+  §5.2 esteve até a E6 corrigi-lo.
+- **A tabela do §5.5** ganha linha se a execução real mostrar uma que falta.
+
+**O que a etapa já prova sem reiniciar**, em `tests/e8_colher_o_desfecho.rs`:
+que o único `arca-fim.txt` deste dispositivo continua **sem selo** — P-16 fixado
+no hardware —, que ele continua inalcançável pelo ARCA de hoje (a pasta do log
+leva a operação no nome, decisão da E3, e ninguém a tinha conferido contra o
+disco), e que as duas formas de veredito do ADR-0003 continuam legíveis nas
+imagens que estão lá.
+
 ## Fase IV — O resto
 
 ### E9 · Restauração
@@ -771,7 +866,7 @@ Nenhum requisito do PRD fica sem etapa.
 | E5 | R-6, S-6 |
 | E6 | B-2, B-3, B-4, B-5, B-6 |
 | E7 | C-4, C-5, C-9, S-2 — e a segunda metade de C-6, que até aqui só era relatada por leitura |
-| E8 | S-4, S-5, D8 |
+| E8 | S-4, S-5, D8 — e C-12, que ganhou o comando que o atende |
 | E9 | R-1, R-2, R-3 |
 | E10 | §7.1 |
 | E11 | D6 |

@@ -36,6 +36,10 @@ _Evitar_: script, comando, configuração
 Uma operação armada e ainda não colhida. Existe entre o reinício e a leitura do desfecho.
 _Evitar_: tarefa, execução, operação pendente
 
+**Colher**:
+Ler o que há no lugar do desfecho, julgá-lo pelo selo e dizer o que era. Encerra o job — inclusive quando o que se encontra é nada, que é uma resposta. O que não encerra é não ter conseguido ler.
+_Evitar_: verificar, conferir, finalizar
+
 **Armar**:
 Gravar a receita no `grub.cfg` e marcar o boot único no firmware. É o ponto sem volta.
 _Evitar_: agendar, disparar, configurar
