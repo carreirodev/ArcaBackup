@@ -1,8 +1,27 @@
 # ARCA — Etapas de implementação
 
-Plano de execução derivado do [PRD v5.1](PRD/PRD-ARCA-v5_1.md). O PRD diz **o que** o ARCA é; este documento diz **em que ordem** ele é construído e **como se sabe** que cada pedaço está pronto.
+Plano de execução derivado do [PRD v5.1](PRD-ARCA-v5_1.md). O PRD diz **o que** o ARCA é; este documento diz **em que ordem** ele é construído e **como se sabe** que cada pedaço está pronto.
 
-Vocabulário canônico em [CONTEXT.md](CONTEXT.md).
+Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
+
+## Progresso
+
+| Etapa | O que entrega | Fase | Status | Concluída em |
+|---|---|---|---|---|
+| E0 | Fundação executável | I | ⬜ | — |
+| E1 | Descoberta do dispositivo e das imagens | I | ⬜ | — |
+| E2 | Leitura do firmware | I | ⬜ | — |
+| E3 | Geração e validação da receita | II | ⬜ | — |
+| E4 | Desarmar | II | ⬜ | — |
+| E5 | Estado e selo | II | ⬜ | — |
+| E6 | Pré-voo | III | ⬜ | — |
+| E7 | Armar e disparar | III | ⬜ | — |
+| E8 | Colher o desfecho | III | ⬜ | — |
+| E9 | Restauração | IV | ⬜ | — |
+| E10 | `arca prepare` | IV | ⬜ | — |
+| E11 | `arca verify` | IV | ⬜ | — |
+
+Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi escrito. As duas etapas com marco em hardware (E7 e E9) exigem a execução real para fechar.
 
 ---
 
