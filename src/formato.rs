@@ -66,6 +66,25 @@ fn com_virgula(valor: f64) -> String {
     format!("{valor:.1}").replace('.', ",")
 }
 
+/// Onde a coluna de valores comeca nas linhas pontilhadas do §5.2 do PRD.
+///
+/// Medida no proprio documento: `Desarmando receita anterior .....` e
+/// `chkdsk /scan ....................` tem os dois 33 caracteres.
+const COLUNA: usize = 33;
+
+/// A linha `Rotulo ....... valor` do §5.2 do PRD.
+///
+/// Rotulo que nao caiba na coluna nao trunca nem quebra o alinhamento dos
+/// outros: ele estoura, com um ponto so. Um diagnostico que esconde metade do
+/// nome do que esta diagnosticando nao serve para nada.
+pub fn linha(rotulo: &str, valor: &str) -> String {
+    // Contado em caracteres, e nao em bytes: `{:<n$}` conta bytes, e um rotulo
+    // com acento sairia desalinhado dos demais.
+    let usados = rotulo.chars().count() + 1;
+    let pontos = COLUNA.saturating_sub(usados).max(1);
+    format!("  {rotulo} {} {valor}\n", ".".repeat(pontos))
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -114,5 +133,48 @@ mod testes {
     #[test]
     fn sem_data_no_sistema_de_arquivos_a_coluna_diz_que_nao_sabe() {
         assert_eq!(dia_e_mes(None), "--/--");
+    }
+
+    #[test]
+    fn a_linha_pontilhada_e_a_do_paragrafo_5_2_do_prd() {
+        assert_eq!(
+            linha("Desarmando receita anterior", "ok"),
+            "  Desarmando receita anterior ..... ok\n"
+        );
+        assert_eq!(
+            linha("chkdsk /scan", "limpo"),
+            "  chkdsk /scan .................... limpo\n"
+        );
+    }
+
+    /// Em que coluna o valor comeca, contada como o console a desenha: em
+    /// caracteres, e nao nos bytes que os representam.
+    fn coluna_do_valor(linha: &str) -> usize {
+        linha.chars().count() - linha.chars().rev().take_while(|c| *c != '.').count()
+    }
+
+    #[test]
+    fn os_valores_ficam_todos_na_mesma_coluna() {
+        assert_eq!(
+            coluna_do_valor(&linha("Boot unico", "nao armado")),
+            coluna_do_valor(&linha("x", "y"))
+        );
+    }
+
+    #[test]
+    fn rotulo_com_acento_nao_desalinha() {
+        // Contado em bytes, `Descrição` ocuparia uma casa a mais do que ocupa,
+        // e a coluna sairia torta ao lado das outras.
+        assert_eq!(
+            coluna_do_valor(&linha("Descrição", "ARCA")),
+            coluna_do_valor(&linha("Descricao", "ARCA"))
+        );
+    }
+
+    #[test]
+    fn rotulo_longo_demais_estoura_em_vez_de_truncar() {
+        let saida = linha(&"x".repeat(40), "ok");
+        assert!(saida.contains(&"x".repeat(40)), "o rotulo foi truncado");
+        assert!(saida.contains(". ok"), "sumiu o separador");
     }
 }

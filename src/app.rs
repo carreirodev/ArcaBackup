@@ -30,12 +30,12 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
 
     let (comando, etapa) = match &cli.comando {
         Comando::List => return comandos::list::executar(contexto),
+        Comando::Status => return comandos::status::executar(contexto),
 
         Comando::Backup { .. } => ("backup", "E7"),
         Comando::Resultado => ("resultado", "E8"),
         Comando::Restore => ("restore", "E9"),
         Comando::Verify { .. } => ("verify", "E11"),
-        Comando::Status => ("status", "E2"),
         Comando::Prepare { .. } => ("prepare", "E10"),
     };
 
@@ -74,7 +74,6 @@ mod testes {
             (vec!["arca", "resultado"], "E8"),
             (vec!["arca", "restore"], "E9"),
             (vec!["arca", "verify", "n"], "E11"),
-            (vec!["arca", "status"], "E2"),
             (vec!["arca", "prepare"], "E10"),
         ] {
             let cli = Cli::parse_from(&argumentos);
@@ -92,10 +91,10 @@ mod testes {
     }
 
     #[test]
-    fn list_ja_e_despachado_para_a_etapa_e1() {
-        // O ramo do `list` deixou de nomear etapa: ele faz o trabalho. Sem
-        // dispositivo conectado, o que ele devolve e a recusa da descoberta —
-        // e nunca `AindaNaoImplementado`.
+    fn list_e_status_ja_fazem_o_trabalho_em_vez_de_nomear_etapa() {
+        // Os dois ramos deixaram de nomear etapa: eles fazem o trabalho. Sem
+        // dispositivo conectado, o que devolvem e a recusa da descoberta — e
+        // nunca `AindaNaoImplementado`.
         let arquivos = ArquivosEmMemoria::novo();
         let discos = DiscosDeMentira::default();
         let firmware = FirmwareDeMentira::novo();
@@ -114,11 +113,13 @@ mod testes {
             relogio: &relogio,
         };
 
-        let erro = executar(&Cli::parse_from(["arca", "list"]), &contexto).unwrap_err();
-        assert!(
-            matches!(erro, Erro::DispositivoAusente),
-            "esperava a recusa da descoberta, veio {erro}"
-        );
+        for comando in ["list", "status"] {
+            let erro = executar(&Cli::parse_from(["arca", comando]), &contexto).unwrap_err();
+            assert!(
+                matches!(erro, Erro::DispositivoAusente),
+                "`arca {comando}`: esperava a recusa da descoberta, veio {erro}"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(registro.caminho().parent().unwrap());
     }

@@ -1,11 +1,25 @@
 //! A porta do firmware, implementada por `bcdedit`.
 //!
-//! A etapa E2 constroi o parser por valor e as regras de C-3, C-4 e C-6. Aqui
-//! so mora a chamada: nenhuma interpretacao do que o `bcdedit` respondeu.
+//! O parser por valor e as regras de C-3, C-4 e C-6 moram em
+//! [`crate::firmware`]. Aqui so mora a chamada e a decodificacao dos bytes:
+//! nenhuma interpretacao do que o `bcdedit` respondeu.
+//!
+//! # A decodificacao e parte da fronteira, nao detalhe dela
+//!
+//! O `bcdedit` nao escreve UTF-8. Ele escreve na pagina de codigo do console
+//! de quem o chamou — 850 na janela que o UAC abre nesta maquina —, e ler
+//! esses bytes como UTF-8 troca cada acento por `U+FFFD` sem erro nenhum. Foi
+//! medido: `examples/codificacao_do_bcdedit.rs`.
+//!
+//! Que os campos que o parser lê sejam todos ASCII e sorte, nao desenho: a
+//! `description` de uma entrada de firmware e texto livre, e e ela que o
+//! `arca status` imprime.
 
 use crate::erro::{Erro, Resultado};
 use crate::portas::Firmware;
 use std::process::Command;
+
+use super::texto::{de_pagina_de_codigo, pagina_do_console};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Bcdedit;
@@ -22,9 +36,10 @@ impl Bcdedit {
 
         // O `bcdedit` escreve tanto em stdout quanto em stderr conforme o
         // subcomando; quem parseia recebe os dois, sem julgamento aqui.
-        let mut texto = String::from_utf8_lossy(&saida.stdout).into_owned();
+        let pagina = pagina_do_console();
+        let mut texto = de_pagina_de_codigo(&saida.stdout, pagina);
         if !saida.stderr.is_empty() {
-            texto.push_str(&String::from_utf8_lossy(&saida.stderr));
+            texto.push_str(&de_pagina_de_codigo(&saida.stderr, pagina));
         }
 
         // Um `bcdedit` que recusou nao pode virar texto vazio. Sem privilegio

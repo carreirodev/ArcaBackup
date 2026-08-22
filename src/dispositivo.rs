@@ -19,6 +19,14 @@ pub const ARCAVAULT: &str = "ARCAVAULT";
 /// job.
 pub const ARCABOOT: &str = "ARCABOOT";
 
+/// Onde o estado do job mora, dentro do `ARCABOOT` (§4 e §4.1 do PRD).
+///
+/// No dispositivo, e nunca no `C:`, porque e o `C:` que a restauracao
+/// substitui: o que julga a restauracao nao pode morar no disco que ela troca.
+/// O que ha **dentro** do arquivo — selo, comando, alvo — e assunto da etapa
+/// E5; daqui ate la, saber se ele existe ja diz se ha job por colher.
+pub const ESTADO_DO_JOB: &str = r"arca\estado.json";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dispositivo {
     pub vault: Volume,
@@ -56,6 +64,11 @@ impl Dispositivo {
             Some(volume) => raiz_de(volume, ARCABOOT),
             None => Err(Erro::ParticaoAusente { rotulo: ARCABOOT }),
         }
+    }
+
+    /// O caminho do `estado.json`, quando ha `ARCABOOT` para conte-lo.
+    pub fn caminho_do_estado(&self) -> Resultado<PathBuf> {
+        Ok(self.raiz_do_boot()?.join(ESTADO_DO_JOB))
     }
 }
 
@@ -213,6 +226,27 @@ mod testes {
         assert!(dispositivo.raiz_do_vault().is_ok());
         assert!(matches!(
             dispositivo.raiz_do_boot().unwrap_err(),
+            Erro::ParticaoAusente { .. }
+        ));
+    }
+
+    #[test]
+    fn o_estado_do_job_mora_no_arcaboot_e_so_la() {
+        // §4.1: o que julga a restauracao nao pode morar no disco que ela
+        // substitui. Sem `ARCABOOT` nao ha caminho nenhum — e isso nao e o
+        // mesmo que nao haver job.
+        let dispositivo = encontrar(&DiscosDeMentira::com_dispositivo()).unwrap();
+        assert_eq!(
+            dispositivo.caminho_do_estado().unwrap(),
+            PathBuf::from(r"R:\arca\estado.json")
+        );
+
+        let sem_boot = encontrar(&DiscosDeMentira::com_volumes(vec![volume(
+            ARCAVAULT, 'E', 1000, 500,
+        )]))
+        .unwrap();
+        assert!(matches!(
+            sem_boot.caminho_do_estado().unwrap_err(),
             Erro::ParticaoAusente { .. }
         ));
     }

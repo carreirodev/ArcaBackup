@@ -1,0 +1,8 @@
+# As capturas sao evidencia, e evidencia nao se normaliza.
+#
+# O `bcdedit` escreve CRLF. Com o `core.autocrlf` ligado — que e o padrao
+# desta maquina — o git converteria as quebras de linha na ida e na volta, e a
+# fixture deixaria de ser o que a ferramenta escreveu para virar o que o git
+# achou que ela deveria ter escrito. O parser tem de aguentar CRLF porque e
+# isso que chega dele em producao.
+recursos/capturas/** -text

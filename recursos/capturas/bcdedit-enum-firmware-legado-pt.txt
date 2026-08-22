@@ -1,0 +1,55 @@
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+                        {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}
+                        {c71136d7-9c6a-11f1-8a41-806e6f6e6963}
+                        {c71136d8-9c6a-11f1-8a41-806e6f6e6963}
+                        {c71136d9-9c6a-11f1-8a41-806e6f6e6963}
+timeout                 1
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {bootmgr}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             Windows Boot Manager
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}
+device                  partition=R:
+path                    \EFI\boot\bootx64.efi
+description             Clonezilla
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {c71136d7-9c6a-11f1-8a41-806e6f6e6963}
+description             UEFI:CD/DVD Drive
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {c71136d8-9c6a-11f1-8a41-806e6f6e6963}
+description             UEFI:Removable Device
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {c71136d9-9c6a-11f1-8a41-806e6f6e6963}
+description             UEFI:Network Device

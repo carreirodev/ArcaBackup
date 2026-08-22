@@ -6,3 +6,4 @@
 //! criterio de aceite merece teste que rode sem o dispositivo conectado.
 
 pub mod list;
+pub mod status;

@@ -10,7 +10,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 |---|---|---|---|---|
 | E0 | Fundação executável | I | ✅ | 2026-08-22 11:47 |
 | E1 | Descoberta do dispositivo e das imagens | I | ✅ | 2026-08-22 13:42 |
-| E2 | Leitura do firmware | I | ⬜ | — |
+| E2 | Leitura do firmware | I | ✅ | 2026-08-22 14:28 |
 | E3 | Geração e validação da receita | II | ⬜ | — |
 | E4 | Desarmar | II | ⬜ | — |
 | E5 | Estado e selo | II | ⬜ | — |
@@ -62,6 +62,7 @@ Aplicar **antes** da E3, que transcreve as receitas para código.
 | D7 | "Um dispositivo por vez" é regra sem ID. Vira requisito: **recusar se houver mais de um `ARCAVAULT` ou `ARCABOOT` conectado** |
 | D8 | Não existe requisito para `arca-fim.txt` ausente — o desfecho de toda falha silenciosa. Vira tabela de estados terminais na E8 |
 | D9 | Cabeçalho diz "Versão 0.5", título diz "v5", arquivo diz `v5_1`. Escolher uma |
+| D10 | §3.1 leva a crer que `Removable Media` e `External hard disk media` saem do `bcdedit`. **Não saem.** Procuradas no `bcdedit.exe` e nos seus recursos `pt-BR` e `en-US`: não estão lá. São valores de `MediaType` do WMI (`Win32_DiskDrive`, em `cimwin32.dll`). Reescrever C-6 pelo que é verificável: a rejeição silenciosa aparece como um `device` que **não mudou** depois da escrita, e quem a revela é a releitura de C-3. O `GetDriveType` dá o sinal antecipado, antes de qualquer tentativa |
 
 ---
 
@@ -86,12 +87,19 @@ Localizar o dispositivo pelos labels `ARCABOOT` e `ARCAVAULT`, nunca por letra o
 
 ### E2 · Leitura do firmware
 
-Parser de `bcdedit /enum` **por valor, não por nome de campo** — só `identificador` sai traduzido (fundação §3.1). Localizar a entrada `ARCA`; não havendo, reconhecer a legada `Clonezilla` (C-4). Distinguir `External hard disk media` de `Removable Media`, que o `bcdedit` rejeita em silêncio respondendo "êxito" (C-6).
+Parser de `bcdedit /enum` **por valor, não por nome de campo** — só `identificador` sai traduzido (fundação §3.1). Localizar a entrada `ARCA`; não havendo, reconhecer a legada `Clonezilla` (C-4). Recusar `Removable Media`, que o `bcdedit` rejeita em silêncio respondendo "êxito" (C-6) — e ver D10, porque essa palavra não sai do `bcdedit`.
 
 Testes unitários sobre saídas capturadas em português e em inglês. Este parser é o único ponto do sistema onde uma leitura errada leva a máquina a bootar no lugar errado.
 
 **Cobre**: C-3, C-4 (detecção), C-6
 **Entrega**: `arca status` — diagnóstico não destrutivo: dispositivo, imagens, entrada de firmware, estado do job. Comando novo, a acrescentar em §8.
+
+**Medido nesta etapa, e não previsto pelo plano:**
+
+- **O `bcdedit` não escreve UTF-8.** Ele escreve na página de código do console de quem o chama — 850 na janela que o UAC abre nesta máquina, 65001 num terminal já em UTF-8. O adaptador da E0 fazia `from_utf8_lossy`, e perdia 6 caracteres por leitura, em silêncio. Corrigido em `adaptadores::windows::texto`; medido por `examples/codificacao_do_bcdedit.rs`.
+- **A fixture em inglês não precisou ser fabricada.** O `bcdedit.exe` carrega as mensagens de `System32\<idioma>\bcdedit.exe.mui`, e esta máquina tem `en-US` instalado. Copiado o executável para uma pasta onde só existe o `.mui` inglês, a mesma consulta ao mesmo BCD sai em inglês — e o par pt/en descreve a mesma configuração, lida com segundos de diferença. É o que torna `o_idioma_nao_muda_nada_do_que_o_parser_extrai` uma prova em vez de uma suposição.
+- **A entrada desta máquina foi renomeada de `Clonezilla` para `ARCA` entre 20/08 e 22/08**, mantendo o GUID. Os dois lados de C-4 estão capturados: o estado legado em `bcdedit-enum-firmware-legado-pt.txt`, o migrado nas outras duas.
+- **Nenhuma captura tem `bootsequence`**, porque armar é a E7. O formato do boot único está coberto por caso construído, marcado como tal, para a E7 confirmar contra hardware.
 
 ## Fase II — A receita (escreve em arquivo, não arma nada)
 

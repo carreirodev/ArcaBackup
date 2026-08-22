@@ -16,6 +16,7 @@ pub mod dispositivo;
 pub mod duplos;
 pub mod elevacao;
 pub mod erro;
+pub mod firmware;
 pub mod formato;
 pub mod imagens;
 pub mod portas;
