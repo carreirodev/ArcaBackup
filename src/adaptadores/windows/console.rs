@@ -7,6 +7,21 @@
 
 use windows_sys::Win32::System::Console::GetConsoleProcessList;
 
+// # A pagina de codigo nao precisa ser tocada
+//
+// A saida do §5.4 do PRD nao e ASCII: o separador entre as colunas de uma
+// imagem e um `·` (U+00B7). A suspeita natural e que num console em CP850 —
+// o padrao de um Windows em portugues — ele sairia sujo, e que o ARCA
+// precisaria trocar a pagina de codigo por UTF-8.
+//
+// Medido, e nao suposto: `examples/ponto_no_console.rs` imprime o `·` num
+// console de verdade e lê de volta o que o console **desenhou**. Com a CP em
+// 850 o caractere chega intacto, porque o `print!` do Rust escreve em console
+// por `WriteConsoleW`, que recebe UTF-16 e nao passa pela pagina de codigo.
+//
+// Trocar a CP seria, entao, mexer num estado que pertence ao console de quem
+// chamou — e que um Ctrl+C deixaria trocado para sempre — em troca de nada.
+
 /// Verdadeiro quando este e o unico processo anexado ao console — o que
 /// significa que a janela foi criada para ele e some quando ele sair.
 pub fn janela_propria() -> bool {

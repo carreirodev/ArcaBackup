@@ -7,12 +7,19 @@
 
 use crate::erro::{Erro, Resultado, erro_de_arquivo};
 use crate::portas::{
-    Arquivos, DiscoFisico, Discos, Entrada, Firmware, Privilegios, Relogio, Volume,
+    Arquivos, DiscoFisico, Discos, Entrada, Firmware, Privilegios, Relogio, TipoDeMidia, Volume,
 };
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+/// Um momento a partir de um `2026-08-21T12:56:31`.
+pub fn momento(iso: &str) -> DateTime<Local> {
+    let ingenuo = NaiveDateTime::parse_from_str(iso, "%Y-%m-%dT%H:%M:%S")
+        .expect("momento em formato ISO-8601 sem fuso");
+    Local.from_local_datetime(&ingenuo).unwrap()
+}
 
 /// Um relogio que nao anda. Ver S-6: no ARCA o tempo nunca decide nada, o que
 /// torna um relogio parado suficiente para todo teste.
@@ -23,10 +30,8 @@ pub struct RelogioParado {
 impl RelogioParado {
     /// A partir de um `2026-08-22T11:42:03`.
     pub fn em(momento_iso: &str) -> RelogioParado {
-        let ingenuo = NaiveDateTime::parse_from_str(momento_iso, "%Y-%m-%dT%H:%M:%S")
-            .expect("momento em formato ISO-8601 sem fuso");
         RelogioParado {
-            momento: Local.from_local_datetime(&ingenuo).unwrap(),
+            momento: momento(momento_iso),
         }
     }
 }
@@ -70,11 +75,48 @@ impl Firmware for FirmwareDeMentira {
     }
 }
 
+/// Um volume de mentira, identificado pelo rotulo.
+///
+/// A descoberta do dispositivo so olha rotulo (S-3); a letra existe para
+/// montar caminho de arquivo do lado Windows. O resto e enfeite crivel.
+pub fn volume(rotulo: &str, letra: char, total_bytes: u64, livre_bytes: u64) -> Volume {
+    Volume {
+        rotulo: Some(rotulo.to_string()),
+        letra: Some(letra),
+        sistema_de_arquivos: "NTFS".to_string(),
+        total_bytes,
+        livre_bytes,
+        tipo_de_midia: TipoDeMidia::DiscoFixo,
+    }
+}
+
 /// Discos de mentira, com os volumes e os discos que o teste quiser.
 #[derive(Default)]
 pub struct DiscosDeMentira {
     pub volumes: Vec<Volume>,
     pub discos: Vec<DiscoFisico>,
+}
+
+impl DiscosDeMentira {
+    /// Um dispositivo ARCA inteiro: `ARCAVAULT` e `ARCABOOT`, como o §4 do PRD
+    /// descreve.
+    pub fn com_dispositivo() -> DiscosDeMentira {
+        DiscosDeMentira {
+            volumes: vec![
+                volume("Windows", 'C', 498_700_000_000, 361_400_000_000),
+                volume("ARCAVAULT", 'E', 254_000_000_000, 176_400_000_000),
+                volume("ARCABOOT", 'R', 1_700_000_000, 1_070_000_000),
+            ],
+            discos: Vec::new(),
+        }
+    }
+
+    pub fn com_volumes(volumes: Vec<Volume>) -> DiscosDeMentira {
+        DiscosDeMentira {
+            volumes,
+            discos: Vec::new(),
+        }
+    }
 }
 
 impl Discos for DiscosDeMentira {
@@ -89,10 +131,17 @@ impl Discos for DiscosDeMentira {
 
 /// Um sistema de arquivos na memoria. A escrita e atomica de graca: ou a
 /// entrada do mapa mudou, ou nao.
+///
+/// Os diretorios sao **implicitos**: gravar `E:\imagem\MD5SUMS` faz `E:\`
+/// listar `imagem` como diretorio, sem que ninguem precise cria-lo. E o que
+/// torna crivel montar uma arvore de imagens em tres linhas de teste — e um
+/// diretorio de verdade tambem so existe porque alguma coisa esta dentro
+/// dele. [`ArquivosEmMemoria::com_pasta_vazia`] cobre o caso restante.
 #[derive(Default)]
 pub struct ArquivosEmMemoria {
     conteudo: RefCell<BTreeMap<PathBuf, String>>,
     diretorios: RefCell<Vec<PathBuf>>,
+    datas: RefCell<BTreeMap<PathBuf, DateTime<Local>>>,
     pub espaco_livre: u64,
 }
 
@@ -108,15 +157,50 @@ impl ArquivosEmMemoria {
         self
     }
 
+    /// Uma pasta sem nada dentro — o residuo de um backup interrompido cedo
+    /// demais para ter escrito o primeiro arquivo.
+    pub fn com_pasta_vazia(self, caminho: impl Into<PathBuf>) -> ArquivosEmMemoria {
+        self.diretorios.borrow_mut().push(caminho.into());
+        self
+    }
+
+    /// Carimba uma data num caminho, para os testes que exibem data de imagem.
+    pub fn datado(self, caminho: impl Into<PathBuf>, momento_iso: &str) -> ArquivosEmMemoria {
+        self.datas
+            .borrow_mut()
+            .insert(caminho.into(), momento(momento_iso));
+        self
+    }
+
     pub fn conteudo_de(&self, caminho: impl AsRef<Path>) -> Option<String> {
         self.conteudo.borrow().get(caminho.as_ref()).cloned()
+    }
+
+    /// O filho imediato de `base` no caminho de um descendente, e se esse
+    /// filho e diretorio — o que se sabe por haver mais componentes depois
+    /// dele.
+    fn filho_imediato(base: &Path, descendente: &Path) -> Option<(PathBuf, bool)> {
+        let resto = descendente.strip_prefix(base).ok()?;
+        let mut componentes = resto.components();
+        let primeiro = componentes.next()?;
+        let e_diretorio = componentes.next().is_some();
+        Some((base.join(primeiro), e_diretorio))
     }
 }
 
 impl Arquivos for ArquivosEmMemoria {
     fn existe(&self, caminho: &Path) -> bool {
-        self.conteudo.borrow().contains_key(caminho)
-            || self.diretorios.borrow().iter().any(|d| d == caminho)
+        // `starts_with` cobre os dois casos de uma vez: o caminho exato, que
+        // comeca com ele mesmo, e o diretorio implicito, que existe porque
+        // alguma coisa mora dentro dele. Uma raiz so existe se ha algo nela —
+        // e por isso que um `ArquivosEmMemoria` vazio nao tem nem `E:\`.
+        let arquivos = self.conteudo.borrow();
+        arquivos.keys().any(|arquivo| arquivo.starts_with(caminho))
+            || self
+                .diretorios
+                .borrow()
+                .iter()
+                .any(|diretorio| diretorio.starts_with(caminho))
     }
 
     fn ler_texto(&self, caminho: &Path) -> Resultado<String> {
@@ -126,6 +210,10 @@ impl Arquivos for ArquivosEmMemoria {
                 "nao existe neste sistema de arquivos de mentira",
             ))
         })
+    }
+
+    fn ler_texto_alheio(&self, caminho: &Path) -> Resultado<String> {
+        self.ler_texto(caminho)
     }
 
     fn escrever_atomico(&self, caminho: &Path, conteudo: &str) -> Resultado<()> {
@@ -144,31 +232,48 @@ impl Arquivos for ArquivosEmMemoria {
     }
 
     fn listar(&self, caminho: &Path) -> Resultado<Vec<Entrada>> {
-        let arquivos = self.conteudo.borrow();
-        let mut entradas: Vec<Entrada> = arquivos
-            .iter()
-            .filter(|(filho, _)| filho.parent() == Some(caminho))
-            .map(|(filho, conteudo)| Entrada {
-                caminho: filho.clone(),
-                diretorio: false,
-                tamanho_bytes: conteudo.len() as u64,
-            })
-            .collect();
+        // Como o `read_dir` de verdade: caminho que nao existe e erro, nao
+        // diretorio vazio. Sem isto, um `arca list` apontado para a raiz
+        // errada imprimiria "Nenhuma imagem em ARCAVAULT" em todo teste e
+        // falharia em producao — divergencia que nenhum duplo pode ter.
+        if !self.existe(caminho) {
+            return Err(erro_de_arquivo("listagem", caminho)(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "nao existe neste sistema de arquivos de mentira",
+            )));
+        }
 
-        entradas.extend(
-            self.diretorios
-                .borrow()
-                .iter()
-                .filter(|filho| filho.parent() == Some(caminho))
-                .map(|filho| Entrada {
-                    caminho: filho.clone(),
-                    diretorio: true,
-                    tamanho_bytes: 0,
-                }),
-        );
+        let datas = self.datas.borrow();
+        let mut entradas: BTreeMap<PathBuf, Entrada> = BTreeMap::new();
 
-        entradas.sort_by(|a, b| a.caminho.cmp(&b.caminho));
-        Ok(entradas)
+        let mut anotar = |filho: PathBuf, diretorio: bool, tamanho_bytes: u64| {
+            let modificado_em = datas.get(&filho).copied();
+            entradas.entry(filho.clone()).or_insert(Entrada {
+                caminho: filho,
+                diretorio,
+                tamanho_bytes,
+                modificado_em,
+            });
+        };
+
+        for (arquivo, conteudo) in self.conteudo.borrow().iter() {
+            if let Some((filho, e_diretorio)) = Self::filho_imediato(caminho, arquivo) {
+                let tamanho = if e_diretorio {
+                    0
+                } else {
+                    conteudo.len() as u64
+                };
+                anotar(filho, e_diretorio, tamanho);
+            }
+        }
+
+        for diretorio in self.diretorios.borrow().iter() {
+            if let Some((filho, _)) = Self::filho_imediato(caminho, diretorio) {
+                anotar(filho, true, 0);
+            }
+        }
+
+        Ok(entradas.into_values().collect())
     }
 
     fn espaco_livre(&self, _caminho: &Path) -> Resultado<u64> {

@@ -9,7 +9,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | Etapa | O que entrega | Fase | Status | Concluída em |
 |---|---|---|---|---|
 | E0 | Fundação executável | I | ✅ | 2026-08-22 11:47 |
-| E1 | Descoberta do dispositivo e das imagens | I | ⬜ | — |
+| E1 | Descoberta do dispositivo e das imagens | I | ✅ | 2026-08-22 13:42 |
 | E2 | Leitura do firmware | I | ⬜ | — |
 | E3 | Geração e validação da receita | II | ⬜ | — |
 | E4 | Desarmar | II | ⬜ | — |

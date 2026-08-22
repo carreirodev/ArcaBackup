@@ -2,6 +2,7 @@
 
 use crate::erro::{Resultado, erro_de_arquivo};
 use crate::portas::{Arquivos, Entrada};
+use chrono::{DateTime, Local};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -26,6 +27,11 @@ impl Arquivos for ArquivosDoSistema {
 
     fn ler_texto(&self, caminho: &Path) -> Resultado<String> {
         fs::read_to_string(caminho).map_err(erro_de_arquivo("leitura", caminho))
+    }
+
+    fn ler_texto_alheio(&self, caminho: &Path) -> Resultado<String> {
+        let bytes = fs::read(caminho).map_err(erro_de_arquivo("leitura", caminho))?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
     fn escrever_atomico(&self, caminho: &Path, conteudo: &str) -> Resultado<()> {
@@ -76,6 +82,7 @@ impl Arquivos for ArquivosDoSistema {
                 caminho: item.path(),
                 diretorio: metadados.is_dir(),
                 tamanho_bytes: metadados.len(),
+                modificado_em: metadados.modified().ok().map(DateTime::<Local>::from),
             });
         }
 

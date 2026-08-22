@@ -5,6 +5,7 @@
 //! que e mais util do que o comando nao existir.
 
 use crate::cli::{Cli, Comando};
+use crate::comandos;
 use crate::erro::{Erro, Resultado};
 use crate::portas::{Arquivos, Discos, Firmware, Relogio};
 use crate::registro::Registro;
@@ -28,9 +29,10 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
     ));
 
     let (comando, etapa) = match &cli.comando {
+        Comando::List => return comandos::list::executar(contexto),
+
         Comando::Backup { .. } => ("backup", "E7"),
         Comando::Resultado => ("resultado", "E8"),
-        Comando::List => ("list", "E1"),
         Comando::Restore => ("restore", "E9"),
         Comando::Verify { .. } => ("verify", "E11"),
         Comando::Status => ("status", "E2"),
@@ -70,7 +72,6 @@ mod testes {
         for (argumentos, etapa_esperada) in [
             (vec!["arca", "backup", "n"], "E7"),
             (vec!["arca", "resultado"], "E8"),
-            (vec!["arca", "list"], "E1"),
             (vec!["arca", "restore"], "E9"),
             (vec!["arca", "verify", "n"], "E11"),
             (vec!["arca", "status"], "E2"),
@@ -86,6 +87,38 @@ mod testes {
                 outro => panic!("esperava etapa nomeada, veio {outro}"),
             }
         }
+
+        let _ = std::fs::remove_dir_all(registro.caminho().parent().unwrap());
+    }
+
+    #[test]
+    fn list_ja_e_despachado_para_a_etapa_e1() {
+        // O ramo do `list` deixou de nomear etapa: ele faz o trabalho. Sem
+        // dispositivo conectado, o que ele devolve e a recusa da descoberta —
+        // e nunca `AindaNaoImplementado`.
+        let arquivos = ArquivosEmMemoria::novo();
+        let discos = DiscosDeMentira::default();
+        let firmware = FirmwareDeMentira::novo();
+        let relogio = RelogioParado::em("2026-08-22T11:42:03");
+        let registro = Registro::em(
+            std::env::temp_dir().join(format!("arca-list-{}", std::process::id())),
+            Box::new(RelogioDoSistema),
+        );
+
+        let contexto = Contexto {
+            dry_run: false,
+            registro: &registro,
+            firmware: &firmware,
+            discos: &discos,
+            arquivos: &arquivos,
+            relogio: &relogio,
+        };
+
+        let erro = executar(&Cli::parse_from(["arca", "list"]), &contexto).unwrap_err();
+        assert!(
+            matches!(erro, Erro::DispositivoAusente),
+            "esperava a recusa da descoberta, veio {erro}"
+        );
 
         let _ = std::fs::remove_dir_all(registro.caminho().parent().unwrap());
     }

@@ -1,0 +1,8 @@
+//! Um modulo por comando da §8 do PRD.
+//!
+//! Cada um recebe o [`crate::app::Contexto`] com as portas e devolve o que
+//! imprimir. A montagem da saida fica em funcao pura, separada da impressao,
+//! porque a saida do `arca list` e criterio de aceite da etapa E1 — e
+//! criterio de aceite merece teste que rode sem o dispositivo conectado.
+
+pub mod list;

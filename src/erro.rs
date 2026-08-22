@@ -64,6 +64,35 @@ pub enum Erro {
 
     #[error("nao foi possivel saber se este processo esta elevado: {0}")]
     ElevacaoIndeterminada(String),
+
+    /// Nenhum volume respondeu com o rotulo `ARCAVAULT`, e ha duas razoes
+    /// possiveis para isso — a mensagem nomeia as duas, como C-12 exige do
+    /// desfecho ausente. Um volume que existe mas nao responde a consulta
+    /// (bloqueado pelo BitLocker, ainda montando) some da enumeracao do mesmo
+    /// jeito que um dispositivo desconectado, e dizer so "conecte o
+    /// dispositivo" mandaria o usuario conectar o que ja esta na mesa.
+    #[error(
+        "nenhum dispositivo ARCA conectado: nao ha volume que responda pelo rotulo ARCAVAULT. Ou o dispositivo nao esta conectado, ou o volume dele nao respondeu — um volume bloqueado pelo BitLocker ou ainda montando nao aparece"
+    )]
+    DispositivoAusente,
+
+    /// C-10. Dois rotulos iguais tornam o destino ambiguo, e e por rotulo que
+    /// a receita resolve o destino (S-3).
+    #[error(
+        "ha {quantos} volumes com o rotulo {rotulo} conectados, e o ARCA opera um dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele repetido nao ha o que escolher. Desconecte os demais"
+    )]
+    DispositivosDemais {
+        rotulo: &'static str,
+        quantos: usize,
+    },
+
+    #[error(
+        "o volume {rotulo} nao tem letra atribuida, e sem letra nao ha caminho por onde lê-lo. Atribua uma no Gerenciamento de Disco"
+    )]
+    VolumeSemLetra { rotulo: &'static str },
+
+    #[error("o dispositivo conectado nao tem a particao {rotulo}")]
+    ParticaoAusente { rotulo: &'static str },
 }
 
 impl Erro {

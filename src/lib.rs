@@ -11,9 +11,13 @@
 pub mod adaptadores;
 pub mod app;
 pub mod cli;
+pub mod comandos;
+pub mod dispositivo;
 pub mod duplos;
 pub mod elevacao;
 pub mod erro;
+pub mod formato;
+pub mod imagens;
 pub mod portas;
 pub mod registro;
 
