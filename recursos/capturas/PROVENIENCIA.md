@@ -33,6 +33,64 @@ receita sozinha.
 | `grub-restauracao-arca-teste-02.cfg` | `R:\boot\grub\grub.cfg.teste02` — a restauração de `ARCA-TESTE-02`, 19/08/2026 |
 | `ocs-sr-help.txt` | `E:\ARCA-LOGS\ocs-sr-help.txt` — o `--help` do `ocs-sr` **desta versão** do Clonezilla |
 
+## O estado inerte e a quarta cópia armada (etapa E4)
+
+Cópias byte a byte, conferidas por SHA256 contra o dispositivo depois de
+gravadas.
+
+| Arquivo | O que é | SHA256 |
+|---|---|---|
+| `grub-inerte-arcaboot.cfg` | `R:\boot\grub\grub.cfg` — o **estado inerte** deste dispositivo, 11069 bytes | `4b33da61…f947aa3d` |
+| `grub-clonezilla-original.cfg` | `R:\boot\grub\grub.cfg.original` — o que o **Clonezilla instalou**, 05/07/2026, 11058 bytes | `9ebfa1eb…068d331b` |
+| `grub-backup-arca-teste-01.cfg` | `R:\boot\grub\grub.cfg.teste01` — uma **quarta** cópia armada, 19/08/2026, não usada na E3 | `cbbe6d5a…63c3f762` |
+
+O `grub-inerte-arcaboot.cfg` é o alvo do desarmar, e o oráculo da etapa E4
+inteira. Não é um arquivo montado por teste: é o que está no dispositivo agora.
+`tests/e4_desarmar_o_dispositivo.rs` compara os dois a cada execução com o SSD
+conectado — uma cópia que divergiu do que documenta deixou de ser evidência.
+
+O `grub-clonezilla-original.cfg` responde de onde vem o estado inerte. Ele
+difere do inerte em **uma linha**: traz `set default="0"` onde o inerte traz
+`set default="live-default"`. Desarmar o dele produz o inerte byte a byte, e é
+isso que torna a regra do [ADR-0005](../../docs/adr/0005-o-estado-inerte-se-reconstroi-do-grub-cfg-corrente.md)
+verificável em vez de arbitrária.
+
+### O que estas três mostram e a E3 não tinha visto
+
+- **Armar são duas mudanças, e uma delas não estava documentada.** O inerte e a
+  `teste-03` diferem em exatamente duas coisas: o `set default` e o bloco de
+  quatro linhas. **É o `set default` que faz o boot ser desatendido** — o
+  `menuentry` sozinho só põe mais uma linha no menu. Ver §3.2 do PRD.
+- **As quatro cópias armadas põem o bloco na mesma posição**, linhas 93–97,
+  precedido de duas linhas em branco e seguido de uma. Um `diff` contra o
+  inerte ancora umas depois da linha 91 e outras depois da 92, o que sugere
+  duas formas de inserção — mas é artefato do algoritmo desambiguando linhas
+  em branco repetidas. Os arquivos são iguais nessa região.
+- **Só uma das quatro tem `set default="arca-backup"`**: a `teste-03`, que veio
+  do `ARCAVAULT`. As três que estavam no `ARCABOOT` têm o bloco e
+  `set default="live-default"` — o estado em que a máquina esperaria trinta
+  segundos e bootaria no menu normal. Por quê é pergunta **fechada por falta de
+  evidência**, com as três vias nomeadas no ADR-0005: datas não (S-6),
+  `BootNext` não (o firmware o consome), dedução não (foi o que produziu os
+  dois casos anteriores de fundação que não era).
+- **Os blocos do ARCA não são iguais entre si.** A `teste-02` preserva o
+  `hostname=cl-3.3.3-15` e as blacklists de driver do `menuentry` base; a
+  `teste-03` perdeu os dois. Não há forma canônica transcrita — escolher qual a
+  E7 vai inserir é decidir que linha de comando o kernel recebe, e é da E7.
+
+### O que continua sem estar aqui
+
+**Nenhum `bootsequence`.** Continua valendo o que a E2 registrou: não há job
+armado nesta máquina, e armar é a E7.
+
+A E4 é a **primeira etapa que escreve no firmware**, e escreve sem original
+nenhum de onde transcrever. O `bcdedit /deletevalue {fwbootmgr} bootsequence` é
+**código novo**, do mesmo jeito que o `arca-fim.txt` do ADR-0004 — marcado como
+tal em `src/desarme.rs` e nos testes. O que dele foi medido em hardware, em
+22/08/2026, é o comportamento **sem** `bootsequence`: código de saída 1, texto
+"Elemento não encontrado", e nada muda. O caso com `bootsequence` presente está
+coberto por caso construído no duplo, e a E7 o confirma.
+
 A receita está numa linha só de cada arquivo: a `$linux_cmd` do `menuentry`
 com `--id arca-backup`. `src/receita.rs` a extrai de lá nos testes, em vez de
 repetir a string a mão — uma string repetida a mão prova que eu sei copiar; o

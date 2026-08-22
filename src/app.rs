@@ -32,6 +32,12 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
         Comando::List => return comandos::list::executar(contexto),
         Comando::Status => return comandos::status::executar(contexto),
 
+        // C-1: desarmar acontece incondicionalmente e sem consultar estado
+        // nenhum. Continua sendo o primeiro passo dos comandos que armam — a
+        // E7 e a E8 o chamam de dentro; aqui ele tambem e alcancavel sozinho,
+        // que e o que responde ao caso "o boot nao aconteceu" do §5.5.
+        Comando::Desarmar => return comandos::desarmar::executar(contexto),
+
         // Com `--dry-run` o backup ja monta e imprime as receitas (E3); sem
         // ele, quem arma e a E7 — e e o proprio comando que diz isso, porque
         // o nome ainda precisa ser julgado por B-2 antes de qualquer resposta.

@@ -186,6 +186,16 @@ pub struct Leitura {
     /// O `bootsequence` do gerenciador de firmware: o boot unico armado. Vazio
     /// quando nao ha nenhum — que e o estado inerte de C-1.
     pub boot_unico: Vec<String>,
+
+    /// Se o bloco do `{fwbootmgr}` apareceu na enumeracao.
+    ///
+    /// Existe porque [`ler`] nunca falha: texto que ele nao entende vira
+    /// leitura vazia, e leitura vazia tem `boot_unico` vazio — que e
+    /// indistinguivel de "nao ha boot unico armado". Para quem **exibe**, dá
+    /// no mesmo. Para quem acabou de mandar apagar a marca e esta conferindo
+    /// se ela sumiu (C-3), nao dá: "nao entendi a resposta" viraria "desarmou"
+    /// e o boot unico continuaria armado. Ver [`crate::desarme`].
+    pub viu_o_gerenciador: bool,
 }
 
 impl Leitura {
@@ -270,6 +280,7 @@ pub fn ler(texto: &str) -> Leitura {
         if FWBOOTMGR.contains(&identificador.as_str()) {
             leitura.ordem_permanente = todos(DISPLAYORDER);
             leitura.boot_unico = todos(BOOTSEQUENCE);
+            leitura.viu_o_gerenciador = true;
             continue;
         }
 
@@ -574,6 +585,24 @@ mod testes {
             assert!(leitura.entradas.is_empty());
             assert!(leitura.entrada_do_arca().is_none());
             assert!(!leitura.tem_boot_unico());
+
+            // E o que separa "nao ha boot unico" de "nao consegui olhar". Para
+            // quem exibe, dá no mesmo; para a releitura de C-3 do desarmar,
+            // nao dá — ver `crate::desarme`.
+            assert!(
+                !leitura.viu_o_gerenciador,
+                "uma recusa nao pode passar por leitura do {{fwbootmgr}}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_enumeracao_de_verdade_traz_o_gerenciador_de_firmware() {
+        for captura in [PT, EN, LEGADO] {
+            assert!(
+                ler(captura).viu_o_gerenciador,
+                "o {{fwbootmgr}} esta nas tres capturas"
+            );
         }
     }
 

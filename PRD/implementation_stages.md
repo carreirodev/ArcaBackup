@@ -12,7 +12,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E1 | Descoberta do dispositivo e das imagens | I | ✅ | 2026-08-22 13:42 |
 | E2 | Leitura do firmware | I | ✅ | 2026-08-22 14:28 |
 | E3 | Geração e validação da receita | II | ✅ | 2026-08-22 16:04 |
-| E4 | Desarmar | II | ⬜ | — |
+| E4 | Desarmar | II | ✅ | 2026-08-22 17:36 |
 | E5 | Estado e selo | II | ⬜ | — |
 | E6 | Pré-voo | III | ⬜ | — |
 | E7 | Armar e disparar | III | ⬜ | — |
@@ -157,6 +157,57 @@ Reescrever o `grub.cfg` para o estado inerte — o menu normal do Clonezilla, qu
 **Cobre**: C-1
 **Pronto quando**: rodar duas vezes seguidas dá o mesmo resultado, e o dispositivo boota no menu normal do Clonezilla depois.
 
+**Executado de verdade em 22/08/2026, com o dispositivo conectado**, em quatro cenários, com o `grub.cfg` salvaguardado fora do dispositivo antes da primeira escrita. Todos saíram com código 0, e todos terminaram no `grub.cfg` inerte — SHA256 `4B33DA61…F947AA3D`, byte a byte:
+
+| # | Estado de partida | O que o comando fez |
+|---|---|---|
+| A | o inerte, **duas vezes seguidas** | as duas saídas são idênticas linha a linha, e o SHA256 não mudou nenhuma vez (C-1) |
+| A3 | o inerte, com `--dry-run` | não escreveu nada, no `grub.cfg` nem no firmware |
+| B | `grub.cfg.teste01`, uma cópia armada do próprio dispositivo | tirou o bloco do ARCA; voltou ao inerte |
+| C | `grub.cfg.original`, o que o **Clonezilla entrega**, com `set default="0"` | devolveu o `set default`; voltou ao inerte |
+| D | `grub-backup-arca-teste-03.cfg`, armada por inteiro | desfez **as duas** mudanças; voltou ao inerte |
+
+Nenhum `.arca-tmp` ficou para trás no diretório de que o `grub` lê. Os cenários foram escolhidos para que nenhum deles deixasse o dispositivo capaz de bootar desatendido se fosse interrompido no meio — só o D põe `set default="arca-backup"` no disco, por segundos, e não há boot único armado no firmware que fizesse a máquina chegar nele sozinha.
+
+**Um defeito de saída só apareceu na execução real.** No cenário C — `set default="0"`, sem `menuentry` do ARCA nenhum — o comando dizia *"Havia receita armada"*. Não havia: havia um `set default` que **armaria sozinho** na próxima inserção, que é outro problema. Quem lesse aquilo acharia que a máquina estava a um reinício de rodar um backup. As duas coisas passaram a ser nomeadas separadamente, e há teste para cada uma.
+
+**O critério de aceite foi cumprido pela metade verificável, e isso está dito de propósito.** "Rodar duas vezes seguidas dá o mesmo resultado" foi executado. "O dispositivo boota no menu normal do Clonezilla depois" **não foi observado**: custaria um reinício, e o que se pode afirmar sem ele é mais forte do que parece — o `grub.cfg` reescrito sai byte a byte igual ao que está no dispositivo hoje, que é o arquivo com que a máquina bootou todas as vezes desde 21/08. O boot fica confirmado no marco da E7, que reinicia de qualquer forma.
+
+**Medido nesta etapa, e não previsto pelo plano:**
+
+- **É o `set default` que faz o boot ser desatendido, e ele não estava documentado em lugar nenhum.** Passou três etapas sem ninguém perceber que existia. O `grub.cfg` inerte e a captura `grub-backup-arca-teste-03.cfg` diferem em **exatamente duas coisas**: `set default="live-default"` vira `set default="arca-backup"`, e um `menuentry --id arca-backup` de quatro linhas entra antes do `live-default`. **Inserir o bloco não arma nada** — a máquina espera os trinta segundos do `timeout` e boota no Clonezilla normal. Aplicado à §3.2 do PRD.
+- **`live-default` e nunca `0`.** O `grub.cfg` que o Clonezilla entrega traz `set default="0"`, e difere do inerte deste dispositivo **só nisso**. `"0"` aponta por **posição**, e o bloco do ARCA entra antes do `live-default`: com `"0"`, inserir o bloco arma sozinho. Um dispositivo assim não está inerte, está parecendo inerte. O desarmar devolve o `set default` para `live-default` qualquer que seja o valor que encontrou — e a prova de que essa é a regra certa é que desarmar o `grub.cfg.original` do Clonezilla produz o inerte de hoje, byte a byte.
+- **O PRD nunca definia o que é o estado inerte.** O §6.3 contava com ele, o §5.2 e o §5.4 mostravam `Desarmando ... ok` sem dizer o que é desarmar. Definido no §4.4, e definido de forma **verificável sem reiniciar** — o que é o que permite a etapa fechar sem marco em hardware.
+- **`bcdedit /deletevalue {fwbootmgr} bootsequence` chama de erro não ter o que apagar.** Medido: sem `bootsequence`, ele sai com **código 1** e "Elemento não encontrado", e o `/enum` antes e depois é idêntico — não muda nada. O adaptador da E0 converte código ≠ 0 em erro, e com razão, porque é assim que "Acesso negado" chega. Um desarmar ingênuo **falharia justamente no caso normal**, e a segunda das duas passadas que C-1 exige nunca passaria. A saída não é ler o texto da recusa, que é frase em dois idiomas: é descartar o que o `bcdedit` responde e conferir com `/enum` (C-3).
+- **C-1 e C-3 não brigam, e aqui C-3 é o que torna C-1 possível.** C-1 proíbe consultar estado *antes de decidir*; C-3 exige conferir *depois de escrever*. Como o código de saída do `bcdedit` é inútil exatamente no caso idempotente, a releitura é a única prova que existe.
+- **A escrita atômica nunca tinha rodado em produção, e o `ARCABOOT` é FAT32.** Medido antes de a primeira escrita acontecer, em `examples/escrita_atomica_no_fat32.rs`, e com uma cópia do `grub.cfg` guardada fora do dispositivo: renomear por cima de arquivo existente funciona, o `sync_all` funciona, o LF é preservado, o nome longo `grub.cfg.arca-tmp` é aceito e nenhum temporário fica para trás. A conclusão **não** é que a escrita virou transacional em FAT32 — é que a sequência funciona e não deixa resto. A janela continua existindo, e é por isso que o desarmar grava o estado seguro: interrompido no meio, o dispositivo continua com o que tinha.
+- **A "diferença de duas formas de inserção" entre as capturas não existe.** As quatro cópias armadas põem o bloco na mesma posição, linhas 93–97. O `diff` ancora umas depois da linha 91 e outras depois da 92 porque desambigua linhas em branco repetidas de jeitos diferentes. O desarmar tolera variação assim mesmo — nada garante que as próximas sejam idênticas —, mas a justificativa é precaução, e não observação.
+- **Os blocos do ARCA não são iguais entre si.** A `teste-02` preserva o `hostname=cl-3.3.3-15` e as blacklists de driver do `menuentry` base; a `teste-03` perdeu os dois. Não há forma canônica transcrita, e é por isso que `grub::armar` **recebe** o bloco pronto em vez de montá-lo: escolher entre eles é decidir que linha de comando o kernel recebe, e é da E7.
+- **Uma quarta cópia armada existia e não estava capturada**: `R:\boot\grub\grub.cfg.teste01`, de 19/08. Preservada agora, junto do inerte e do original do Clonezilla.
+
+**O que a revisão pegou, e que os testes não pegavam:**
+
+- **O desarmar podia engolir o `menuentry` seguinte, e o teste que existia para isso não pegava.** `achar_bloco` terminava o bloco na primeira linha `}` adiante, sem conferir se outro `menuentry` aparecia antes dela. O teste que eu tinha escrito construía um caso **sem `}` nenhum** até o fim do arquivo — e num `grub.cfg` de verdade sempre há um `}` adiante, o do próximo `menuentry`. Medido antes da correção, com um bloco do ARCA sem fechamento: o arquivo saiu **reduzido a uma linha**, com o `menuentry --id live-default` removido junto e o `set default` apontando para uma entrada que acabou de sumir — e esse arquivo iria para o dispositivo. Agora achar um abridor de bloco antes do fechamento é o mesmo que não achar fechamento: recusa, e nada é gravado. Uma segunda defesa cobra a pós-condição — tendo tirado bloco, o alvo do `set default` tem de existir no resultado.
+- **A releitura de C-3 tratava "não entendi a resposta" como "a marca sumiu".** `firmware::ler` nunca falha por desenho: texto irreconhecível vira leitura vazia, e leitura vazia tem `boot_unico` vazio — indistinguível de estar inerte. Um `bcdedit` que saísse zero com a saída noutro formato faria o ARCA dizer "não havia" com o boot único ainda armado, e o próximo reinício rodaria a receita velha. Pior: a conferência de C-5 logo abaixo compararia duas listas vazias e passaria junto. `Leitura` passou a dizer se viu o `{fwbootmgr}`, e o desarmar falha alto quando não viu. **É o mesmo padrão do ADR-0004**: uma peça nova (a releitura) encaixada numa peça antiga (um parser que, para exibir, faz certo em não falhar).
+- **A remoção da linha em branco adjacente podia apagar uma que o ARCA não pôs.** O ramo "senão remove a de antes" existia por causa das "duas formas de inserção" do briefing — que se revelaram artefato do `diff`. Ele saiu: agora só sai a linha em branco **de depois**, que é a que `armar` insere. Uma linha em branco a mais é inofensiva; colar duas entradas do Clonezilla uma na outra contradiria o que o módulo promete.
+- **Faltava `#[cfg(windows)]` no exemplo da medição de FAT32**, e sem ele o `cargo check --all-targets` quebraria fora do Windows — uma configuração que `src/main.rs` diz explicitamente querer manter compilando.
+
+Os dois primeiros são o mesmo padrão de sempre, e o primeiro tem um agravante que vale registrar: **eu tinha escrito um teste para exatamente aquele perigo, e ele passava.** O caso que construí era mais fácil do que o real — sem `}` nenhum, em vez de com o `}` errado logo adiante. Um teste que exercita o caso fácil de um perigo dá a impressão de cobri-lo.
+
+**Decidido nesta etapa:**
+
+- **O estado inerte se reconstrói do `grub.cfg` corrente** — não vem de cópia embutida no binário nem guardada no dispositivo. Idempotência de graça, funciona num dispositivo que o ARCA nunca viu, e não prende o ARCA a uma versão do Clonezilla. Os dois caminhos descartados e o que a reconstrução custa estão no [ADR-0005](../docs/adr/0005-o-estado-inerte-se-reconstroi-do-grub-cfg-corrente.md).
+- **`src/grub.rs` fica com as duas metades, e a E4 usa uma.** A função de armar é pura, não escreve em disco nem toca no firmware, e o ponto sem volta continua na E7 — a regra "só se arma o que já se sabe desarmar" não é furada. Ela existe agora por causa de um teste que só é possível com as duas juntas: tira-se o bloco de uma cópia armada, desarma-se, arma-se de volta, e o resultado tem de ser a cópia byte a byte. Com só o desarmar, a etapa testaria contra um alvo que ela mesma inventou.
+- **`arca desarmar` vira comando**, acrescentado à §8. Desarmar continua sendo o primeiro passo de todo comando que arma; o comando existe porque o §5.5 descreve um caso que não tinha resposta — "o boot não aconteceu", depois do qual o dispositivo continua armado e não havia nada a rodar. E é a única forma de exercitar a idempotência de C-1 sem armar.
+- **A linha do §5.2 leva o caminho**: `Desarmando receita anterior ..... ok · R:\boot\grub\grub.cfg`, com o caminho na coluna do **valor** — no rótulo ele estouraria a coluna 33 e desalinharia esta linha das que vêm depois dela. É a defesa barata contra desarmar o dispositivo errado enquanto `discos_fisicos()` não existir: com dois dispositivos na mesa, a letra errada aparece na tela. A pendência de fundo fica para a E6, como decidido.
+- **Apagar o `bootsequence` não viola B-10.** B-10 fala de imagem, resíduo e log — do que o usuário perderia. A marca de boot único é uma intenção que o próprio ARCA gravou. `tests/b10_nada_e_apagado.rs` varre o código atrás de exclusão de *arquivo* e não distingue os dois casos, e por isso está escrito em `src/desarme.rs`, onde alguém vá procurar.
+
+**Aberto nesta etapa, e não resolvido aqui:**
+
+- **P-18 — o boot único da §3.1 pode nunca ter sido disparado por boot único.** As capturas de NVRAM mostram `BootCurrent: 0001` e `Boot0001* ARCA`: a máquina bootou pela entrada de firmware do ARCA, confirmado. Isso é **indistinguível de alguém ter escolhido essa mesma entrada com F12**. Nenhuma captura tem `BootNext`, e a ausência não prova nada — o firmware o consome ao usá-lo, e as capturas foram feitas de dentro do Clonezilla. É o terceiro candidato ao padrão de P-16. Fecha na E7.
+- **Por que três das quatro cópias armadas não têm o `set default`** apontando para o ARCA. Fechada por falta de evidência, com as três vias nomeadas no ADR-0005 para o próximo não refazer o caminho: datas não (S-6 e ADR-0001), `BootNext` não, dedução não. **E não importa** — nas duas explicações possíveis o `set default` faz parte do que se arma, logo faz parte do que se desarma.
+- **O `menuentry` que a E7 vai inserir de verdade.** A E4 entrega a função pura e a testa; escolher a forma do bloco é da E7.
+
 ### E5 · Estado e selo
 
 `estado.json` no `ARCABOOT` — nunca no `C:`, que a restauração substitui (§4.1). Campos: selo, comando, nome, disco alvo, momento do armar (informativo, **nunca comparado com nada escrito pelo Linux**, S-6). Escrita atômica: arquivo temporário mais renomeação.
@@ -233,7 +284,7 @@ Nenhum requisito do PRD fica sem etapa.
 | E1 | B-1, B-3, B-10, S-3, D7 |
 | E2 | C-3, C-4, C-6 |
 | E3 | C-2, B-2, B-7, B-8, B-9, R-4, R-5, S-4 |
-| E4 | C-1 |
+| E4 | C-1 — e aplica C-3 (releitura depois de escrever) e defende C-5 (a ordem permanente não muda ao desarmar) |
 | E5 | R-6, S-6 |
 | E6 | B-2, B-3, B-4, B-5, B-6 |
 | E7 | C-4, C-5, C-9, S-2 |

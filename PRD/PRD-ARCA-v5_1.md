@@ -3,7 +3,8 @@
 **Automatizador de Clonezilla para backup e restauração de imagem de disco.**
 
 Versão 5.1 · 22/08/2026 · Substitui a v4
-Última revisão: 22/08/2026, etapa E3 — §3.1, §3.2, §3.5, §10 e os requisitos B-8, B-9, C-6, R-4, R-5, R-6, S-4 reescritos contra as receitas preservadas em `recursos/capturas/`
+Última revisão: 22/08/2026, etapa E4 — §3.2 ganhou o `set default`, que é o que faz o boot ser desatendido e não estava documentado; §4.4 define o **estado inerte**, que o §5.2, o §5.4 e o §6.3 pressupunham; §8 ganhou `arca desarmar`; P-18 aberta sobre a §3.1
+Revisão anterior: etapa E3 — §3.1, §3.2, §3.5, §10 e os requisitos B-8, B-9, C-6, R-4, R-5, R-6, S-4 reescritos contra as receitas preservadas em `recursos/capturas/`
 Uso pessoal · Um usuário · Sem distribuição
 
 > **As fundações não são hipótese.** O mecanismo descrito neste documento foi
@@ -65,7 +66,7 @@ Tudo abaixo foi medido em hardware, não projetado.
 
 | Fato | Evidência |
 |---|---|
-| Entrada de firmware apontando para SSD externo funciona | Boot único disparado e executado, múltiplas vezes |
+| Entrada de firmware apontando para SSD externo funciona | A máquina bootou pela entrada de firmware do ARCA, múltiplas vezes. **Que o disparo tenha sido por boot único, e não por F12, é o que a evidência não separa** — ver P-18 |
 | `bcdedit` **rejeita mídia removível em silêncio** — responde "êxito" e mantém o valor antigo | Pendrive testado e recusado; SSD aceito |
 | Partição primária comum basta — não precisa marcar tipo EFI | SSD preparado assim boota normalmente |
 | O `bcdedit` **não traduz** os nomes de campo: só `identificador` sai em português | Parser por valor é o correto |
@@ -93,6 +94,27 @@ Tudo abaixo foi medido em hardware, não projetado.
 | **Verificação não roda sozinha em batch** — `ocs-chkimg` tem que ser chamado | Primeiro backup gerou checksum que ninguém conferiu |
 | **Pipe (`\|`, `tee`) invalida a string inteira**: o Clonezilla descarta a receita e abre o menu interativo, sem executar nada | Medido. Só redirecionamento simples (`>`, `>>`) é permitido |
 | **A receita é uma string única em `ocs_live_run="bash -c '...'"`**, numa linha só do `grub.cfg` — nunca um script de várias linhas | As três receitas preservadas em `recursos/capturas/` |
+| **É o `set default` do `grub.cfg` que faz o boot ser desatendido**, e não o `menuentry` da receita. Inserir o bloco só põe mais uma linha no menu | Diff do `grub.cfg` inerte contra `grub-backup-arca-teste-03.cfg`: duas diferenças, e uma delas é o `set default` |
+
+> **O `set default` não estava documentado, e é ele que dispara a receita.**
+> Medido na etapa E4. Um `grub.cfg` armado difere do inerte em **exatamente
+> duas coisas**: `set default="live-default"` vira `set default="arca-backup"`,
+> e um `menuentry ... --id arca-backup` de quatro linhas entra antes do
+> `live-default`. Nada mais no arquivo muda — nem `timeout`, nem os outros
+> `menuentry`.
+>
+> A ordem de importância entre as duas é o achado. **O `menuentry` sozinho não
+> arma nada**: a máquina espera os trinta segundos do `timeout` e boota no
+> Clonezilla normal. Duas das três receitas preservadas estão exatamente nesse
+> estado — bloco presente, `set default` em `live-default` —, e nelas nenhuma
+> receita rodaria.
+>
+> **`live-default` e nunca `0`.** O `grub.cfg` que o Clonezilla entrega traz
+> `set default="0"`, que aponta por **posição** — e a posição muda, porque o
+> bloco do ARCA entra antes do `live-default` e passa a ser o índice 0. Um
+> dispositivo com `"0"` está armado no instante em que o bloco é inserido, sem
+> que ninguém toque no `set default`: não é o estado inerte, é um estado que
+> parece inerte. Ver [ADR-0005](../docs/adr/0005-o-estado-inerte-se-reconstroi-do-grub-cfg-corrente.md).
 
 ### 3.3 — Backup validado
 
@@ -123,6 +145,7 @@ Restauração real sobre o `nvme0n1`. Do comando ao Windows restaurado, **sem in
 |---|---|
 | P-6 | **O `ocs-sr` devolve código diferente de zero quando falha?** O ramo de sucesso foi medido; o de falha não. Uma restauração bem-sucedida não fecha isso, por definição. Fecha com falha forçada, provavelmente em VM |
 | P-16 | **O mecanismo de desfecho nunca rodou.** Nenhuma das três receitas preservadas escreve `arca-fim.txt`, grava selo ou usa `if/then/else`. O `arca-fim.txt` que existe no dispositivo veio de trabalho manual de validação, como o `ARCA_VEREDITO=` do ADR-0003. **S-4, C-11, C-12, R-5 e R-6 são código novo**, e a E7 é a primeira execução de todos eles ao mesmo tempo |
+| P-18 | **O boot único da §3.1 pode nunca ter sido disparado por boot único.** As capturas de NVRAM mostram `BootCurrent: 0001` e `Boot0001* ARCA`: a máquina bootou pela entrada de firmware do ARCA, confirmado. Isso é **indistinguível de alguém ter escolhido essa mesma entrada com F12**. Nenhuma captura de `efibootmgr` tem `BootNext`, e a ausência não prova nada — o firmware o consome ao usá-lo, e as capturas foram feitas já de dentro do Clonezilla. É o terceiro candidato ao padrão de P-16: documentado como validado, possivelmente nunca rodado pelo caminho que o documento supõe. Fecha na E7, que é quem arma de verdade. Aberta na E4 |
 
 > **Uma advertência sobre esta seção inteira.** Duas vezes já se descobriu que
 > algo documentado como fundação validada na verdade veio do **trabalho de
@@ -173,6 +196,34 @@ Isso existe porque **não há relógio comum**: o Clonezilla lê o RTC (hora loc
 
 O selo resolve quatro casos com um mecanismo só: desfecho de um job anterior, desfecho vindo de dentro de uma imagem antiga (§11, job fantasma), desfecho ausente porque o boot nunca aconteceu, e arquivo truncado por desligamento no meio.
 
+### 4.4 — O estado inerte
+
+O documento pressupunha este estado sem nunca defini-lo. O §6.3 conta com ele
+("boote pelo dispositivo com F12 e use o menu do Clonezilla"), e o §5.2 e o §5.4
+mostram `Desarmando ... ok` sem dizer o que é desarmar. Definido na etapa E4:
+
+> **Estado inerte** é o `grub.cfg` do dispositivo **sem** nenhum
+> `menuentry --id arca-backup` e com `set default="live-default"`, e o
+> `{fwbootmgr}` **sem** `bootsequence`.
+
+Um dispositivo inerte boota no menu normal do Clonezilla e fica esperando
+alguém. Um dispositivo armado executa a receita e desliga sozinho.
+
+**Desarmar é levar o dispositivo a esse estado**, incondicionalmente e sem
+consultar estado nenhum (C-1). O estado inerte não é uma cópia guardada em
+lugar nenhum: é o que sai de aplicar essa regra ao `grub.cfg` que está no
+dispositivo. Isso o torna idempotente de graça — a segunda passada não acha
+bloco e encontra o `set default` já no lugar — e faz o desarmar funcionar num
+dispositivo que o ARCA nunca viu, inclusive num armado à mão.
+
+**A definição é verificável sem reiniciar**, que é o que permite a E4 fechar
+sem um marco em hardware: o `grub.cfg` reescrito ou sai byte a byte igual ao
+inerte conhecido, ou não sai.
+
+Ver [ADR-0005](../docs/adr/0005-o-estado-inerte-se-reconstroi-do-grub-cfg-corrente.md)
+para por que `live-default` e não `0`, e para os dois caminhos descartados —
+embutir a cópia no binário e guardá-la no dispositivo.
+
 ## 5. Fluxo: backup
 
 ### 5.1 — O que o usuário faz
@@ -199,7 +250,7 @@ Origem: KINGSTON SNV3S500G · 498,7 GB · 92 GB em uso
 Imagem estimada: ~36 GB · espaco suficiente
 
 
-  Desarmando receita anterior ..... ok
+  Desarmando receita anterior ..... ok · R:\boot\grub\grub.cfg
   Inicializacao rapida ............ desativada   ok
   chkdsk /scan .................... limpo        ok
   Nome disponivel ................. ok
@@ -212,6 +263,12 @@ Digite o nome do backup para confirmar: 2026-08-22_Apps
 
 Reiniciando...
 ```
+
+> **A primeira linha traz o caminho, e não só `ok`.** Enquanto `discos_fisicos`
+> não existir (E6), nada prova que o `ARCAVAULT` e o `ARCABOOT` encontrados são
+> do mesmo dispositivo físico — C-10 recusa rótulo **repetido**, não rótulo
+> órfão. Com dois dispositivos meio prontos na mesa, a letra errada aparece na
+> tela de quem está olhando. É a única defesa possível sem enumerar disco.
 
 ### 5.3 — O que acontece sem intervenção
 
@@ -322,7 +379,16 @@ arca list                 # imagens no dispositivo conectado
 arca restore              # lista, confirma e reinicia para restaurar
 arca verify <nome>        # confere os MD5SUMS, sem reiniciar
 arca status               # diagnostico: dispositivo, firmware, job pendente
+arca desarmar             # devolve o dispositivo ao estado inerte (§4.4)
 ```
+
+**`arca desarmar` não substitui C-1.** Desarmar continua sendo o primeiro passo
+de todo comando que arma — não é algo que o usuário precise lembrar de fazer. O
+comando existe pelo caso que o §5.5 já descreve e não atendia: *"sem
+`arca-fim.txt`, com job pendente — o boot não aconteceu"*. Depois dele o
+dispositivo continua armado e não havia nada a rodar, porque `arca resultado`
+exige desfecho e `arca backup` armaria de novo. É também a única forma de
+exercitar a idempotência de C-1 sem armar. Acrescentado na etapa E4.
 
 Duas flags:
 
@@ -339,7 +405,7 @@ Todos exigem privilégio administrativo.
 
 | ID | Requisito |
 |---|---|
-| C-1 | **Desarmar a receita anterior incondicionalmente**, como primeiro passo, sem consultar estado nenhum |
+| C-1 | **Desarmar a receita anterior incondicionalmente**, como primeiro passo, sem consultar estado nenhum. O estado a que se volta está definido no §4.4, e é reconstruído do `grub.cfg` corrente — o que torna a operação idempotente sem que ninguém precise garanti-lo |
 | C-2 | **Validar a receita antes de gravar** no `grub.cfg`: rejeitar pipes, **toda** aspa (não só as desbalanceadas — um par de aspas simples fecha o `bash -c` e abre outra string), substituição de comando, caractere de controle, não-ASCII, e a linha que não coubesse no `COMMAND_LINE_SIZE` do kernel (§10.2.3). Nomes inseguros já param antes, em B-2 |
 | C-3 | Nunca confiar no retorno do `bcdedit`; sempre conferir com `/enum` e parsear **por valor** |
 | C-4 | Procurar a entrada `ARCA`; não havendo, migrar a legada `Clonezilla` em vez de criar outra |
@@ -551,6 +617,8 @@ Cada uma custou uma execução real para aparecer.
 | ARCA dentro da imagem | Restaurar devolve versões antigas com defeitos já corrigidos | §4.1 |
 | Pasta sem `MD5SUMS` | Resíduo de backup interrompido; recusar só imagem válida empurra o usuário a regravar por cima dos fragmentos | B-3 |
 | Boot no removível após `poweroff` | Não reproduzido, causa não determinada | C-9 |
+| `set default="0"` no `grub.cfg` | Aponta por **posição**, e o `menuentry` do ARCA entra antes do `live-default`: inserir o bloco arma sozinho, sem ninguém tocar no `set default`. Um dispositivo assim não está inerte, está parecendo inerte | Desarmar devolve o `set default` para `live-default` qualquer que seja o valor que encontrou (§4.4, ADR-0005) |
+| `bcdedit /deletevalue` chamando de erro não ter o que apagar | Apagar um `bootsequence` que não existe sai com código 1 sem mudar nada. Um desarmar que propagasse isso falharia justamente no caso normal, e a idempotência de C-1 nunca passaria | Descartar o que o `bcdedit` responde e conferir com `/enum` (C-3) |
 
 ## 12. Decisões e pendências
 
@@ -578,6 +646,8 @@ Cada uma custou uma execução real para aparecer.
 | Restaurar em disco diferente é permitido, recusado só se menor | O disco de origem morrer é o motivo de existir backup de imagem |
 | Clonezilla com versão fixada e checksum embutido | Checksum baixado do mesmo servidor que o arquivo não verifica nada |
 | O binário roda de onde estiver; só o estado é obrigado a morar no `ARCABOOT` | O que a restauração não pode devolver é o julgamento, não o executável |
+| O estado inerte se **reconstrói** do `grub.cfg` corrente, e não vem de cópia embutida nem guardada no dispositivo | Idempotência de graça, e funciona num dispositivo que o ARCA nunca viu. Embutir prenderia o ARCA a uma versão do Clonezilla e descartaria a configuração de hardware daquele dispositivo a cada desarmar ([ADR-0005](../docs/adr/0005-o-estado-inerte-se-reconstroi-do-grub-cfg-corrente.md)) |
+| O `set default` volta sempre para `live-default`, nunca para `0` | `"0"` aponta por posição, e a posição muda quando o bloco do ARCA entra (§4.4) |
 
 ### Pendências
 
@@ -585,6 +655,7 @@ Cada uma custou uma execução real para aparecer.
 |---|---|
 | P-6 | O `ocs-sr` devolve código ≠ 0 quando falha? Fecha com falha forçada em VM |
 | P-7 | O deslocamento de 3 h é permanente. Existe para a próxima pessoa que for comparar datas |
+| P-18 | **O boot único pode nunca ter sido disparado por boot único** — ver §3.5. `BootCurrent: 0001` prova que a máquina bootou pela entrada do ARCA, e não separa isso de um F12 na mesma entrada. Fecha na E7 |
 | P-14 | `arca resultado` deve rodar sozinho no logon? Começar sem, decidir com uso |
 | ~~P-15~~ | ~~A receita de backup publicada em §10.1 divergia da fundação §3.2 quanto ao `-batch`.~~ **Fechada em 22/08/2026, etapa E3.** `-batch` rodou, nas três receitas preservadas em `recursos/capturas/`. O help do `ocs-sr` diz por que é `-batch` e não `-b`: em parâmetro de boot, o `init` do sistema também honraria `-b` |
 | P-16 | **O mecanismo de desfecho nunca rodou** — ver §3.5. Fecha no marco em hardware da E7, que estreia `arca-fim.txt`, selo na receita, `ARCA_FIM` e `if/then/else` de uma vez |

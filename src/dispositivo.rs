@@ -36,6 +36,14 @@ pub const ARCA_LOGS: &str = "ARCA-LOGS";
 /// E5; daqui ate la, saber se ele existe ja diz se ha job por colher.
 pub const ESTADO_DO_JOB: &str = r"arca\estado.json";
 
+/// O `grub.cfg` do dispositivo, dentro do `ARCABOOT` (§4 do PRD).
+///
+/// E o arquivo em que a receita e gravada a cada operacao, e e o unico arquivo
+/// de que a maquina depende para bootar. Quem o devolve ao estado inerte e
+/// [`crate::desarme`]; quem sabe as duas operacoes inversas sobre o texto dele
+/// e [`crate::grub`].
+pub const RECEITA_NO_GRUB: &str = r"boot\grub\grub.cfg";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dispositivo {
     pub vault: Volume,
@@ -78,6 +86,11 @@ impl Dispositivo {
     /// O caminho do `estado.json`, quando ha `ARCABOOT` para conte-lo.
     pub fn caminho_do_estado(&self) -> Resultado<PathBuf> {
         Ok(self.raiz_do_boot()?.join(ESTADO_DO_JOB))
+    }
+
+    /// O caminho do `grub.cfg`, quando ha `ARCABOOT` para conte-lo.
+    pub fn caminho_do_grub(&self) -> Resultado<PathBuf> {
+        Ok(self.raiz_do_boot()?.join(RECEITA_NO_GRUB))
     }
 }
 
@@ -256,6 +269,27 @@ mod testes {
         .unwrap();
         assert!(matches!(
             sem_boot.caminho_do_estado().unwrap_err(),
+            Erro::ParticaoAusente { .. }
+        ));
+    }
+
+    #[test]
+    fn o_grub_cfg_mora_no_arcaboot_e_so_la() {
+        // E o arquivo em que a receita e gravada, e o unico de que a maquina
+        // depende para bootar. Sem `ARCABOOT` nao ha caminho nenhum — e e por
+        // isso que desarmar exige a particao que `arca list` dispensa.
+        let dispositivo = encontrar(&DiscosDeMentira::com_dispositivo()).unwrap();
+        assert_eq!(
+            dispositivo.caminho_do_grub().unwrap(),
+            PathBuf::from(r"R:\boot\grub\grub.cfg")
+        );
+
+        let sem_boot = encontrar(&DiscosDeMentira::com_volumes(vec![volume(
+            ARCAVAULT, 'E', 1000, 500,
+        )]))
+        .unwrap();
+        assert!(matches!(
+            sem_boot.caminho_do_grub().unwrap_err(),
             Erro::ParticaoAusente { .. }
         ));
     }

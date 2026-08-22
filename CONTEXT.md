@@ -44,6 +44,14 @@ _Evitar_: agendar, disparar, configurar
 Devolver o `grub.cfg` ao estado inerte e limpar a marca de boot único. Acontece incondicionalmente como primeiro passo de todo comando.
 _Evitar_: cancelar, limpar, resetar
 
+**Estado inerte**:
+O `grub.cfg` sem nenhum `menuentry --id arca-backup` e com `set default="live-default"`, e o `{fwbootmgr}` sem `bootsequence`. Um dispositivo inerte boota no menu do Clonezilla e espera alguém. Não é uma cópia guardada: é o que sai de aplicar a regra ao `grub.cfg` que está no dispositivo.
+_Evitar_: estado limpo, estado original, estado padrão
+
+**`set default`**:
+A diretiva do `grub.cfg` que decide em que entrada a máquina boota sozinha. É ela que faz o boot ser desatendido — o `menuentry` da receita, sozinho, só põe mais uma linha no menu.
+_Evitar_: entrada padrão, boot padrão
+
 **Selo**:
 Identificador aleatório gerado ao armar, embutido na receita e devolvido pelo Clonezilla junto do desfecho. É o que liga um desfecho ao job que o produziu — o relógio do Clonezilla não serve para isso.
 _Evitar_: id, timestamp, marca de tempo

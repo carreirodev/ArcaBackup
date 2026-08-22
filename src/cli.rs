@@ -86,6 +86,15 @@ pub enum Comando {
 
     /// Diagnostico: dispositivo, firmware, job pendente.
     Status,
+
+    /// Devolve o dispositivo ao estado inerte: tira a receita do `grub.cfg` e
+    /// limpa a marca de boot unico.
+    ///
+    /// Desarmar continua sendo o primeiro passo de todo comando que arma
+    /// (C-1). Ele ganha um comando proprio para o caso em que o boot nao
+    /// aconteceu e o dispositivo ficou armado sem nada a colher — ver o
+    /// modulo [`crate::comandos::desarmar`].
+    Desarmar,
 }
 
 impl Comando {
@@ -99,6 +108,7 @@ impl Comando {
             Comando::Restore => "restore",
             Comando::Verify { .. } => "verify",
             Comando::Status => "status",
+            Comando::Desarmar => "desarmar",
         }
     }
 }
@@ -143,6 +153,7 @@ mod testes {
         assert_eq!(analisar(&["arca", "restore"]).comando.nome(), "restore");
         assert_eq!(analisar(&["arca", "verify", "n"]).comando.nome(), "verify");
         assert_eq!(analisar(&["arca", "status"]).comando.nome(), "status");
+        assert_eq!(analisar(&["arca", "desarmar"]).comando.nome(), "desarmar");
     }
 
     #[test]

@@ -31,6 +31,40 @@ pub enum Erro {
     #[error("receita recusada (C-2): {0}")]
     ReceitaRecusada(crate::receita::RecusaDaReceita),
 
+    /// O `grub.cfg` do dispositivo nao pode ser desarmado sem adivinhacao.
+    /// Como o de C-2, este erro chega **antes** da gravacao: um `grub.cfg`
+    /// armado ainda boota, e um pela metade nao.
+    #[error("o grub.cfg nao foi alterado: {0}")]
+    GrubRecusado(crate::grub::RecusaDoGrub),
+
+    /// C-3 na pratica: mandou-se apagar a marca de boot unico, e a releitura
+    /// mostra que ela continua la. O sucesso do `bcdedit` nunca foi prova; a
+    /// releitura e, e ela reprovou.
+    #[error(
+        "a marca de boot unico continua no firmware depois de mandada apagar, apontando para {entradas}. O bcdedit responde \"êxito\" sem ter feito nada em alguns casos, e e por isso que o ARCA confere com /enum. Rode `arca status` e confira o firmware antes de reiniciar"
+    )]
+    BootUnicoPersistente { entradas: String },
+
+    /// O `bcdedit` respondeu, e a resposta nao tinha o que se foi buscar.
+    ///
+    /// Distinta de [`Erro::FerramentaRecusou`], que e a ferramenta dizendo
+    /// nao. Aqui ela disse sim e devolveu algo que o parser nao reconheceu — e
+    /// `crate::firmware::ler` nunca falha, entao isso chegaria como leitura
+    /// vazia. Numa **exibicao**, leitura vazia e so uma tela vazia; numa
+    /// releitura de C-3, seria o ARCA concluindo que a marca de boot unico
+    /// sumiu porque nao conseguiu ver marca nenhuma.
+    #[error(
+        "o bcdedit respondeu ao /enum {alvo} sem trazer o gerenciador de firmware. Nao da para conferir se a marca de boot unico foi apagada, e o ARCA nao trata \"nao entendi a resposta\" como \"nao ha nada armado\". Rode `arca status` e confira o firmware antes de reiniciar"
+    )]
+    FirmwareIlegivel { alvo: &'static str },
+
+    /// C-5: a ordem permanente de boot mudou durante o desarmar, que nao tem
+    /// nada que ver com ela.
+    #[error(
+        "a ordem permanente de boot mudou durante o desarmar, de [{antes}] para [{depois}], e desarmar nunca deveria toca-la (C-5). Confira o firmware com `arca status`"
+    )]
+    OrdemPermanenteAlterada { antes: String, depois: String },
+
     /// O UAC foi recusado ou fechado. Nao e falha do ARCA, e uma decisao do
     /// usuario, e merece mensagem propria.
     #[error(

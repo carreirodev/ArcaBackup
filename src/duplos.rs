@@ -44,9 +44,29 @@ impl Relogio for RelogioParado {
 
 /// Um firmware de mentira: devolve o texto que lhe deram e guarda o que
 /// mandaram executar.
+///
+/// Sabe fazer tres coisas que o `bcdedit` de verdade faz e que os testes
+/// precisam reproduzir: responder de um jeito **antes** de uma escrita e de
+/// outro **depois** dela — que e como se testa C-3 sem hardware —, recusar o
+/// `/enum` como ele recusa sem privilegio, e recusar a escrita como ele recusa
+/// quando nao ha o que apagar.
 #[derive(Default)]
 pub struct FirmwareDeMentira {
     respostas: BTreeMap<String, String>,
+
+    /// O que o `/enum` passa a responder depois da primeira escrita. E assim
+    /// que um firmware que **obedeceu** se comporta, e sem isso nao ha como
+    /// testar a releitura de C-3.
+    respostas_depois: BTreeMap<String, String>,
+
+    /// Como o `bcdedit` recusa um `/enum`: sem privilegio, ele escreve "Acesso
+    /// negado" na saida padrao e sai com codigo 1.
+    recusa_do_enumerar: Option<Erro>,
+
+    /// Como o `bcdedit` recusa uma escrita. Medido: apagar um `bootsequence`
+    /// que nao existe sai com codigo 1 **sem mudar nada**.
+    recusa_do_executar: Option<Erro>,
+
     pub executados: RefCell<Vec<Vec<String>>>,
 }
 
@@ -60,10 +80,41 @@ impl FirmwareDeMentira {
         self.respostas.insert(alvo.to_string(), saida.to_string());
         self
     }
+
+    /// O que o `/enum <alvo>` responde **depois** de a primeira escrita ter
+    /// acontecido — um firmware que obedeceu.
+    pub fn respondendo_depois(mut self, alvo: &str, saida: &str) -> FirmwareDeMentira {
+        self.respostas_depois
+            .insert(alvo.to_string(), saida.to_string());
+        self
+    }
+
+    pub fn recusando_o_enumerar(mut self, recusa: Erro) -> FirmwareDeMentira {
+        self.recusa_do_enumerar = Some(recusa);
+        self
+    }
+
+    pub fn recusando_o_executar(mut self, recusa: Erro) -> FirmwareDeMentira {
+        self.recusa_do_executar = Some(recusa);
+        self
+    }
+
+    fn ja_escreveu(&self) -> bool {
+        !self.executados.borrow().is_empty()
+    }
 }
 
 impl Firmware for FirmwareDeMentira {
     fn enumerar(&self, alvo: &str) -> Resultado<String> {
+        if let Some(recusa) = &self.recusa_do_enumerar {
+            return Err(clonar_a_recusa(recusa));
+        }
+
+        if self.ja_escreveu() {
+            if let Some(saida) = self.respostas_depois.get(alvo) {
+                return Ok(saida.clone());
+            }
+        }
         Ok(self.respostas.get(alvo).cloned().unwrap_or_default())
     }
 
@@ -71,7 +122,34 @@ impl Firmware for FirmwareDeMentira {
         self.executados
             .borrow_mut()
             .push(argumentos.iter().map(|a| a.to_string()).collect());
-        Ok(String::new())
+
+        match &self.recusa_do_executar {
+            Some(recusa) => Err(clonar_a_recusa(recusa)),
+            None => Ok(String::new()),
+        }
+    }
+}
+
+/// O [`Erro`] nao e `Clone` — ele carrega `io::Error`, que nao e —, e o duplo
+/// precisa devolver a mesma recusa mais de uma vez. Aqui so as variantes que
+/// o `bcdedit` produz interessam; qualquer outra vira uma recusa generica,
+/// visivelmente rotulada, em vez de um `unwrap` escondido.
+fn clonar_a_recusa(recusa: &Erro) -> Erro {
+    match recusa {
+        Erro::FerramentaRecusou {
+            ferramenta,
+            codigo,
+            saida,
+        } => Erro::FerramentaRecusou {
+            ferramenta,
+            codigo: *codigo,
+            saida: saida.clone(),
+        },
+        outro => Erro::FerramentaRecusou {
+            ferramenta: "duplo",
+            codigo: -1,
+            saida: outro.to_string(),
+        },
     }
 }
 
@@ -142,6 +220,15 @@ pub struct ArquivosEmMemoria {
     conteudo: RefCell<BTreeMap<PathBuf, String>>,
     diretorios: RefCell<Vec<PathBuf>>,
     datas: RefCell<BTreeMap<PathBuf, DateTime<Local>>>,
+
+    /// Todo caminho que alguem tentou lê ou olhar, na ordem.
+    ///
+    /// Existe por causa de C-1: "sem consultar estado nenhum" so vira teste
+    /// se der para perguntar ao duplo o que foi consultado. Sem isto, um teste
+    /// de C-1 provaria no maximo que o `estado.json` nao **mudou** — e o
+    /// requisito nao e sobre mudar, e sobre nem olhar.
+    consultados: RefCell<Vec<PathBuf>>,
+
     pub espaco_livre: u64,
 }
 
@@ -176,6 +263,20 @@ impl ArquivosEmMemoria {
         self.conteudo.borrow().get(caminho.as_ref()).cloned()
     }
 
+    /// Se alguem chegou a olhar para este caminho — lendo ou perguntando se
+    /// existe. E o que torna C-1 verificavel.
+    pub fn foi_consultado(&self, caminho: impl AsRef<Path>) -> bool {
+        let caminho = caminho.as_ref();
+        self.consultados
+            .borrow()
+            .iter()
+            .any(|consultado| consultado == caminho)
+    }
+
+    fn anotar_consulta(&self, caminho: &Path) {
+        self.consultados.borrow_mut().push(caminho.to_path_buf());
+    }
+
     /// O filho imediato de `base` no caminho de um descendente, e se esse
     /// filho e diretorio — o que se sabe por haver mais componentes depois
     /// dele.
@@ -190,6 +291,8 @@ impl ArquivosEmMemoria {
 
 impl Arquivos for ArquivosEmMemoria {
     fn existe(&self, caminho: &Path) -> bool {
+        self.anotar_consulta(caminho);
+
         // `starts_with` cobre os dois casos de uma vez: o caminho exato, que
         // comeca com ele mesmo, e o diretorio implicito, que existe porque
         // alguma coisa mora dentro dele. Uma raiz so existe se ha algo nela —
@@ -204,6 +307,7 @@ impl Arquivos for ArquivosEmMemoria {
     }
 
     fn ler_texto(&self, caminho: &Path) -> Resultado<String> {
+        self.anotar_consulta(caminho);
         self.conteudo.borrow().get(caminho).cloned().ok_or_else(|| {
             erro_de_arquivo("leitura", caminho)(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
