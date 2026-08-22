@@ -34,6 +34,7 @@
 //! em `tests/s1_nenhum_acesso_raw.rs` cobra isso a cada build.
 
 pub mod arquivos;
+pub mod console;
 pub mod discos;
 pub mod entropia;
 pub mod firmware;
@@ -42,6 +43,7 @@ pub mod relogio;
 pub mod sistema;
 
 pub use arquivos::{Arquivos, Entrada};
+pub use console::Console;
 pub use discos::{DiscoFisico, Discos, TipoDeMidia, Volume};
 pub use entropia::Entropia;
 pub use firmware::Firmware;

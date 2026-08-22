@@ -7,7 +7,7 @@
 use crate::cli::{Cli, Comando};
 use crate::comandos;
 use crate::erro::{Erro, Resultado};
-use crate::portas::{Arquivos, Discos, Firmware, Relogio, Sistema};
+use crate::portas::{Arquivos, Console, Discos, Entropia, Firmware, Relogio, Sistema};
 use crate::registro::Registro;
 
 pub struct Contexto<'a> {
@@ -20,9 +20,21 @@ pub struct Contexto<'a> {
     pub arquivos: &'a dyn Arquivos,
     pub relogio: &'a dyn Relogio,
 
-    /// As operacoes do proprio sistema: Inicializacao Rapida (B-5) e `chkdsk`
-    /// (B-6). Quem as usa e o pre-voo da etapa E6.
+    /// As operacoes do proprio sistema: Inicializacao Rapida (B-5), `chkdsk`
+    /// (B-6) e o reinicio da etapa E7.
     pub sistema: &'a dyn Sistema,
+
+    /// De onde sai o selo (C-11).
+    ///
+    /// A E5 construiu a porta e **nao** a pôs aqui, de proposito: nada em
+    /// producao gerava selo, e um campo que nenhum comando lê e peso morto. A
+    /// E7 e quem arma, e armar e o instante em que o job passa a existir —
+    /// entao e agora que ela entra.
+    pub entropia: &'a dyn Entropia,
+
+    /// O que o usuario digita. Existe por S-2: a confirmacao por extenso e o
+    /// que separa "armou" de "nao armou", e sem porta ela nao teria teste.
+    pub console: &'a dyn Console,
 }
 
 pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
@@ -61,31 +73,66 @@ mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
     use crate::duplos::{
-        ArquivosEmMemoria, DiscosDeMentira, FirmwareDeMentira, RelogioParado, SistemaDeMentira,
+        ArquivosEmMemoria, DiscosDeMentira, ConsoleDeMentira, EntropiaDeMentira, FirmwareDeMentira, RelogioParado,
+        SistemaDeMentira,
     };
     use clap::Parser;
 
+    /// As portas de um despacho sem dispositivo na mesa.
+    struct Bancada {
+        arquivos: ArquivosEmMemoria,
+        discos: DiscosDeMentira,
+        firmware: FirmwareDeMentira,
+        relogio: RelogioParado,
+        sistema: SistemaDeMentira,
+        entropia: EntropiaDeMentira,
+        console: ConsoleDeMentira,
+        registro: Registro,
+    }
+
+    impl Bancada {
+        fn nova(etiqueta: &str) -> Bancada {
+            Bancada {
+                arquivos: ArquivosEmMemoria::novo(),
+                discos: DiscosDeMentira::default(),
+                firmware: FirmwareDeMentira::novo(),
+                relogio: RelogioParado::em("2026-08-22T11:42:03"),
+                sistema: SistemaDeMentira::novo(),
+                entropia: EntropiaDeMentira::com(&[0; 8]),
+                console: ConsoleDeMentira::mudo(),
+                registro: Registro::em(
+                    std::env::temp_dir()
+                        .join(format!("arca-{etiqueta}-{}", std::process::id())),
+                    Box::new(RelogioDoSistema),
+                ),
+            }
+        }
+
+        fn contexto(&self) -> Contexto<'_> {
+            Contexto {
+                dry_run: false,
+                registro: &self.registro,
+                firmware: &self.firmware,
+                discos: &self.discos,
+                arquivos: &self.arquivos,
+                relogio: &self.relogio,
+                sistema: &self.sistema,
+                entropia: &self.entropia,
+                console: &self.console,
+            }
+        }
+    }
+
+    impl Drop for Bancada {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(self.registro.caminho().parent().unwrap());
+        }
+    }
+
     #[test]
     fn cada_comando_nao_construido_nomeia_a_etapa_que_o_entrega() {
-        let arquivos = ArquivosEmMemoria::novo();
-        let discos = DiscosDeMentira::default();
-        let firmware = FirmwareDeMentira::novo();
-        let relogio = RelogioParado::em("2026-08-22T11:42:03");
-        let sistema = SistemaDeMentira::novo();
-        let registro = Registro::em(
-            std::env::temp_dir().join(format!("arca-despacho-{}", std::process::id())),
-            Box::new(RelogioDoSistema),
-        );
-
-        let contexto = Contexto {
-            dry_run: false,
-            registro: &registro,
-            firmware: &firmware,
-            discos: &discos,
-            arquivos: &arquivos,
-            relogio: &relogio,
-            sistema: &sistema,
-        };
+        let bancada = Bancada::nova("despacho");
+        let contexto = bancada.contexto();
 
         for (argumentos, etapa_esperada) in [
             (vec!["arca", "resultado"], "E8"),
@@ -103,39 +150,18 @@ mod testes {
                 outro => panic!("esperava etapa nomeada, veio {outro}"),
             }
         }
-
-        let _ = std::fs::remove_dir_all(registro.caminho().parent().unwrap());
     }
 
     #[test]
     fn os_comandos_ja_construidos_fazem_o_trabalho_em_vez_de_nomear_etapa() {
-        // `list` e `status` desde a E1 e a E2; `backup` entrou nesta lista na
-        // **E6**, quando deixou de responder "armar e a E7" para rodar o
-        // pre-voo do §5.2. Ele continua terminando antes de armar — quem
-        // confirma e arma e a E7 —, mas o que ele faz ate la e trabalho de
-        // verdade, e nao um aviso.
+        // `list` e `status` desde a E1 e a E2; `backup` entrou na E6, quando
+        // deixou de responder "armar e a E7" para rodar o pre-voo do §5.2, e
+        // passou a armar de verdade na **E7**.
         //
         // Sem dispositivo conectado, os tres devolvem a recusa da descoberta —
         // e nunca `AindaNaoImplementado`.
-        let arquivos = ArquivosEmMemoria::novo();
-        let discos = DiscosDeMentira::default();
-        let firmware = FirmwareDeMentira::novo();
-        let relogio = RelogioParado::em("2026-08-22T11:42:03");
-        let sistema = SistemaDeMentira::novo();
-        let registro = Registro::em(
-            std::env::temp_dir().join(format!("arca-list-{}", std::process::id())),
-            Box::new(RelogioDoSistema),
-        );
-
-        let contexto = Contexto {
-            dry_run: false,
-            registro: &registro,
-            firmware: &firmware,
-            discos: &discos,
-            arquivos: &arquivos,
-            relogio: &relogio,
-            sistema: &sistema,
-        };
+        let bancada = Bancada::nova("construidos");
+        let contexto = bancada.contexto();
 
         for argumentos in [
             vec!["arca", "list"],
@@ -148,7 +174,5 @@ mod testes {
                 "{argumentos:?}: esperava a recusa da descoberta, veio {erro}"
             );
         }
-
-        let _ = std::fs::remove_dir_all(registro.caminho().parent().unwrap());
     }
 }

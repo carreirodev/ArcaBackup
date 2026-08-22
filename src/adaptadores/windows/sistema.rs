@@ -61,6 +61,55 @@ impl Sistema for SistemaDoWindows {
             texto,
         })
     }
+
+    fn reiniciar(&self) -> Resultado<()> {
+        // # `shutdown /r /t 0`, e nao `ExitWindowsEx`
+        //
+        // A alternativa da API exige habilitar `SeShutdownPrivilege` no token
+        // deste processo antes de chamar — `OpenProcessToken`,
+        // `LookupPrivilegeValue`, `AdjustTokenPrivileges` — e depois lidar com
+        // o fato de que `AdjustTokenPrivileges` **sai com sucesso mesmo
+        // quando nao ajustou tudo**, e quem quiser saber precisa consultar o
+        // `GetLastError` a parte. E o mesmo modo de falha do `bcdedit` que
+        // C-3 existe para desconfiar: a chamada responde bem e nao fez o que
+        // se pediu.
+        //
+        // O `shutdown.exe` faz esse trabalho, e o codigo de saida dele diz se
+        // deu certo. E uma ferramenta do proprio Windows, como o `powercfg` e
+        // o `chkdsk` — a mesma categoria que criou esta porta.
+        //
+        // `/t 0` porque o aviso de C-9 ja foi impresso e a confirmacao de S-2
+        // ja foi digitada: uma contagem regressiva aqui so daria a impressao
+        // de haver uma chance de desistir que nao existe mais. O ponto sem
+        // volta ficou para tras quando o boot unico foi marcado.
+        let saida = Command::new("shutdown")
+            .args(["/r", "/t", "0"])
+            .output()
+            .map_err(|origem| Erro::Ferramenta {
+                ferramenta: "shutdown",
+                origem,
+            })?;
+
+        let codigo = saida.status.code().unwrap_or(-1);
+        if codigo != 0 {
+            // Ao contrario do `chkdsk`, aqui codigo diferente de zero **e**
+            // erro: o `shutdown` nao usa o codigo de saida para relatar
+            // achados, so para dizer que nao conseguiu. E um reinicio que nao
+            // aconteceu com o dispositivo armado nao pode passar por feito —
+            // quem lê precisa saber que a maquina continua no Windows com uma
+            // receita esperando.
+            let pagina = pagina_do_console();
+            let mut texto = de_pagina_de_codigo(&saida.stdout, pagina);
+            texto.push_str(&de_pagina_de_codigo(&saida.stderr, pagina));
+            return Err(Erro::FerramentaRecusou {
+                ferramenta: "shutdown",
+                codigo,
+                saida: texto.trim().to_string(),
+            });
+        }
+
+        Ok(())
+    }
 }
 
 /// Um `REG_DWORD` de `HKEY_LOCAL_MACHINE`, ou `None` quando ele nao esta la.

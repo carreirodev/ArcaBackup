@@ -7,11 +7,11 @@
 
 use crate::erro::{Erro, Resultado, erro_de_arquivo};
 use crate::portas::{
-    Arquivos, DiscoFisico, Discos, Entrada, Entropia, Firmware, Privilegios, Relogio,
+    Arquivos, Console, DiscoFisico, Discos, Entrada, Entropia, Firmware, Privilegios, Relogio,
     SaidaDeFerramenta, Sistema, TipoDeMidia, Volume,
 };
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -120,7 +120,57 @@ pub struct FirmwareDeMentira {
     /// que nao existe sai com codigo 1 **sem mudar nada**.
     recusa_do_executar: Option<Erro>,
 
+    /// O `{fwbootmgr}` **modelado**, em vez de respondido de cor.
+    ///
+    /// As duas formas anteriores — resposta fixa, e uma resposta antes da
+    /// primeira escrita e outra depois — chegaram ao limite na E7, e o limite
+    /// vale ser registrado: um comando que **desarma e depois arma** escreve
+    /// duas vezes no mesmo alvo, e as duas escritas esperam respostas
+    /// contrarias. Com "a primeira escrita vira a chave para sempre", o
+    /// `/deletevalue` do desarmar ja produzia a resposta do armar, e o
+    /// desarmar falhava dizendo que a marca sobreviveu.
+    ///
+    /// Aqui o duplo guarda o `bootsequence` como estado e o aplica: `/set`
+    /// poe, `/deletevalue` tira, e o `/enum` conta o que ha. E o que o
+    /// `bcdedit` de verdade faz — inclusive sair com codigo 1 ao apagar o que
+    /// nao existe, que e o comportamento medido na E4.
+    fwbootmgr: Option<RefCell<Fwbootmgr>>,
+
     pub executados: RefCell<Vec<Vec<String>>>,
+}
+
+/// O estado do `{fwbootmgr}` que o duplo modela.
+#[derive(Debug, Clone)]
+struct Fwbootmgr {
+    ordem_permanente: Vec<String>,
+    bootsequence: Vec<String>,
+}
+
+impl Fwbootmgr {
+    /// Como o `bcdedit` desta maquina enumera o gerenciador de firmware.
+    fn como_o_bcdedit_escreve(&self) -> String {
+        let mut saida = String::from(
+            "\r\nGerenciador de Inicialização de Firmware\r\n\
+             ----------------------------------------\r\n\
+             identificador           {fwbootmgr}\r\n",
+        );
+
+        for (campo, valores) in [
+            ("displayorder", &self.ordem_permanente),
+            ("bootsequence", &self.bootsequence),
+        ] {
+            for (indice, valor) in valores.iter().enumerate() {
+                if indice == 0 {
+                    saida.push_str(&format!("{campo:<24}{valor}\r\n"));
+                } else {
+                    saida.push_str(&format!("{:<24}{valor}\r\n", ""));
+                }
+            }
+        }
+
+        saida.push_str("timeout                 1\r\n");
+        saida
+    }
 }
 
 impl FirmwareDeMentira {
@@ -152,8 +202,58 @@ impl FirmwareDeMentira {
         self
     }
 
+    /// Modela o `{fwbootmgr}` em vez de responder de cor: o `/set` poe a
+    /// marca, o `/deletevalue` tira, e o `/enum` conta o que ha.
+    ///
+    /// E o que um comando que **desarma e depois arma** exige — ver o campo
+    /// [`FirmwareDeMentira::fwbootmgr`].
+    pub fn modelando_o_fwbootmgr(mut self, ordem_permanente: &[&str]) -> FirmwareDeMentira {
+        self.fwbootmgr = Some(RefCell::new(Fwbootmgr {
+            ordem_permanente: ordem_permanente.iter().map(|o| o.to_string()).collect(),
+            bootsequence: Vec::new(),
+        }));
+        self
+    }
+
     fn ja_escreveu(&self) -> bool {
         !self.executados.borrow().is_empty()
+    }
+
+    /// Aplica ao modelo o que o `bcdedit` faria, e diz se a chamada teria
+    /// saido com codigo zero.
+    ///
+    /// `None` quando esta escrita nao e do `{fwbootmgr}` modelado — e quem
+    /// responde por ela e o caminho de sempre, com a
+    /// [`FirmwareDeMentira::recusando_o_executar`] se houver uma.
+    ///
+    /// **O `_` devolvia `Some(true)`, e a revisao pegou.** Com isso, o
+    /// `recusa_do_executar` ficava morto sempre que o modelo estivesse ligado:
+    /// um teste escrito como `.modelando_o_fwbootmgr(...).recusando_o_executar(
+    /// acesso_negado())` — que e a forma natural de exercitar um `/set
+    /// description` ou `/set device` que falha — passava verde com a recusa
+    /// nunca disparando. Dois construtores que parecem compor e nao compõem
+    /// sao piores do que um que nao existe.
+    fn aplicar_ao_modelo(&self, argumentos: &[&str]) -> Option<bool> {
+        let modelo = self.fwbootmgr.as_ref()?;
+        match argumentos {
+            ["/set", "{fwbootmgr}", "bootsequence", entradas @ ..] => {
+                modelo.borrow_mut().bootsequence =
+                    entradas.iter().map(|e| e.to_string()).collect();
+                Some(true)
+            }
+            ["/deletevalue", "{fwbootmgr}", "bootsequence"] => {
+                let mut modelo = modelo.borrow_mut();
+                let havia = !modelo.bootsequence.is_empty();
+                modelo.bootsequence.clear();
+                // Medido na E4: apagar o que nao existe sai com codigo 1 e nao
+                // muda nada. E o caso normal, e e ele que um desarmar ingenuo
+                // transformaria em falha.
+                Some(havia)
+            }
+            // Escrita em outro alvo — a descricao de C-4, o `device` de C-6.
+            // O modelo so conhece o `{fwbootmgr}`.
+            _ => None,
+        }
     }
 }
 
@@ -161,6 +261,12 @@ impl Firmware for FirmwareDeMentira {
     fn enumerar(&self, alvo: &str) -> Resultado<String> {
         if let Some(recusa) = &self.recusa_do_enumerar {
             return Err(clonar_a_recusa(recusa));
+        }
+
+        if alvo == "{fwbootmgr}"
+            && let Some(modelo) = &self.fwbootmgr
+        {
+            return Ok(modelo.borrow().como_o_bcdedit_escreve());
         }
 
         if self.ja_escreveu() {
@@ -176,10 +282,27 @@ impl Firmware for FirmwareDeMentira {
             .borrow_mut()
             .push(argumentos.iter().map(|a| a.to_string()).collect());
 
-        match &self.recusa_do_executar {
-            Some(recusa) => Err(clonar_a_recusa(recusa)),
-            None => Ok(String::new()),
+        // A recusa injetada vem **antes** do modelo, e nao depois: quem a
+        // pediu quer exercitar um `bcdedit` que recusa, e o modelo nao pode
+        // engoli-la.
+        if let Some(recusa) = &self.recusa_do_executar {
+            return Err(clonar_a_recusa(recusa));
         }
+
+        if let Some(deu_certo) = self.aplicar_ao_modelo(argumentos) {
+            if deu_certo {
+                return Ok("A operação foi concluída com êxito.".to_string());
+            }
+            // A recusa medida em 22/08/2026, com o `{fwbootmgr}` sem
+            // `bootsequence`: codigo 1, e nada muda.
+            return Err(Erro::FerramentaRecusou {
+                ferramenta: "bcdedit",
+                codigo: 1,
+                saida: "Erro ao tentar excluir o elemento de dados especificado.\nElemento não encontrado.".to_string(),
+            });
+        }
+
+        Ok(String::new())
     }
 }
 
@@ -481,6 +604,15 @@ pub struct SistemaDeMentira {
     pub inicializacao_rapida: Resultado<Option<u32>>,
     pub chkdsk: Resultado<SaidaDeFerramenta>,
     pub conferidos: RefCell<Vec<char>>,
+
+    /// Quantas vezes mandaram reiniciar. E o unico jeito de um teste afirmar
+    /// que o reinicio **nao** aconteceu — e a E7 tem mais casos em que ele nao
+    /// deve acontecer do que casos em que deve.
+    pub reinicios: Cell<usize>,
+
+    /// A recusa do `shutdown`, quando se quer exercitar o caminho em que o
+    /// reinicio falha com o dispositivo ja armado.
+    pub recusa_ao_reiniciar: Option<Erro>,
 }
 
 impl Default for SistemaDeMentira {
@@ -492,6 +624,8 @@ impl Default for SistemaDeMentira {
                 texto: "Nao ha problemas no sistema de arquivos.\n".to_string(),
             }),
             conferidos: RefCell::new(Vec::new()),
+            reinicios: Cell::new(0),
+            recusa_ao_reiniciar: None,
         }
     }
 }
@@ -515,6 +649,17 @@ impl SistemaDeMentira {
         });
         self
     }
+
+    pub fn recusando_o_reiniciar(mut self, recusa: Erro) -> SistemaDeMentira {
+        self.recusa_ao_reiniciar = Some(recusa);
+        self
+    }
+
+    /// Quantas vezes o reinicio foi pedido. Zero e a resposta esperada na
+    /// maioria dos testes desta etapa.
+    pub fn reinicios(&self) -> usize {
+        self.reinicios.get()
+    }
 }
 
 impl Sistema for SistemaDeMentira {
@@ -531,6 +676,49 @@ impl Sistema for SistemaDeMentira {
             Ok(saida) => Ok(saida.clone()),
             Err(erro) => Err(clonar_a_recusa(erro)),
         }
+    }
+
+    fn reiniciar(&self) -> Resultado<()> {
+        // Conta antes de decidir se recusa: um `shutdown` que falhou tambem
+        // **foi chamado**, e um teste que confunde "nao chamou" com "chamou e
+        // nao deu" nao distingue os dois estados que importam aqui.
+        self.reinicios.set(self.reinicios.get() + 1);
+        match &self.recusa_ao_reiniciar {
+            Some(erro) => Err(clonar_a_recusa(erro)),
+            None => Ok(()),
+        }
+    }
+}
+
+/// Um console que responde o que lhe ensinaram, uma linha por chamada.
+///
+/// Existe para S-2 ter teste: a confirmacao digitada e o que separa "armou" de
+/// "nao armou", e um requisito de seguranca sem teste e uma frase. Esgotadas
+/// as respostas, devolve linha vazia — que e o que o `stdin` fechado faz, e o
+/// que nunca confirma nada.
+pub struct ConsoleDeMentira {
+    respostas: RefCell<std::collections::VecDeque<String>>,
+    pub lidas: Cell<usize>,
+}
+
+impl ConsoleDeMentira {
+    pub fn respondendo(linhas: &[&str]) -> ConsoleDeMentira {
+        ConsoleDeMentira {
+            respostas: RefCell::new(linhas.iter().map(|linha| linha.to_string()).collect()),
+            lidas: Cell::new(0),
+        }
+    }
+
+    /// Um console em que ninguem digitou nada.
+    pub fn mudo() -> ConsoleDeMentira {
+        ConsoleDeMentira::respondendo(&[])
+    }
+}
+
+impl Console for ConsoleDeMentira {
+    fn ler_linha(&self) -> Resultado<String> {
+        self.lidas.set(self.lidas.get() + 1);
+        Ok(self.respostas.borrow_mut().pop_front().unwrap_or_default())
     }
 }
 

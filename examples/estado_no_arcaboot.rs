@@ -29,7 +29,7 @@ fn main() {
     use arca::adaptadores::windows::entropia::EntropiaDoWindows;
     use arca::adaptadores::{ArquivosDoSistema, RelogioDoSistema};
     use arca::dispositivo;
-    use arca::estado::{Estado, MomentoDoArmar, gerar_selo};
+    use arca::estado::{Estado, MomentoDoArmar, Situacao, gerar_selo};
     use arca::nome::Nome;
     use arca::portas::Arquivos;
     use arca::receita::{Disco, Operacao};
@@ -92,9 +92,10 @@ fn main() {
         nome: Nome::novo("2026-08-22_Medicao").expect("nome valido"),
         disco: Disco::novo("nvme0n1").expect("disco valido"),
         armado_em: MomentoDoArmar::agora(&RelogioDoSistema),
+        situacao: Situacao::Armado,
     };
 
-    let json = original.como_json().expect("os cinco campos cabem");
+    let json = original.como_json().expect("os seis campos cabem");
     arquivos
         .escrever_atomico(&alvo, &json)
         .expect("escrita atomica no FAT32");

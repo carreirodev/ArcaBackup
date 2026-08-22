@@ -263,9 +263,17 @@ fn secao_do_firmware(leitura: &Leitura, dispositivo: &Dispositivo) -> String {
     let Some(achado) = leitura.entrada_do_arca() else {
         saida.push_str(&linha(&format!("Entrada {}", firmware::ARCA), "nenhuma"));
         saida.push_str(&linha(&format!("Entrada {}", firmware::LEGADA), "nenhuma"));
+        // Esta frase dizia "a etapa E7 cria a entrada", e a E7 chegou fazendo
+        // o contrario: ela **recusa** em vez de criar, porque criar uma
+        // entrada de firmware do zero e codigo sem original (C-4). Quem cria e
+        // o `arca prepare` da E10. Uma linha de diagnostico que promete uma
+        // saida que nao existe e pior do que uma que so descreve.
         saida.push_str(&format!(
-            "  Nao ha por onde bootar no dispositivo sem passar pelo F12. A etapa E7\n\
-             \x20 cria a entrada; ate la, ha {} entrada(s) de boot no firmware.\n",
+            "  Nao ha por onde bootar no dispositivo sem passar pelo F12, e `arca backup`\n\
+             \x20 recusa sem uma delas — armar migra a entrada que existe, e nao cria\n\
+             \x20 entrada de boot (C-4). Quem prepara um dispositivo do zero e o\n\
+             \x20 `arca prepare`, que a etapa E10 entrega. Ha {} entrada(s) de boot no\n\
+             \x20 firmware desta maquina.\n",
             leitura.entradas.len()
         ));
         return saida;
@@ -403,7 +411,7 @@ mod testes {
     use crate::duplos::{
         ArquivosEmMemoria, ArquivosQueRecusam, RelogioParado, momento, volume,
     };
-    use crate::estado::MomentoDoArmar;
+    use crate::estado::{MomentoDoArmar, Situacao};
     use crate::imagens::{Especie, Veredito};
     use crate::nome::Nome;
     use crate::receita::{Disco, Operacao, Selo};
@@ -423,6 +431,7 @@ mod testes {
             nome: Nome::novo("2026-08-22_Apps").unwrap(),
             disco: Disco::novo("nvme0n1").unwrap(),
             armado_em: MomentoDoArmar::agora(&RelogioParado::em("2026-08-22T18:14:03")),
+            situacao: Situacao::Armado,
         }
     }
 

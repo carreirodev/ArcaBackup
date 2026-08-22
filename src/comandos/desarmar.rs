@@ -13,10 +13,18 @@
 //!
 //! O segundo e um caso de uso que o PRD ja descreve e nao atende. O §5.5
 //! lista "sem `arca-fim.txt`, com job pendente — o boot nao aconteceu" como
-//! desfecho possivel. Depois dele o dispositivo continua armado, e ate aqui
-//! nao havia nada a rodar: `arca resultado` e a E8 e exige desfecho,
-//! `arca backup` armaria de novo. Um comando que so desarma e a resposta a
-//! "alguma coisa deu errado e eu quero o dispositivo de volta ao normal".
+//! desfecho possivel. Depois dele o dispositivo continua armado, e na E4 nao
+//! havia nada a rodar: `arca resultado` ainda era a E8, e `arca backup`
+//! armaria de novo. Um comando que so desarma e a resposta a "alguma coisa deu
+//! errado e eu quero o dispositivo de volta ao normal".
+//!
+//! **A E8 chegou e aquele caso ganhou outra saida**, e este comando continua
+//! valendo. O `arca resultado` de hoje atende a ausencia de desfecho: reporta
+//! as duas causas de C-12, desarma e encerra o job. O que ele **nao** faz e
+//! desarmar quando nao ha job nenhum a colher — misturar "colhi" com "arrumei"
+//! tiraria de quem lê a saida a informacao de qual das duas aconteceu. E o
+//! primeiro motivo acima nao muda: exercitar a idempotencia de C-1 sem armar
+//! continua exigindo um comando que so desarma.
 //!
 //! # O caminho aparece na tela, e nao so o `ok`
 //!
@@ -32,19 +40,18 @@
 //! defesa que existe — com dois dispositivos na mesa, a letra errada aparece
 //! na tela de quem esta olhando. Custa uma interpolacao.
 //!
-//! # Para a E5: o `estado.json` sobrevive a este comando, e tem de sobreviver
+//! # O `estado.json` sobrevive a este comando, e tem de sobreviver
 //!
-//! Desarmar nao consulta estado nenhum (C-1) e nao escreve nele. Quando a E5
-//! criar o `estado.json`, um `arca desarmar` seguido de um `arca status` vai
-//! mostrar "Boot unico: nao armado" ao lado de "Estado no ARCABOOT: presente"
-//! — o que lê como contradicao e nao e: o dispositivo esta inerte, e o job
-//! continua registrado por colher.
+//! Desarmar nao consulta estado nenhum (C-1) e nao escreve nele. Um
+//! `arca desarmar` seguido de um `arca status` mostra "Boot unico: nao armado"
+//! ao lado de um job **por colher** — o que lê como contradicao e nao e: o
+//! dispositivo esta inerte, e o job continua registrado.
 //!
-//! Quem resolve isso e a E8, que colhe o desfecho e ai sim encerra o job. O
-//! que **nao** pode acontecer e este comando passar a apagar o `estado.json`
-//! para a tela ficar bonita: seria consultar-e-decidir onde C-1 proibe, e
-//! apagaria a unica coisa que liga um desfecho encontrado depois ao job que o
-//! produziu (C-11).
+//! Quem encerra o job e o `arca resultado`, ao colher, marcando o
+//! `estado.json` como colhido (ADR-0008). O que **nao** pode acontecer e este
+//! comando passar a apagar o arquivo para a tela ficar bonita: seria
+//! consultar-e-decidir onde C-1 proibe, e apagaria a unica coisa que liga um
+//! desfecho encontrado depois ao job que o produziu (C-11).
 
 use crate::app::Contexto;
 use crate::desarme::{self, Desarme, MarcaDeBootUnico};
@@ -171,7 +178,8 @@ mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
     use crate::duplos::{
-        ArquivosEmMemoria, DiscosDeMentira, FirmwareDeMentira, RelogioParado, SistemaDeMentira,
+        ArquivosEmMemoria, DiscosDeMentira, ConsoleDeMentira, EntropiaDeMentira, FirmwareDeMentira, RelogioParado,
+        SistemaDeMentira,
     };
     use crate::erro::Erro;
     use crate::registro::Registro;
@@ -203,6 +211,8 @@ mod testes {
         firmware: FirmwareDeMentira,
         relogio: RelogioParado,
         sistema: SistemaDeMentira,
+        entropia: EntropiaDeMentira,
+        console: ConsoleDeMentira,
         registro: Registro,
     }
 
@@ -222,6 +232,8 @@ mod testes {
                 firmware,
                 relogio: RelogioParado::em("2026-08-22T11:42:03"),
                 sistema: SistemaDeMentira::novo(),
+                entropia: EntropiaDeMentira::com(&[0xa3, 0xf1, 0xc9, 0xe0, 0x7b, 0x2d, 0x48, 0x56]),
+                console: ConsoleDeMentira::mudo(),
                 registro: Registro::em(
                     std::env::temp_dir().join(format!(
                         "arca-desarmar-{}-{:?}",
@@ -242,6 +254,8 @@ mod testes {
                 arquivos: &self.arquivos,
                 relogio: &self.relogio,
                 sistema: &self.sistema,
+                entropia: &self.entropia,
+                console: &self.console,
             }
         }
     }

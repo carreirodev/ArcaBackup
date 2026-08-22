@@ -1,7 +1,7 @@
 //! O estado do job: o `estado.json` do `ARCABOOT` (§4.1, §4.3, C-11).
 //!
-//! Cinco campos — selo, comando, nome, disco alvo e momento do armar — num
-//! arquivo que mora **no dispositivo, e nunca no `C:`**. A razao esta no §4.1
+//! Seis campos — selo, comando, nome, disco alvo, momento do armar e situacao
+//! — num arquivo que mora **no dispositivo, e nunca no `C:`**. A razao esta no §4.1
 //! do PRD e nao e preferencia: o `C:` e o que a restauracao substitui, e o que
 //! julga a restauracao nao pode morar no disco que ela troca. Morando no
 //! `ARCABOOT`, o estado sobrevive a qualquer restauracao.
@@ -9,8 +9,8 @@
 //! # Sem `serde`, e por que isso nao e teimosia
 //!
 //! O `Cargo.toml` tem tres dependencias e nenhuma delas serializa JSON.
-//! Acrescentar `serde`/`serde_json` seria o caminho de sempre; escrever cinco
-//! campos a mao e menos codigo do que parece **porque os cinco valores nao
+//! Acrescentar `serde`/`serde_json` seria o caminho de sempre; escrever seis
+//! campos a mao e menos codigo do que parece **porque os seis valores nao
 //! podem conter nada que o JSON precise escapar** — e isso nao e sorte, e
 //! propriedade de validadores que ja existem:
 //!
@@ -21,10 +21,16 @@
 //! | nome | [`Nome::novo`] (B-2) | `A-Z a-z 0-9 . _ -` |
 //! | disco | [`Disco::novo`] | `[a-z][a-z0-9]*` |
 //! | momento | [`MomentoDoArmar`] | digitos, `-`, `:`, `T`, `+` |
+//! | situacao | [`Situacao`] | `armado` ou `colhido` |
 //!
 //! Nenhum deles alcanca `"`, `\`, caractere de controle ou nao-ASCII. Ainda
 //! assim [`campo`] confere antes de escrever, porque "ja foi validado" e
 //! exatamente o que este projeto ja viu ser falso duas vezes.
+//!
+//! O sexto campo entrou na etapa E8, e a premissa que sustenta escrever a mao
+//! continua de pe **porque ele tambem tem alfabeto fechado** — foi por isso
+//! que ele e um estado e nao uma data. O ADR-0006 avisava que a discussao
+//! voltaria com o campo novo na mesa, e ela voltou: ver [`Situacao`].
 //!
 //! Ver `docs/adr/0006-o-selo-e-o-estado-sem-dependencia-nova.md`.
 //!
@@ -136,7 +142,70 @@ impl fmt::Display for MomentoDoArmar {
     }
 }
 
-/// O job armado e ainda nao colhido.
+/// Se o job ainda espera desfecho, ou se ele ja foi colhido.
+///
+/// # Por que um estado, e nao apagar o arquivo
+///
+/// A pergunta e da etapa E8, e ela nasce de uma contradicao que a E5 deixou
+/// aberta: depois de um `arca desarmar`, o `arca status` mostrava "Boot unico:
+/// nao armado" ao lado de um job pendente. Colher encerra o job — e havia tres
+/// saidas para o `estado.json` ao encerrar: apagar, marcar, ou deixar e
+/// distinguir por outro sinal.
+///
+/// **Marcar.** As outras duas custam mais:
+///
+/// - **Apagar** obrigaria a discutir B-10 outra vez. O [`crate::desarme`] tem
+///   uma secao inteira defendendo que apagar o `bootsequence` nao fura B-10, e
+///   o argumento e que a marca de boot unico e uma **intencao** que o proprio
+///   ARCA gravou. O `estado.json` colhido nao e intencao, e **registro**: e o
+///   unico lugar que liga um selo a um nome de imagem. Apagado ele, um
+///   `arca-fim.txt` que aparecesse depois nao teria a quem pertencer, e a
+///   mensagem de job fantasma passaria a ser a resposta para tudo.
+/// - **Deixar e distinguir por outro sinal** — pela existencia do
+///   `arca-fim.txt`, por exemplo — poria a decisao do lado do reinicio que o
+///   ARCA nao escreve. E o sinal falharia justamente onde mais importa: um job
+///   cujo boot nao aconteceu **nao tem** `arca-fim.txt`, e ficaria pendente
+///   para sempre.
+///
+/// Marcar custa uma chave e nao apaga nada. O `arca status` passa a dizer
+/// "ultimo job, colhido" em vez de "job pendente", e a contradicao fecha.
+///
+/// # Nao e uma data, e de proposito
+///
+/// A tentacao seria gravar `colhido_em`. Duas razoes contra: precisaria de um
+/// valor sentinela enquanto o job nao foi colhido, e — a que pesa — poria mais
+/// um instante ao lado do `armado_em` num arquivo cujo tipo de tempo existe
+/// justamente para tornar a comparacao dificil (S-6, ADR-0006). Duas datas
+/// lado a lado sao um convite a subtrai-las.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Situacao {
+    /// Armado e ainda nao colhido. E o **job** do `CONTEXT.md`: existe entre o
+    /// reinicio e a leitura do desfecho.
+    Armado,
+
+    /// Colhido: o ARCA ja leu o que havia no lugar do desfecho e disse o que
+    /// era. Deixa de ser job pendente, qualquer que tenha sido o desfecho.
+    Colhido,
+}
+
+impl Situacao {
+    /// O texto que vai para o arquivo. Alfabeto fechado, como o de
+    /// [`Operacao`].
+    pub fn nome(self) -> &'static str {
+        match self {
+            Situacao::Armado => "armado",
+            Situacao::Colhido => "colhido",
+        }
+    }
+}
+
+impl fmt::Display for Situacao {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.nome())
+    }
+}
+
+/// O job armado, e se ele ja foi colhido.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Estado {
     /// O que liga este job ao desfecho que o Clonezilla escrever (§4.3).
@@ -148,10 +217,19 @@ pub struct Estado {
     pub disco: Disco,
 
     pub armado_em: MomentoDoArmar,
+
+    /// Se ha desfecho por colher. Acrescentado na etapa E8 — ver [`Situacao`].
+    pub situacao: Situacao,
 }
 
-/// As cinco chaves do arquivo, na ordem em que sao escritas.
-const CHAVES: [&str; 5] = ["selo", "comando", "nome", "disco", "armado_em"];
+/// As seis chaves do arquivo, na ordem em que sao escritas.
+///
+/// Eram cinco ate a etapa E8. A sexta e obrigatoria como as outras, e nao
+/// opcional: o leitor recusa chave faltando, e afrouxar isso para um campo so
+/// tiraria a propriedade que torna o leitor confiavel — ou o arquivo esta
+/// inteiro, ou nao se age sobre ele. Ha exatamente um escritor, e ele esta
+/// neste repositorio.
+const CHAVES: [&str; 6] = ["selo", "comando", "nome", "disco", "armado_em", "situacao"];
 
 impl Estado {
     /// O `estado.json`, em texto.
@@ -167,6 +245,7 @@ impl Estado {
             self.nome.como_texto(),
             self.disco.como_texto(),
             self.armado_em.como_texto(),
+            self.situacao.nome(),
         ];
 
         let mut linhas = Vec::with_capacity(CHAVES.len());
@@ -210,6 +289,7 @@ impl Estado {
         let nome = tomar(2)?;
         let disco = tomar(3)?;
         let armado_em = tomar(4)?;
+        let situacao = tomar(5)?;
 
         Ok(Estado {
             // Cada campo volta pelo **mesmo** validador que o julgou na ida.
@@ -221,8 +301,20 @@ impl Estado {
             nome: Nome::novo(&nome).map_err(RecusaDoEstado::NomeInvalido)?,
             disco: Disco::novo(&disco).map_err(|_| RecusaDoEstado::DiscoInvalido { tem: disco })?,
             armado_em: MomentoDoArmar::de_texto(&armado_em)?,
+            situacao: situacao_de_texto(&situacao)?,
         })
     }
+}
+
+fn situacao_de_texto(bruto: &str) -> Result<Situacao, RecusaDoEstado> {
+    for situacao in [Situacao::Armado, Situacao::Colhido] {
+        if situacao.nome() == bruto {
+            return Ok(situacao);
+        }
+    }
+    Err(RecusaDoEstado::SituacaoInvalida {
+        tem: bruto.to_string(),
+    })
 }
 
 /// Onde o desfecho deste job vai aparecer, do lado Windows.
@@ -443,9 +535,12 @@ pub enum RecusaDoEstado {
     MomentoInvalido {
         tem: String,
     },
+    SituacaoInvalida {
+        tem: String,
+    },
 
     /// Um valor precisaria de escape para caber no JSON. Nao deveria acontecer
-    /// — os cinco campos passam por validadores que o impedem —, e por isso
+    /// — os seis campos passam por validadores que o impedem —, e por isso
     /// mesmo e erro alto em vez de escape silencioso.
     ValorPrecisaEscape {
         chave: String,
@@ -509,9 +604,15 @@ impl fmt::Display for RecusaDoEstado {
                 f,
                 "`{tem}` nao tem a forma de um momento (`2026-08-22T18:14:03-03:00`)"
             ),
+            RecusaDoEstado::SituacaoInvalida { tem } => write!(
+                f,
+                "`{tem}` nao e situacao de job: so `{}` e `{}`",
+                Situacao::Armado.nome(),
+                Situacao::Colhido.nome()
+            ),
             RecusaDoEstado::ValorPrecisaEscape { chave, caractere } => write!(
                 f,
-                "o valor de `{chave}` tem `{caractere}`, que precisaria de escape no JSON. Nenhum dos cinco campos deveria alcancar esse caractere, e escrever o arquivo assim produziria um estado que nem o proprio ARCA leria"
+                "o valor de `{chave}` tem `{caractere}`, que precisaria de escape no JSON. Nenhum dos seis campos deveria alcancar esse caractere, e escrever o arquivo assim produziria um estado que nem o proprio ARCA leria"
             ),
         }
     }
@@ -531,6 +632,7 @@ mod testes {
             nome: Nome::novo("2026-08-22_Apps").unwrap(),
             disco: Disco::novo("nvme0n1").unwrap(),
             armado_em: MomentoDoArmar::agora(&RelogioParado::em("2026-08-22T18:14:03")),
+            situacao: Situacao::Armado,
         }
     }
 
@@ -609,11 +711,11 @@ mod testes {
     // ────────────────────────── ida e volta ──────────────────────────
 
     #[test]
-    fn os_cinco_campos_voltam_como_foram() {
+    fn os_seis_campos_voltam_como_foram() {
         // O teste que importa, e o unico que prova que escrever a mao nao
         // perdeu nada pelo caminho.
         let original = estado();
-        let json = original.como_json().expect("os cinco campos cabem no JSON");
+        let json = original.como_json().expect("os seis campos cabem no JSON");
         let volta = Estado::de_json(&json).expect("o proprio arquivo se lê");
 
         assert_eq!(volta, original);
@@ -634,7 +736,7 @@ mod testes {
     }
 
     #[test]
-    fn o_json_tem_as_cinco_chaves_e_nada_mais() {
+    fn o_json_tem_as_seis_chaves_e_nada_mais() {
         let json = estado().como_json().unwrap();
         for chave in CHAVES {
             assert!(
@@ -786,7 +888,7 @@ mod testes {
     }
 
     #[test]
-    fn os_cinco_campos_de_verdade_atravessam_sem_escape() {
+    fn os_seis_campos_de_verdade_atravessam_sem_escape() {
         // O outro lado: os alfabetos que B-2, `Selo` e `Disco` permitem nao
         // alcancam nada que o JSON precise escapar. E o que torna escrever a
         // mao defensavel, e nao so curto.
@@ -806,9 +908,64 @@ mod testes {
         }
     }
 
+    // ─────────────────────── a situacao (E8) ───────────────────────
+
+    #[test]
+    fn as_duas_situacoes_dao_a_volta() {
+        for situacao in [Situacao::Armado, Situacao::Colhido] {
+            let original = Estado {
+                situacao,
+                ..estado()
+            };
+            let volta = Estado::de_json(&original.como_json().unwrap()).unwrap();
+            assert_eq!(volta.situacao, situacao);
+            assert_eq!(volta, original);
+        }
+    }
+
+    #[test]
+    fn situacao_que_nao_existe_e_recusa_e_nao_um_padrao() {
+        // Um `estado.json` com situacao que este binario nao conhece veio de
+        // uma versao que sabe alguma coisa que esta nao sabe. Cair num padrao
+        // — "nao entendi, entao esta armado" — faria o ARCA agir sobre metade
+        // de um estado, que e o que o leitor inteiro existe para nao fazer.
+        let json = estado().como_json().unwrap().replace(
+            "\"situacao\": \"armado\"",
+            "\"situacao\": \"colhido-pela-metade\"",
+        );
+
+        match Estado::de_json(&json).unwrap_err() {
+            RecusaDoEstado::SituacaoInvalida { tem } => assert_eq!(tem, "colhido-pela-metade"),
+            outro => panic!("esperava a situacao invalida, veio {outro}"),
+        }
+    }
+
+    #[test]
+    fn um_estado_json_de_cinco_campos_e_recusado_por_chave_faltando() {
+        // O formato mudou na E8, e a mudanca e visivel em vez de silenciosa.
+        // Um arquivo da versao anterior nao vira "job armado por suposicao":
+        // ele e recusado nomeando a chave que falta, e quem lê decide.
+        let de_antes = concat!(
+            "{\n",
+            "  \"selo\": \"a3f1c9e07b2d4856\",\n",
+            "  \"comando\": \"backup\",\n",
+            "  \"nome\": \"2026-08-22_Apps\",\n",
+            "  \"disco\": \"nvme0n1\",\n",
+            "  \"armado_em\": \"2026-08-22T18:14:03-03:00\"\n",
+            "}\n"
+        );
+
+        assert_eq!(
+            Estado::de_json(de_antes),
+            Err(RecusaDoEstado::ChaveFaltando {
+                chave: "situacao"
+            })
+        );
+    }
+
     #[test]
     fn brancos_a_mais_nao_atrapalham_a_leitura() {
-        let frouxo = "  {  \"selo\" : \"a3f1c9e07b2d4856\" ,\n\t\"comando\":\"backup\", \"nome\":\"x\", \"disco\":\"sda\", \"armado_em\":\"2026-08-22T18:14:03-03:00\" }  \n";
+        let frouxo = "  {  \"selo\" : \"a3f1c9e07b2d4856\" ,\n\t\"comando\":\"backup\", \"nome\":\"x\", \"disco\":\"sda\", \"armado_em\":\"2026-08-22T18:14:03-03:00\", \"situacao\" : \"colhido\" }  \n";
         assert!(Estado::de_json(frouxo).is_ok());
     }
 

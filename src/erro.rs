@@ -55,7 +55,16 @@ pub enum Erro {
     /// dispositivo com job armado e estado corrompido continua armado, e
     /// tratar as duas coisas como iguais mandaria alguem reiniciar achando que
     /// nao ha nada esperando.
-    #[error("o estado do job nao pode ser lido: {0}")]
+    ///
+    /// A mensagem diz o que fazer, e nao so o que houve. Um `estado.json`
+    /// ilegivel e o caso em que o ARCA menos pode agir sozinho — ele nao sabe
+    /// qual job esta armado — e ao mesmo tempo aquele em que **o dispositivo
+    /// pode estar armado**. Sem a instrucao, quem lê fica com um diagnostico e
+    /// nenhuma saida, e a saida existe: `arca desarmar` nao consulta estado
+    /// nenhum (C-1) e por isso funciona justamente aqui.
+    #[error(
+        "o estado do job nao pode ser lido: {0}. Isto NAO quer dizer que nao ha job: o dispositivo pode estar armado, e o que dizia qual job era este se perdeu. Rode `arca status` para ver se ha boot unico armado, e `arca desarmar` para devolver o dispositivo ao estado inerte — ele nao consulta estado nenhum, e por isso funciona mesmo com este arquivo ilegivel. O ARCA nao apaga o arquivo (B-10)"
+    )]
     EstadoRecusado(crate::estado::RecusaDoEstado),
 
     /// A fonte de entropia do Windows recusou. Sem selo nao se arma (C-11):
@@ -70,6 +79,75 @@ pub enum Erro {
     /// armado ainda boota, e um pela metade nao.
     #[error("o grub.cfg nao foi alterado: {0}")]
     GrubRecusado(crate::grub::RecusaDoGrub),
+
+    /// Nao ha de onde derivar o `menuentry` do ARCA. Chega **antes** de
+    /// qualquer gravacao, como o de C-2.
+    #[error("o bloco do ARCA nao pode ser montado: {0}")]
+    MenuentryRecusado(crate::menuentry::RecusaDoMenuentry),
+
+    /// C-4 sem nada a migrar: nao ha entrada `ARCA` nem a legada `Clonezilla`.
+    ///
+    /// Criar uma entrada de firmware do zero e codigo sem original — nenhuma
+    /// captura mostra a forma —, e o lugar disso e o `arca prepare` da E10.
+    /// Armar nao e a hora de estrear a criacao de entrada de boot.
+    #[error(
+        "nao ha entrada de firmware chamada `ARCA` nem a legada `Clonezilla`, e sem uma delas nao ha por onde a maquina bootar no dispositivo sem F12. Criar uma entrada do zero e trabalho do `arca prepare`, que a etapa E10 entrega — armar nao cria entrada de boot"
+    )]
+    SemEntradaDeFirmware,
+
+    /// C-4 com C-3: mandou-se renomear a entrada legada e a releitura mostra
+    /// que ela continua com o nome antigo.
+    #[error(
+        "a entrada de firmware {identificador} devia ter sido migrada de `{de}` para `ARCA` e a releitura ainda mostra `{tem}`. O sucesso do bcdedit nunca e prova (C-3), e o ARCA nao arma sobre uma entrada que nao sabe se mexeu"
+    )]
+    EntradaNaoMigrou {
+        identificador: String,
+        de: String,
+        tem: String,
+    },
+
+    /// C-6 na pratica, e pela primeira vez: o `bcdedit` respondeu "êxito" e
+    /// manteve o valor antigo do `device`.
+    ///
+    /// E assim que a rejeicao silenciosa do §3.1 se revela — nao por etiqueta,
+    /// que essas palavras nao saem do `bcdedit`, mas pela releitura de C-3.
+    #[error(
+        "a entrada de firmware {identificador} devia apontar para `{esperado}` e a releitura mostra `{tem}`. O bcdedit responde \"êxito\" e mantem o valor antigo quando o alvo e midia removivel (C-6, §3.1) — um dispositivo assim boota por F12, nunca por entrada de firmware"
+    )]
+    AlvoDoFirmwareRecusado {
+        identificador: String,
+        esperado: String,
+        tem: String,
+    },
+
+    /// C-3 do lado de armar: mandou-se marcar o boot unico e a releitura nao
+    /// mostra a marca, ou mostra uma apontando para outra entrada.
+    ///
+    /// O dispositivo fica com receita gravada e a maquina reinicia no Windows.
+    /// O que este erro impede e o reinicio: um ARCA que reiniciasse aqui
+    /// dispararia o reinicio sem saber se armou.
+    #[error(
+        "a marca de boot unico devia apontar para {identificador} e a releitura mostra {tem}. O grub.cfg ficou com a receita gravada e a maquina NAO foi reiniciada: rode `arca desarmar` para devolver o dispositivo ao estado inerte"
+    )]
+    BootUnicoNaoArmou { identificador: String, tem: String },
+
+    /// O nome do disco de origem nao foi determinado, e armar exige um.
+    ///
+    /// **Nao ha caminho de "digite voce"**, e isso e decisao e nao omissao:
+    /// um nome de disco do Linux digitado do lado Windows nao tem contra o
+    /// que ser conferido, e a receita que o nomeia e destrutiva na E9. O
+    /// oraculo e o `blkdev.list` de dentro de uma imagem (§4.5), e ele so
+    /// existe depois do primeiro backup.
+    #[error(
+        "o nome que o Linux da ao disco de origem nao foi determinado, e a receita precisa dele: {porque}. O ARCA nao aceita esse nome digitado nem o deriva do indice do Windows — o indice do Windows nao e o do Linux, e um nome sem oraculo nomearia o disco errado numa receita (§4.5). Num dispositivo sem imagem nenhuma, o primeiro backup precisa ser feito uma vez pelo menu do Clonezilla; dali em diante o `blkdev.list` dele responde"
+    )]
+    DiscoDeOrigemPorDeterminar { porque: String },
+
+    /// S-2: a confirmacao digitada nao bate com o nome da imagem.
+    #[error(
+        "a confirmacao nao bate: era para digitar `{esperado}` e veio `{digitado}`. Nada foi armado"
+    )]
+    ConfirmacaoNaoBate { esperado: String, digitado: String },
 
     /// C-3 na pratica: mandou-se apagar a marca de boot unico, e a releitura
     /// mostra que ela continua la. O sucesso do `bcdedit` nunca foi prova; a

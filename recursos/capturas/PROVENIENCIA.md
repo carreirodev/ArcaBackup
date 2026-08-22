@@ -168,12 +168,103 @@ captura antiga é a única evidência real do caso "não há entrada `ARCA`, há
 legada `Clonezilla`", e é por isso que ela está aqui em vez de ter sido
 descartada por estar desatualizada.
 
+## As capturas de NVRAM que ficaram no dispositivo (etapa E7)
+
+Não estão neste diretório — estão em `E:\ARCA-LOGS\`, no dispositivo. Ficam
+onde estão de propósito: são oito arquivos grandes de `efibootmgr -v`, e o que
+importa deles cabe numa tabela. Ela está no **§3.1 do PRD**, e é lá que a
+próxima pessoa deve procurar.
+
+O resumo do que elas mostram, para quem chegar aqui primeiro:
+
+| Quando | Arquivo | `BootOrder` | `BootCurrent` |
+|---|---|---|---|
+| 20/08 | `nvram-original.txt` | `0000,0001` | `0001` |
+| 20/08 | `nvram-windows-antes.txt` (é `bcdedit`, não `efibootmgr`) | `{bootmgr}`, `{f4057bd0}`, +3 | — |
+| 20/08 | `R1/nvram-antes.txt`, `R1/nvram-depois.txt` | `0000,0001` | `0001` |
+| 20/08 | `R2/nvram-antes.txt`, `R2/nvram-depois.txt` | `0003,0000` | `0003` |
+| 21/08 | `2026-08-21_WindowsCompleto/nvram-antes.txt` e `-depois.txt` | `0001,0000` | `0001` |
+| 22/08 | `bcdedit /enum {fwbootmgr}` desta máquina | `{bootmgr}` | — |
+
+Três coisas que só aparecem lendo os arquivos inteiros, e não a tabela:
+
+- **`Boot0001` é a mesma entrada que o `{f4057bd0-…}` do `bcdedit`.** O
+  `efibootmgr -v` imprime os dados da variável, e lá está
+  `BCDOBJECT={f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}` em UTF-16 hexadecimal. É o
+  que liga as duas ferramentas, e o que dispensa deduzir a correspondência.
+- **O número da entrada mudou de `0001` para `0003`** entre as capturas de
+  20/08, o que só acontece quando ela é recriada.
+- **Nenhuma das oito tem `BootNext`**, e isso continua não provando nada: o
+  firmware o consome ao usá-lo, e todas foram feitas de dentro do Clonezilla.
+
+**A ordem permanente desta máquina foi alterada por alguém, mais de uma vez.**
+C-5 existe para impedir que o ARCA o faça, e a evidência é de que já foi feito à
+mão. Em 21/08 — o backup que o §3.3 chama de validado — o dispositivo estava em
+**primeiro**, o que explica o boot inteiro sem passar por boot único (P-18).
+
+## O `bootsequence`, medido pela primeira vez (etapa E7)
+
+A E2 e a E4 registraram aqui que **nenhuma captura tem `bootsequence`**, e que
+o formato estava coberto por caso construído. A E7 mediu, em 22/08/2026, com a
+entrada do ARCA **fora** do `displayorder`:
+
+```text
+> bcdedit /set {fwbootmgr} bootsequence {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}
+A operação foi concluída com êxito.                             (código 0)
+
+> bcdedit /enum {fwbootmgr}
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+bootsequence            {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}
+timeout                 1
+
+> bcdedit /deletevalue {fwbootmgr} bootsequence
+A operação foi concluída com êxito.                             (código 0)
+```
+
+O caso construído da E2 estava certo, byte a byte: `bootsequence` com o mesmo
+recuo dos outros campos, entre `displayorder` e `timeout`. E três coisas que
+não estavam medidas: o `bcdedit` **aceita** a marca para uma entrada de fora da
+ordem, o `displayorder` **não muda** nem ao pôr nem ao tirar, e com
+`bootsequence` presente o `/deletevalue` sai com **código 0** — ao contrário do
+código 1 medido na E4 quando não há o que apagar.
+
+**O que continua sem medição é se o firmware honra a marca.** Isso custa um
+reinício, e é o marco em hardware da E7. Ver
+[ADR-0007](../../docs/adr/0007-o-bloco-do-arca-deriva-do-live-toram.md).
+
+## O modelo do bloco do ARCA é o `live-toram` (etapa E7)
+
+Achado ao decidir a forma do `menuentry` que a E7 insere. A captura
+`grub-backup-arca-teste-02.cfg` é o `menuentry --id live-toram` do
+`grub-inerte-arcaboot.cfg` com **exatamente cinco** substituições — as cinco de
+§10.2.1 do PRD — e nada mais.
+
+O `live-default`, que era o candidato óbvio, **não tem** `toram`. O
+`live-toram` tem, e exatamente na posição em que as capturas armadas o mostram.
+Ninguém acrescentou o `toram`: ele veio junto do modelo, e o §10.2.1 do PRD o
+atribuía ao `menuentry` base sem dizer qual.
+
+Duas coisas mais, das mesmas comparações:
+
+- **O único byte em que a derivação e a `teste-02` divergem** é um espaço: a
+  captura tem dois entre `locales=en_US.UTF-8` e `keyboard-layouts=NONE`. É
+  rastro de edição à mão. O ARCA escreve um, e o teste **nomeia** a diferença
+  em vez de copiá-la — reproduzir um artefato de edição seria confundir o que
+  rodou com o que se quis.
+- **A `teste-03` perdeu nove parâmetros** que o modelo tem: `hostname`,
+  `ocs_live_extra_param`, as três `*.blacklist`, `vmwgfx.enable_fbdev`,
+  `ocs_1_cpu_udev`, `scsi_mod.use_blk_mq` e `nvme.poll_queues`. É a única das
+  quatro com `set default="arca-backup"` — a única que provavelmente rodou
+  desatendida —, e perdeu o parâmetro de NVMe numa máquina cujo disco de origem
+  é NVMe.
+
 ## O que nenhuma delas contém
 
-**Nenhum `bootsequence`.** Não há job armado nesta máquina, e armar um é a
-etapa E7 — a E2 não escreve no firmware. O formato do boot único está coberto
-por caso construído no teste, marcado como tal, e a E7 o confirma contra
-hardware quando armar pela primeira vez.
+**Nenhum `bootsequence`.** As capturas de `bcdedit` deste diretório continuam
+sem ele, e continuam certas: não há job armado nesta máquina. A medição do boot
+único da E7 está transcrita acima e não foi guardada em arquivo, porque o
+comando que a produziu desfez o que fez.
 
 **Nenhuma menção a `Removable Media` ou `External hard disk media`.** Estas
 palavras não são do `bcdedit`: são valores de `MediaType` do WMI

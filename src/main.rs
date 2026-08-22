@@ -13,7 +13,7 @@ use std::process::ExitCode;
 
 use arca::adaptadores::windows::firmware::Bcdedit;
 use arca::adaptadores::windows::volumes::VolumesDoWindows;
-use arca::adaptadores::{ArquivosDoSistema, RelogioDoSistema};
+use arca::adaptadores::{ArquivosDoSistema, ConsoleDoUsuario, RelogioDoSistema};
 use arca::app::{self, Contexto};
 use arca::cli::Cli;
 use arca::elevacao::{self, Rumo};
@@ -114,6 +114,8 @@ fn executar(brutos: &[String]) -> Desfecho {
     let arquivos = ArquivosDoSistema;
     let relogio = RelogioDoSistema;
     let sistema = sistema();
+    let entropia = entropia();
+    let console = ConsoleDoUsuario;
 
     let contexto = Contexto {
         dry_run: cli.dry_run,
@@ -123,6 +125,8 @@ fn executar(brutos: &[String]) -> Desfecho {
         arquivos: &arquivos,
         relogio: &relogio,
         sistema: sistema.as_ref(),
+        entropia: entropia.as_ref(),
+        console: &console,
     };
 
     let saida = match app::executar(&cli, &contexto) {
@@ -153,6 +157,20 @@ fn sistema() -> Box<dyn arca::portas::Sistema> {
 #[cfg(not(windows))]
 fn sistema() -> Box<dyn arca::portas::Sistema> {
     Box::new(arca::duplos::SistemaDeMentira::novo())
+}
+
+/// De onde sai o selo (C-11).
+#[cfg(windows)]
+fn entropia() -> Box<dyn arca::portas::Entropia> {
+    Box::new(arca::adaptadores::windows::entropia::EntropiaDoWindows)
+}
+
+/// Fora do Windows nao ha `BCryptGenRandom`. O duplo entrega zeros, que sao
+/// exatamente o selo de ensaio — e um selo de zeros nunca passa por selo de
+/// verdade, porque a saida o diz.
+#[cfg(not(windows))]
+fn entropia() -> Box<dyn arca::portas::Entropia> {
+    Box::new(arca::duplos::EntropiaDeMentira::com(&[0; 8]))
 }
 
 /// Fora do Windows o ARCA nao tem o que fazer, mas compilar em outra

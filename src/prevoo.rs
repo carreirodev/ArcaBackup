@@ -182,6 +182,15 @@ pub struct PreVoo<'a> {
     pub disco: &'a DiscoDeOrigem,
     pub inicializacao_rapida: InicializacaoRapida,
     pub chkdsk: Chkdsk,
+
+    /// Se o que vem a seguir e a confirmacao digitada e o armar (E7), ou se e
+    /// o ensaio, que nao arma nada.
+    ///
+    /// A E6 fechava o pre-voo dizendo "quem confirma e arma e a etapa E7", e
+    /// aquilo era verdade enquanto a E7 nao existia. Agora ele so pode dizer
+    /// isso no `--dry-run` — no caminho normal, o dispositivo esta inerte
+    /// **por enquanto**, e a proxima linha da tela e a confirmacao.
+    pub arma_em_seguida: bool,
 }
 
 /// As recusas de B-3, B-4, C-6 e C-10, na ordem em que valem a pena.
@@ -325,11 +334,22 @@ pub fn montar_o_resto(prevoo: &PreVoo) -> String {
     saida.push_str(&avisos(prevoo));
 
     // "Nada foi gravado" seria falso: o desarmar de C-1 grava, quando ha o que
-    // desarmar. O que **nao** aconteceu e armar, e e isso que a frase diz.
-    saida.push_str(concat!(
-        "\nPre-voo concluido, e o dispositivo esta inerte. Nenhuma receita foi armada\n",
-        "e nenhum boot unico foi marcado: quem confirma e arma e a etapa E7.\n"
-    ));
+    // desarmar. O que **nao** aconteceu ate aqui e armar, e e isso que a frase
+    // diz — em duas versoes, porque a partir da E7 o que vem depois dela e
+    // diferente nos dois caminhos. Uma frase so, dizendo "quem arma e a E7",
+    // passou a ser mentira no caminho normal no instante em que a E7 ficou
+    // pronta.
+    saida.push_str(if prevoo.arma_em_seguida {
+        concat!(
+            "\nPre-voo concluido, e o dispositivo esta inerte. Nada foi armado ainda —\n",
+            "o ponto sem volta e a confirmacao abaixo.\n"
+        )
+    } else {
+        concat!(
+            "\nPre-voo concluido, e o dispositivo esta inerte. Nenhuma receita foi armada\n",
+            "e nenhum boot unico foi marcado: e ensaio, e ensaio nao arma.\n"
+        )
+    });
 
     saida
 }
@@ -713,6 +733,7 @@ mod testes {
             disco: &disco,
             inicializacao_rapida,
             chkdsk,
+            arma_em_seguida: desarme.is_some(),
         });
 
         format!("{cabecalho}{resto}")
@@ -723,6 +744,17 @@ mod testes {
             InicializacaoRapida::Desativada,
             Chkdsk::Limpo,
             descoberto(),
+        )
+    }
+
+    /// O mesmo dialogo no `--dry-run`, em que nada foi desarmado e nada vai
+    /// ser armado.
+    fn saida_do_ensaio() -> String {
+        montar_com_desarme(
+            InicializacaoRapida::Desativada,
+            Chkdsk::Limpo,
+            descoberto(),
+            None,
         )
     }
 
@@ -798,27 +830,44 @@ mod testes {
 
     #[test]
     fn o_dialogo_termina_antes_de_armar() {
-        // O criterio de aceite da etapa. Um pre-voo que armasse aqui pularia o
-        // que o plano poe entre o pre-voo e o armar.
-        let saida = saida_normal();
+        // O pre-voo continua terminando antes de armar — o que mudou na E7 e
+        // o que vem **depois** dele. Nas duas versoes da frase final, o que
+        // ele nao pode fazer e pedir confirmacao ou falar em reiniciar: essas
+        // duas linhas pertencem a quem arma.
+        for saida in [saida_normal(), saida_do_ensaio()] {
+            // Nao pode dizer "nada foi gravado": o desarmar de C-1 grava
+            // quando ha o que desarmar. O que nao aconteceu foi **armar**.
+            assert!(
+                !saida.contains("nada foi gravado"),
+                "a frase final promete mais do que e verdade:\n{saida}"
+            );
+            assert!(
+                !saida.contains("Digite o nome"),
+                "o pre-voo pediu confirmacao, e isso e do comando:\n{saida}"
+            );
+            assert!(
+                !saida.contains("Reiniciando"),
+                "o pre-voo falou em reiniciar:\n{saida}"
+            );
+        }
+    }
 
-        assert!(saida.contains("quem confirma e arma e a etapa E7"), "{saida}");
-        assert!(saida.contains("Nenhuma receita foi armada"), "{saida}");
+    #[test]
+    fn a_frase_final_diz_o_que_vem_depois_dela_em_cada_caminho() {
+        // A E6 fechava com "quem confirma e arma e a etapa E7", e aquilo era
+        // verdade enquanto a E7 nao existia. Com ela pronta, a mesma frase no
+        // caminho normal seria mentira — o ponto sem volta e a proxima linha
+        // da tela, e nao uma etapa futura.
+        let normal = saida_normal();
+        assert!(normal.contains("o ponto sem volta e a confirmacao abaixo"), "{normal}");
+        assert!(
+            !normal.contains("etapa E7"),
+            "o caminho normal ainda adia o armar para uma etapa futura:\n{normal}"
+        );
 
-        // E a frase nao pode dizer "nada foi gravado": o desarmar de C-1 grava
-        // quando ha o que desarmar. O que nao aconteceu foi **armar**.
-        assert!(
-            !saida.contains("nada foi gravado"),
-            "a frase final promete mais do que e verdade:\n{saida}"
-        );
-        assert!(
-            !saida.contains("Digite o nome"),
-            "o pre-voo pediu confirmacao, e isso e a E7:\n{saida}"
-        );
-        assert!(
-            !saida.contains("Reiniciando"),
-            "o pre-voo falou em reiniciar:\n{saida}"
-        );
+        let ensaio = saida_do_ensaio();
+        assert!(ensaio.contains("ensaio nao arma"), "{ensaio}");
+        assert!(ensaio.contains("Nenhuma receita foi armada"), "{ensaio}");
     }
 
     #[test]

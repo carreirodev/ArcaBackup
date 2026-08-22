@@ -10,6 +10,7 @@
 
 pub mod adaptadores;
 pub mod app;
+pub mod armar;
 pub mod blkdev;
 pub mod cli;
 pub mod comandos;
@@ -25,6 +26,7 @@ pub mod firmware;
 pub mod formato;
 pub mod grub;
 pub mod imagens;
+pub mod menuentry;
 pub mod nome;
 pub mod portas;
 pub mod prevoo;

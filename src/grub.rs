@@ -265,12 +265,29 @@ pub fn armar(inerte: &str, bloco: &str) -> Result<String, RecusaDoGrub> {
 /// bloco da captura, desarma-se a captura, arma-se de volta com o mesmo
 /// bloco, e o resultado tem de ser a captura byte a byte.
 pub fn bloco_do_arca(texto: &str) -> Option<String> {
+    bloco_com_id(texto, ID_DO_ARCA)
+}
+
+/// O `menuentry` com este `--id`, inteiro, da linha de abertura ate a chave
+/// que o fecha.
+///
+/// Existe para a E7: o bloco do ARCA nao se inventa, deriva-se de um
+/// `menuentry` que ja esta no `grub.cfg` do dispositivo. Quem faz essa
+/// derivacao e [`crate::menuentry`], e o que ela precisa daqui e o mesmo
+/// achador de bloco que o desarmar usa — com as mesmas guardas, inclusive a
+/// de parar no proximo abridor em vez de engolir dois blocos.
+///
+/// `None` tanto quando nao ha bloco com esse id quanto quando ha um sem
+/// fechamento. Quem chama trata os dois como "nao ha de onde derivar": num
+/// `grub.cfg` que o ARCA nao consegue entender, adivinhar e pior do que
+/// recusar.
+pub fn bloco_com_id(texto: &str, id: &str) -> Option<String> {
     let linhas: Vec<String> = texto
         .split_inclusive('\n')
         .map(|linha| linha.to_string())
         .collect();
 
-    let faixa = achar_bloco(&linhas, ID_DO_ARCA).ok().flatten()?;
+    let faixa = achar_bloco(&linhas, id).ok().flatten()?;
     Some(linhas[faixa.inicio..=faixa.fim].concat())
 }
 

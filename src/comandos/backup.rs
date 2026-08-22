@@ -15,6 +15,7 @@
 //! E9 armaria, e nao o que este comando faria.
 
 use crate::app::Contexto;
+use crate::armar;
 use crate::blkdev;
 use crate::desarme;
 use crate::dispositivo::{self, Dispositivo};
@@ -145,14 +146,197 @@ pub fn executar(contexto: &Contexto, nome_bruto: &str) -> Resultado<()> {
             disco: &disco,
             inicializacao_rapida,
             chkdsk,
+            arma_em_seguida: !contexto.dry_run,
         })
     );
 
     if contexto.dry_run {
         print!("{}", ensaio_das_receitas(contexto, &dispositivo, &nome, &disco)?);
+        return Ok(());
     }
 
+    armar_e_reiniciar(contexto, &dispositivo, &nome, &disco)
+}
+
+/// A segunda metade da etapa E7: confirmar, armar, avisar e reiniciar.
+///
+/// # A ordem, e o que ela impede
+///
+/// 1. **O disco de origem**, antes da confirmacao. Recusar depois de a pessoa
+///    ter digitado o nome inteiro seria fazer o trabalho na ordem errada.
+/// 2. **A confirmacao digitada** (S-2), antes de qualquer escrita.
+/// 3. **Armar** (C-3, C-4, C-5, C-6, C-11) — o ponto sem volta, com a
+///    releitura dentro.
+/// 4. **O aviso de C-9**, depois de armado e **antes** de reiniciar.
+/// 5. **Reiniciar**, por ultimo.
+///
+/// O 5 depois do 3 e o que separa este comando de um que dispararia o reinicio
+/// sem saber se armou: a releitura de C-3 mora dentro do passo 3, e um erro
+/// ali sobe antes de a maquina ir a lugar nenhum.
+///
+/// O 4 antes do 5 e C-9 na letra. Depois do reinicio nao ha tela.
+fn armar_e_reiniciar(
+    contexto: &Contexto,
+    dispositivo: &Dispositivo,
+    nome: &Nome,
+    disco: &DiscoDeOrigem,
+) -> Resultado<()> {
+    // # Por que nao ha "digite o nome do disco"
+    //
+    // A E6 deixou a pergunta em aberto — pedir ao usuario, ou recusar — e a
+    // resposta e recusar. `nvme0n1` e um nome do **Linux**, e quem o digitaria
+    // esta no Windows, onde nao ha nada contra o que confer-lo: um `nvme1n1`
+    // digitado por engano passaria por bom, iria para a receita, e nomearia o
+    // disco errado. O oraculo e o `blkdev.list` de dentro de uma imagem
+    // (§4.5), e um valor digitado nao tem oraculo nenhum.
+    //
+    // O custo e conhecido e limitado: num dispositivo sem imagem alguma, o
+    // primeiro backup precisa ser feito uma vez pelo menu do Clonezilla. Dali
+    // em diante o `blkdev.list` dele responde para sempre. O custo do outro
+    // lado seria uma receita destrutiva (E9) nomeando um disco por suposicao.
+    let disco = match disco {
+        DiscoDeOrigem::Descoberto(achado) => &achado.disco,
+        DiscoDeOrigem::PorDeterminar(porque) => {
+            return Err(Erro::DiscoDeOrigemPorDeterminar {
+                porque: porque.to_string(),
+            });
+        }
+    };
+
+    // S-2: texto digitado, nunca `s`. A recusa acontece antes de qualquer
+    // escrita — o dispositivo continua inerte, porque o desarmar de C-1 ja
+    // passou por aqui.
+    confirmar(contexto, nome)?;
+
+    let armado = armar::executar(
+        contexto.arquivos,
+        contexto.firmware,
+        contexto.entropia,
+        contexto.relogio,
+        &armar::Pedir {
+            dispositivo,
+            operacao: Operacao::Backup,
+            nome,
+            disco,
+        },
+    )?;
+
+    contexto.registro.info(format!(
+        "armado `{nome}` · selo {} · disco {disco} · entrada {} ({}) · desfecho em {}",
+        armado.selo,
+        armado.identificador,
+        match &armado.entrada {
+            armar::Entrada::JaEraDoArca => "ja era do ARCA".to_string(),
+            armar::Entrada::MigradaDaLegada { de } => format!("migrada de `{de}`"),
+        },
+        armado.pasta_do_desfecho
+    ));
+
+    print!("{}", montar_o_armado(&armado));
+
+    // C-9, e so entao o reinicio. Um erro do `shutdown` chega aqui com o
+    // dispositivo **armado**, e a mensagem tem de dizer isso: a maquina
+    // continua no Windows e o proximo reinicio, venha de onde vier, vai para o
+    // dispositivo.
+    contexto.sistema.reiniciar().inspect_err(|_| {
+        eprintln!(
+            "\nO dispositivo FICOU ARMADO e a maquina nao reiniciou. O proximo reinicio,\n\
+             seja qual for a causa, vai bootar no dispositivo e rodar a receita.\n\
+             Para desfazer:  arca desarmar"
+        );
+    })
+}
+
+/// S-2: o nome da imagem por extenso, lido do console.
+///
+/// Uma tentativa, e nao um laco. Quem digitou errado tem o comando inteiro
+/// para repetir, e o comando e barato: ele nao armou nada. Insistir seria
+/// transformar a confirmacao numa formalidade a atravessar.
+fn confirmar(contexto: &Contexto, nome: &Nome) -> Resultado<()> {
+    use std::io::Write;
+
+    print!("\nDigite o nome do backup para confirmar: ");
+    let _ = std::io::stdout().flush();
+
+    let digitado = contexto.console.ler_linha()?;
+    println!();
+
+    if !confirmacao_bate(&digitado, nome) {
+        return Err(Erro::ConfirmacaoNaoBate {
+            esperado: nome.to_string(),
+            digitado: digitado.trim().to_string(),
+        });
+    }
     Ok(())
+}
+
+/// Se o texto digitado confirma esta imagem (S-2).
+///
+/// # Exato, e nao "parecido"
+///
+/// Poda espaco das pontas, porque um Enter deixa `\r\n` atras e ninguem digita
+/// espaco de proposito. **Nao** ignora caixa: B-2 aceita maiuscula e
+/// minuscula, e `2026-08-22_apps` e um nome diferente de `2026-08-22_Apps` —
+/// aceitar os dois faria a confirmacao dizer sim para uma imagem que nao e a
+/// que vai ser gravada. E nao aceita prefixo, nem `s`, nem vazio: a
+/// confirmacao existe para custar o trabalho de ler o nome inteiro.
+fn confirmacao_bate(digitado: &str, nome: &Nome) -> bool {
+    digitado.trim() == nome.como_texto()
+}
+
+/// O que se imprime depois de armado, com o aviso de C-9 no fim.
+///
+/// O aviso e a **ultima** coisa antes do reinicio, e nao a primeira: e o que a
+/// pessoa acabou de lê quando a tela apaga. O §5.1 explica por que ele nao e
+/// zelo — depois de uma restauracao seguida de `poweroff`, o boot seguinte foi
+/// para o dispositivo removivel sem `bootsequence` pendente. Causa nao
+/// determinada, nao reproduzido; remover o SSD elimina o cenario.
+pub fn montar_o_armado(armado: &armar::Armado) -> String {
+    let mut saida = String::new();
+
+    saida.push('\n');
+    saida.push_str(&linha("Entrada de firmware", &match &armado.entrada {
+        armar::Entrada::JaEraDoArca => format!(
+            "{} · {} · {}",
+            crate::firmware::ARCA,
+            armado.identificador,
+            armado.alvo.como_bcdedit_escreve()
+        ),
+        armar::Entrada::MigradaDaLegada { de } => format!(
+            "migrada de `{de}` para {} (C-4) · {} · {}",
+            crate::firmware::ARCA,
+            armado.identificador,
+            armado.alvo.como_bcdedit_escreve()
+        ),
+    }));
+    saida.push_str(&linha(
+        "Receita armada",
+        &format!("ok · {}", armado.caminho_do_grub.display()),
+    ));
+    saida.push_str(&linha(
+        "Boot unico",
+        &format!("ok · relido no bcdedit · {}", armado.identificador),
+    ));
+    saida.push_str(&linha("Selo do job", armado.selo.como_texto()));
+
+    // O caminho inteiro, e nao so o nome da pasta. A revisao pegou isto: a
+    // linha dizia "Desfecho esperado em backup-2026-08-22_Apps", que nao e um
+    // lugar — nada ali diz que aquilo mora sob `ARCA-LOGS\` no `ARCAVAULT`. E
+    // o `caminho_do_desfecho`, que e montado pela mesma funcao de que a
+    // receita monta o caminho Linux, nao tinha chamador nenhum: o unico lugar
+    // que o exibiria mostrava a metade que nao serve para procurar.
+    saida.push_str(&linha(
+        "Desfecho esperado em",
+        &armado.caminho_do_desfecho.to_string_lossy(),
+    ));
+
+    saida.push_str(concat!(
+        "\nA maquina vai reiniciar agora e desligar sozinha ao terminar.\n",
+        "AO TERMINAR: remova o SSD antes de religar.\n",
+        "\nReiniciando...\n"
+    ));
+
+    saida
 }
 
 /// O disco onde o Windows mora — o que a receita vai clonar.
@@ -318,7 +502,7 @@ pub fn montar(ensaio: &Ensaio) -> String {
     saida.push('\n');
 
     saida.push_str(&secao(
-        "Receita de backup — e esta que a etapa E7 armaria",
+        "Receita de backup — e esta que o comando sem --dry-run armaria",
         ensaio.backup,
     ));
     saida.push('\n');
@@ -327,11 +511,17 @@ pub fn montar(ensaio: &Ensaio) -> String {
         ensaio.restauracao,
     ));
 
+    // Estas duas frases falavam da E7 no futuro, e a E7 chegou. Ficaram
+    // erradas no instante em que o comando passou a armar — e o modo de falha
+    // e o pior que um `--dry-run` tem: dizer alguma coisa sobre o que o
+    // comando de verdade faz que nao e mais verdade.
     saida.push_str(concat!(
-        "\nO selo acima e de ensaio (so zeros). O de verdade nasce **ao armar**, e\n",
-        "quem arma e a etapa E7 — a E5 escreveu o gerador, e nao o momento em que\n",
-        "ele e chamado. E o selo que liga o job ao desfecho.\n",
-        "\nNenhuma receita foi armada. Armar e a etapa E7.\n"
+        "\nO selo acima e de ensaio (so zeros), e por isso esta receita nao serviria: o\n",
+        "de verdade nasce **ao armar**, de uma fonte de entropia do sistema. E ele que\n",
+        "liga o job ao desfecho que voltar.\n",
+        "\nNada foi armado, e o dispositivo nao foi nem desarmado — no ensaio, C-1 nao\n",
+        "acontece. O mesmo comando sem `--dry-run` desarma, pede a confirmacao por\n",
+        "extenso, arma e reinicia.\n"
     ));
 
     saida
@@ -356,7 +546,8 @@ mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
     use crate::duplos::{
-        ArquivosEmMemoria, DiscosDeMentira, FirmwareDeMentira, RelogioParado, SistemaDeMentira,
+        ArquivosEmMemoria, DiscosDeMentira, ConsoleDeMentira, EntropiaDeMentira, FirmwareDeMentira, RelogioParado,
+        SistemaDeMentira,
     };
     use crate::portas::Volume;
     use crate::registro::Registro;
@@ -431,14 +622,22 @@ mod testes {
     fn o_ensaio_diz_que_e_ensaio_e_que_nada_foi_armado() {
         let saida = ensaio_montado();
         assert!(saida.contains("--dry-run"), "{saida}");
-        assert!(saida.contains("Nenhuma receita foi armada"), "{saida}");
-        assert!(saida.contains("Armar e a etapa E7"), "{saida}");
+        assert!(saida.contains("Nada foi armado"), "{saida}");
 
-        // E o selo diz que quem o cria e a E7, e nao a E5: a E5 escreveu o
-        // gerador, e nao o momento em que ele e chamado.
+        // O ensaio nao desarma, e diz isso. E a unica coisa que o §5.2 mostra
+        // acontecendo antes do julgamento, e o `--dry-run` deste projeto ja
+        // mentiu sobre exatamente ela uma vez (§11).
+        assert!(saida.contains("nem desarmado"), "{saida}");
+
+        // **Nenhuma frase do ensaio pode adiar o armar para uma etapa
+        // futura.** Ate a E6 o rodape dizia "Armar e a etapa E7", e aquilo era
+        // verdade; no instante em que a E7 ficou pronta, virou a pior mentira
+        // que um `--dry-run` pode contar — uma afirmacao sobre o que o comando
+        // de verdade faz. Este teste e o que impede a proxima frase dessas de
+        // sobreviver a etapa que a torna falsa.
         assert!(
-            saida.contains("quem arma e a etapa E7"),
-            "o rodape ainda atribui o selo a etapa errada:\n{saida}"
+            !saida.contains("etapa E7"),
+            "o ensaio ainda adia o armar para uma etapa que ja chegou:\n{saida}"
         );
     }
 
@@ -468,11 +667,15 @@ mod testes {
     }
 
     #[test]
-    fn o_ensaio_diz_qual_etapa_arma_cada_receita() {
+    fn o_ensaio_separa_a_receita_que_este_comando_arma_da_que_ele_nao_arma() {
         // A de restauracao aparece aqui porque a E3 a cobre e a E9 e quem a
-        // arma. Sem essa marca, ela leria como algo que este comando faria.
+        // arma. Sem essa marca, ela leria como algo que este comando faria — e
+        // ela e a unica receita destrutiva do sistema.
         let saida = ensaio_montado();
-        assert!(saida.contains("etapa E7 armaria"), "{saida}");
+        assert!(
+            saida.contains("o comando sem --dry-run armaria"),
+            "{saida}"
+        );
         assert!(saida.contains("quem a arma e a etapa E9"), "{saida}");
     }
 
@@ -484,6 +687,8 @@ mod testes {
         firmware: FirmwareDeMentira,
         relogio: RelogioParado,
         sistema: SistemaDeMentira,
+        entropia: EntropiaDeMentira,
+        console: ConsoleDeMentira,
         registro: Registro,
     }
 
@@ -497,6 +702,12 @@ mod testes {
             self
         }
 
+        /// O que o usuario digita na confirmacao de S-2.
+        fn digitando(mut self, linhas: &[&str]) -> Bancada {
+            self.console = ConsoleDeMentira::respondendo(linhas);
+            self
+        }
+
         fn com(discos: DiscosDeMentira, arquivos: ArquivosEmMemoria) -> Bancada {
             Bancada {
                 arquivos,
@@ -504,6 +715,8 @@ mod testes {
                 firmware: FirmwareDeMentira::novo(),
                 relogio: RelogioParado::em("2026-08-22T11:42:03"),
                 sistema: SistemaDeMentira::novo(),
+                entropia: EntropiaDeMentira::com(&[0xa3, 0xf1, 0xc9, 0xe0, 0x7b, 0x2d, 0x48, 0x56]),
+                console: ConsoleDeMentira::mudo(),
                 registro: Registro::em(
                     std::env::temp_dir().join(format!(
                         "arca-backup-{}-{:?}",
@@ -524,6 +737,8 @@ mod testes {
                 arquivos: &self.arquivos,
                 relogio: &self.relogio,
                 sistema: &self.sistema,
+                entropia: &self.entropia,
+                console: &self.console,
             }
         }
     }
@@ -560,50 +775,194 @@ mod testes {
 
     const GRUB_INERTE: &str = include_str!("../../recursos/capturas/grub-inerte-arcaboot.cfg");
 
+    /// O `bcdedit` desta maquina: entrada `ARCA`, sem boot unico antes do
+    /// armar e com ele depois.
+    const FIRMWARE_PT: &str =
+        include_str!("../../recursos/capturas/bcdedit-enum-firmware-pt.txt");
+
+    /// O `bcdedit` desta maquina, **modelado**: o comando desarma e depois
+    /// arma, e as duas escritas caem no mesmo `{fwbootmgr}`.
+    ///
+    /// A ordem permanente e a medida em 22/08/2026 — so o `{bootmgr}`, com a
+    /// entrada do ARCA **fora** dela. E sobre essa configuracao que o boot
+    /// unico tem de funcionar (C-5).
+    fn firmware_que_obedece() -> FirmwareDeMentira {
+        FirmwareDeMentira::novo()
+            .respondendo("firmware", FIRMWARE_PT)
+            .modelando_o_fwbootmgr(&["{bootmgr}"])
+    }
+
     fn bancada_completa() -> Bancada {
         Bancada::com(
             DiscosDeMentira::com_dispositivo(),
             vault_com_as_imagens().com(r"R:\boot\grub\grub.cfg", GRUB_INERTE),
         )
-        .com_firmware(FirmwareDeMentira::novo().respondendo("{fwbootmgr}", FWBOOTMGR_INERTE))
+        .com_firmware(firmware_que_obedece())
     }
 
     #[test]
-    fn sem_dry_run_o_backup_roda_o_pre_voo_e_para_antes_de_armar() {
-        // Ate a E5 este comando respondia "armar e a E7" e nao fazia mais
-        // nada. A E6 o poe a trabalhar: ele roda o dialogo do §5.2 inteiro e
-        // **termina antes da confirmacao**. Armar continua sendo a E7.
+    fn sem_confirmacao_digitada_nada_e_armado() {
+        // S-2. O caminho que **nao** pode existir: o pre-voo passa, a pessoa
+        // nao digita o nome, e a maquina reinicia mesmo assim. Aqui ninguem
+        // digitou nada, que e o que um `stdin` fechado produz.
         let bancada = bancada_completa();
 
-        executar(&bancada.contexto(false), "2026-08-22_Apps").expect("o pre-voo roda");
+        match executar(&bancada.contexto(false), "2026-08-22_Apps").unwrap_err() {
+            Erro::ConfirmacaoNaoBate { esperado, digitado } => {
+                assert_eq!(esperado, "2026-08-22_Apps");
+                assert_eq!(digitado, "");
+            }
+            outro => panic!("esperava a confirmacao recusada, veio {outro}"),
+        }
 
-        // Nao armou: o estado do job nao existe, e o `grub.cfg` saiu como
-        // entrou — o desarmar de C-1 num arquivo ja inerte nao regrava nada
-        // (medido na E4).
         assert!(
             bancada.arquivos.conteudo_de(r"R:\arca\estado.json").is_none(),
-            "o pre-voo gravou estado de job"
+            "gravou estado de job sem confirmacao"
         );
         assert_eq!(
             bancada.arquivos.conteudo_de(r"R:\boot\grub\grub.cfg").as_deref(),
             Some(GRUB_INERTE),
-            "o pre-voo mexeu no grub.cfg"
+            "armou o grub.cfg sem confirmacao"
         );
+        // O desarmar de C-1 escreve no firmware, e tem de escrever — o que
+        // nao pode e uma escrita que **arme**.
+        let escritas = bancada.firmware.executados.borrow();
+        assert!(
+            escritas
+                .iter()
+                .all(|argumentos| argumentos.first().map(String::as_str) == Some("/deletevalue")),
+            "escreveu no firmware alem do desarmar de C-1: {escritas:?}"
+        );
+        assert_eq!(bancada.sistema.reinicios(), 0, "reiniciou sem confirmacao");
+    }
+
+    #[test]
+    fn a_confirmacao_e_o_nome_por_extenso_e_nunca_um_s() {
+        // S-2 na letra. `s`, `sim` e o prefixo do nome sao todos recusados —
+        // e todos deixam o dispositivo como estava.
+        for digitado in ["s", "S", "sim", "2026-08-22", "2026-08-22_apps", ""] {
+            let bancada = bancada_completa().digitando(&[digitado]);
+
+            assert!(
+                matches!(
+                    executar(&bancada.contexto(false), "2026-08-22_Apps"),
+                    Err(Erro::ConfirmacaoNaoBate { .. })
+                ),
+                "`{digitado}` foi aceito como confirmacao"
+            );
+            assert_eq!(bancada.sistema.reinicios(), 0);
+        }
+    }
+
+    #[test]
+    fn com_a_confirmacao_certa_o_comando_arma_e_so_entao_reinicia() {
+        // O caminho inteiro da E7. A ordem importa e esta coberta em
+        // `crate::armar`; o que se cobra aqui e que o comando faca as tres
+        // coisas e **reinicie por ultimo**.
+        let bancada = bancada_completa().digitando(&["2026-08-22_Apps"]);
+
+        executar(&bancada.contexto(false), "2026-08-22_Apps").expect("arma e reinicia");
+
+        let estado = bancada
+            .arquivos
+            .conteudo_de(r"R:\arca\estado.json")
+            .expect("estado gravado");
+        assert!(estado.contains("\"selo\": \"a3f1c9e07b2d4856\""));
+        assert!(estado.contains("\"situacao\": \"armado\""));
+
+        let grub = bancada
+            .arquivos
+            .conteudo_de(r"R:\boot\grub\grub.cfg")
+            .expect("grub gravado");
+        assert!(grub.contains("set default=\"arca-backup\""));
+        assert!(grub.contains("ARCA_SELO=a3f1c9e07b2d4856"));
+
+        assert!(
+            bancada
+                .firmware
+                .executados
+                .borrow()
+                .iter()
+                .any(|argumentos| argumentos.contains(&"bootsequence".to_string())),
+            "nao marcou o boot unico"
+        );
+        assert_eq!(bancada.sistema.reinicios(), 1);
+    }
+
+    #[test]
+    fn um_armar_que_falha_no_meio_nao_reinicia() {
+        // O que separa este comando de um que dispara o reinicio sem saber se
+        // armou. Aqui o `bcdedit` responde "êxito" e a releitura mostra que a
+        // marca nao pegou — e a maquina fica onde esta.
+        let bancada = Bancada::com(
+            DiscosDeMentira::com_dispositivo(),
+            vault_com_as_imagens().com(r"R:\boot\grub\grub.cfg", GRUB_INERTE),
+        )
+        .com_firmware(
+            // Um firmware que responde "êxito" e **nao** poe a marca: o
+            // `{fwbootmgr}` sai sempre inerte, escreva-se o que se escrever.
+            FirmwareDeMentira::novo()
+                .respondendo("firmware", FIRMWARE_PT)
+                .respondendo("{fwbootmgr}", FWBOOTMGR_INERTE),
+        )
+        .digitando(&["2026-08-22_Apps"]);
+
+        assert!(matches!(
+            executar(&bancada.contexto(false), "2026-08-22_Apps").unwrap_err(),
+            Erro::BootUnicoNaoArmou { .. }
+        ));
+        assert_eq!(
+            bancada.sistema.reinicios(),
+            0,
+            "reiniciou sem saber se tinha armado"
+        );
+    }
+
+    #[test]
+    fn sem_nome_de_disco_o_comando_recusa_antes_da_confirmacao() {
+        // A pendencia que a E6 deixou, decidida: recusar, e nao pedir. Um
+        // nome de disco do Linux digitado do lado Windows nao tem oraculo, e a
+        // recusa acontece **antes** de a pessoa digitar o nome inteiro.
+        let bancada = Bancada::com(
+            DiscosDeMentira::com_dispositivo(),
+            // Sem `blkdev.list`: nao ha de onde lê o nome do disco.
+            ArquivosEmMemoria::novo()
+                .com(r"E:\2026-08-21_WindowsCompleto\MD5SUMS", "abc")
+                .com(r"R:\boot\grub\grub.cfg", GRUB_INERTE),
+        )
+        .com_firmware(firmware_que_obedece())
+        .digitando(&["2026-08-22_Apps"]);
+
+        assert!(matches!(
+            executar(&bancada.contexto(false), "2026-08-22_Apps").unwrap_err(),
+            Erro::DiscoDeOrigemPorDeterminar { .. }
+        ));
+        assert_eq!(
+            bancada.console.lidas.get(),
+            0,
+            "pediu a confirmacao antes de saber que ia recusar"
+        );
+        assert!(bancada.arquivos.conteudo_de(r"R:\arca\estado.json").is_none());
     }
 
     #[test]
     fn o_pre_voo_desarma_de_verdade_como_c1_manda() {
         // C-1 nao e condicional a chegar ao armar: desarmar e o primeiro passo
         // de todo comando. Um dispositivo armado com receita velha nao pode
-        // sair daqui com "pre-voo concluido" e continuar armado.
+        // sair daqui com "pre-voo concluido" e continuar com a receita velha —
+        // e isto vale mesmo quando a confirmacao recusa logo depois, que e o
+        // caso construido aqui.
         let armado = include_str!("../../recursos/capturas/grub-backup-arca-teste-03.cfg");
         let bancada = Bancada::com(
             DiscosDeMentira::com_dispositivo(),
             vault_com_as_imagens().com(r"R:\boot\grub\grub.cfg", armado),
         )
-        .com_firmware(FirmwareDeMentira::novo().respondendo("{fwbootmgr}", FWBOOTMGR_INERTE));
+        .com_firmware(firmware_que_obedece());
 
-        executar(&bancada.contexto(false), "2026-08-22_Apps").expect("roda");
+        assert!(matches!(
+            executar(&bancada.contexto(false), "2026-08-22_Apps").unwrap_err(),
+            Erro::ConfirmacaoNaoBate { .. }
+        ));
 
         assert_eq!(
             bancada.arquivos.conteudo_de(r"R:\boot\grub\grub.cfg").as_deref(),
@@ -692,7 +1051,7 @@ mod testes {
         // E o `C:` que o Clonezilla vai lê. Conferir o `E:` daria um `ok`
         // sobre o disco errado — e um sistema de arquivos sujo no `C:` e o que
         // faz a imagem sair com estado inconsistente dentro.
-        let bancada = bancada_completa();
+        let bancada = bancada_completa().digitando(&["2026-08-22_Apps"]);
 
         executar(&bancada.contexto(false), "2026-08-22_Apps").expect("roda");
         assert_eq!(*bancada.sistema.conferidos.borrow(), vec!['C']);

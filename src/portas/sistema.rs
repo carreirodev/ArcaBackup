@@ -85,4 +85,29 @@ pub trait Sistema {
     /// `/scan`, e nunca `/f`: o `/scan` roda com o volume montado e nao
     /// escreve nada. Agendar o `/f` e oferta de B-6, e quem decide e o usuario.
     fn conferir_volume(&self, letra: char) -> Resultado<SaidaDeFerramenta>;
+
+    /// Reinicia a maquina agora.
+    ///
+    /// # Por que atras de porta, e nao um `Command::new` no comando
+    ///
+    /// Porque sem porta o comando que arma deixa de ter teste. Todo o resto da
+    /// E7 — montar o bloco, gravar o estado, marcar o boot unico, conferir com
+    /// C-3 — e verificavel sem hardware **desde que a ultima linha nao
+    /// reinicie de verdade**. Um teste que reinicia a maquina de quem o roda
+    /// nao e um teste.
+    ///
+    /// # Por que aqui e nao numa porta propria
+    ///
+    /// E a mesma categoria das outras duas deste modulo: uma operacao do
+    /// **proprio sistema**, pela qual o Windows responde, e nao um acesso ao
+    /// disco. A correcao D5 do plano delimitou S-1 a acesso raw ao
+    /// dispositivo; reiniciar nao chega perto disso.
+    ///
+    /// # O contrato nao promete voltar
+    ///
+    /// Em exito esta chamada devolve `Ok(())` e a maquina desliga logo em
+    /// seguida — nao ha como saber quanto depois. Quem a chama nao pode ter
+    /// nada a fazer com o retorno alem de propagar a falha: **tudo que precisa
+    /// acontecer antes do reinicio ja aconteceu quando ela e chamada**.
+    fn reiniciar(&self) -> Resultado<()>;
 }

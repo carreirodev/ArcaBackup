@@ -15,13 +15,21 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E4 | Desarmar | II | ✅ | 2026-08-22 17:36 |
 | E5 | Estado e selo | II | ✅ | 2026-08-22 18:37 |
 | E6 | Pré-voo | III | ✅ | 2026-08-22 19:24 |
-| E7 | Armar e disparar | III | ⬜ | — |
+| E7 | Armar e disparar | III | 🟨 | escrita 2026-08-22 21:12 · falta o marco |
 | E8 | Colher o desfecho | III | ⬜ | — |
 | E9 | Restauração | IV | ⬜ | — |
 | E10 | `arca prepare` | IV | ⬜ | — |
 | E11 | `arca verify` | IV | ⬜ | — |
 
 Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi escrito. As duas etapas com marco em hardware (E7 e E9) exigem a execução real para fechar.
+
+**🟨 é escrita, revisada e commitada, com o marco em hardware devendo.** O
+estado nasceu na E7, e ele existe porque ✅ seria mentira e ⬜ seria pior: quem
+lesse ⬜ suporia que não há código. Toda seção 🟨 termina com **o que falta,
+nomeado** — e o que falta aqui custa um reinício que apaga a sessão que o
+dispararia. A E4 já tinha entregue o critério dela "cumprido pela metade
+verificável"; a diferença é que lá a outra metade era barata, e aqui ela é o
+marco inteiro.
 
 ---
 
@@ -541,7 +549,11 @@ que o plano tratava como separadas:
   explícita da E6 para a E7: quem armar o primeiro backup de um dispositivo
   novo não tem `blkdev.list` de onde ler o nome. A E7 decide o que fazer —
   pedir o nome, ou recusar. O que ela **não** pode fazer é derivar do índice,
-  pelo motivo que o §4.5 do PRD registra.
+  pelo motivo que o §4.5 do PRD registra. *(**Resolvido na E7: recusar.** Um
+  nome do Linux digitado do lado Windows não tem contra o que ser conferido, e
+  a receita que o nomeia é destrutiva na E9. A recusa acontece antes da
+  confirmação digitada, e a saída diz que o primeiro backup de um dispositivo
+  novo precisa ser feito uma vez pelo menu do Clonezilla.)*
 - **`disco_de_origem` acha o disco que tem `%SystemDrive%` e não é o
   dispositivo.** Numa máquina com dois Windows a escolha ficaria ambígua e
   hoje o primeiro ganha; com nenhum, recusa alto. Não é caso deste projeto, e
@@ -552,10 +564,157 @@ que o plano tratava como separadas:
 
 ### E7 · Armar e disparar
 
-Gravar a receita no `grub.cfg`, marcar o boot único **sem tocar na ordem permanente** (C-5), criar ou migrar a entrada de firmware (C-4), recusando `Removable Media` (C-6). Confirmação por texto digitado, nunca por `s` (S-2). Aviso de remover o SSD antes de religar, antes do reinício (C-9).
+Gravar a receita no `grub.cfg`, marcar o boot único **sem tocar na ordem permanente** (C-5), migrar a entrada de firmware (C-4), recusando `Removable Media` (C-6). Confirmação por texto digitado, nunca por `s` (S-2). Aviso de remover o SSD antes de religar, antes do reinício (C-9).
 
 **Cobre**: C-4 (migração), C-5, C-9, S-2
 **Marco em hardware**: primeiro backup completo disparado pelo ARCA, sem uma única tela.
+
+**Escrita, testada e commitada em 22/08/2026 — e o marco em hardware ficou
+devendo, de propósito.** A máquina desliga no reinício e a sessão morre junto;
+tudo que é verificável sem reiniciar está feito, e o que falta está nomeado
+abaixo.
+
+**O achado da etapa, e ele é o quinto do mesmo tipo.** A ordem permanente de
+boot desta máquina **foi alterada por alguém, pelo menos três vezes**. A tabela
+das oito capturas de NVRAM está no §3.1 do PRD, com a data de cada leitura, e
+ela desfaz o que parecia uma discordância entre o `bcdedit` e o `efibootmgr`:
+as duas ferramentas concordam quando lidas no mesmo dia, e a ordem mudou entre
+as leituras. O que sobra é pior do que a discordância:
+
+- Em **20/08** a entrada do ARCA estava na ordem permanente, em segundo lugar.
+- Em **21/08** — o backup que o §3.3 chama de validado — ela estava em
+  **primeiro**. Uma ordem de boot com o dispositivo à frente explica o boot
+  inteiro **sem passar por boot único**.
+- Em **22/08** ela não está mais na ordem.
+
+É P-18 com evidência apontando para o lado desconfortável, e é o quinto caso do
+padrão que o método desta etapa nomeia: o que o documento chama de fundação
+validada pode ter vindo de outra coisa. `tests/e7_armar_o_dispositivo.rs` cobra
+que a entrada continue **fora** da ordem, porque é essa configuração que faz a
+medição do boot único significar alguma coisa.
+
+**O que a etapa mediu escrevendo no `bcdedit`, e não estava medido:**
+
+- **O `bcdedit` aceita `bootsequence` para uma entrada de fora do
+  `displayorder`.** Set, releitura, e lá está ela. Sem isso, armar obrigaria a
+  pôr a entrada na ordem — exatamente o que C-5 proíbe.
+- **O `displayorder` não muda**, nem ao pôr nem ao tirar.
+- **A forma da linha bate com o caso construído da E2, byte a byte.** O duplo
+  reproduzia aquilo por suposição desde a E2; agora é transcrição.
+- **Com `bootsequence` presente, o `/deletevalue` sai com código 0** — ao
+  contrário do código 1 medido na E4 quando não há o que apagar. As duas
+  metades estão medidas, e é sobre elas que o desarmar decide não acreditar em
+  nenhuma.
+
+**A decisão central: o bloco deriva, e o modelo é o `live-toram`.** Registrada
+em [ADR-0007](../docs/adr/0007-o-bloco-do-arca-deriva-do-live-toram.md). A
+captura `teste-02` é o `menuentry --id live-toram` do próprio `grub.cfg` inerte
+com **exatamente cinco** substituições — as cinco de §10.2.1 — e nada mais. O
+`live-default`, que era o candidato do briefing, não tem `toram`; **ninguém
+acrescentou o `toram`**, ele veio junto do modelo, e o §10.2.1 do PRD o
+atribuía ao `menuentry` base sem dizer qual. O oráculo é o arquivo, e ele passa
+com uma única divergência de um byte — um espaço duplo que é rastro de edição à
+mão, e que o teste **nomeia** em vez de copiar.
+
+A `teste-03` é a evidência de que a derivação não foi como aquele bloco nasceu,
+e é desconfortável: ela perdeu nove parâmetros do modelo, é a **única** das
+quatro com `set default="arca-backup"` — a única que provavelmente rodou
+desatendida —, e o que ela perdeu inclui `nvme.poll_queues=1` numa máquina cujo
+disco de origem é NVMe. Isso é argumento a favor de derivar, e não contra.
+
+**As outras decisões desta etapa:**
+
+- **A ordem das três gravações**, escrita em `src/armar.rs`: `estado.json`,
+  `grub.cfg`, `bootsequence`. O estado primeiro porque é o único lugar onde
+  fica escrito **qual** job foi armado — uma receita armada sem estado gravado
+  faria a máquina rodar o backup e escrever um `arca-fim.txt` com um selo que
+  ninguém anotou. A marca por último porque é a única das três que muda o que
+  acontece no próximo reinício sem ninguém pedir. Os dois estados
+  intermediários são nomeáveis e reversíveis por `arca desarmar`.
+- **O reinício é a última coisa, depois da releitura de C-3.** Um ARCA que
+  reiniciasse antes de conferir dispararia o reinício sem saber se armou. Há
+  teste para isso, e ele é o que separa este comando de um perigoso.
+- **Reiniciar entrou atrás de porta**, em `Sistema` — a mesma que a E6 criou
+  para operações do próprio sistema. `shutdown /r /t 0`, e não `ExitWindowsEx`:
+  este exige habilitar `SeShutdownPrivilege` e `AdjustTokenPrivileges` **sai
+  com sucesso mesmo quando não ajustou tudo**, que é o mesmo modo de falha do
+  `bcdedit` que C-3 existe para desconfiar.
+- **A confirmação digitada ganhou porta própria**, e a razão é que S-2 é um
+  requisito de segurança: sem porta, o caminho que separa "armou" de "não
+  armou" não teria teste nenhum. É a sexta porta, e ela entrou pelo mesmo
+  critério das outras — quando uma etapa precisou dela.
+- **Sem nome de disco determinado, o ARCA recusa** — a pendência que a E6
+  deixou. Pedir o nome ao usuário parece gentil e é pior: `nvme0n1` é um nome
+  do Linux, quem o digitaria está no Windows, e não há nada deste lado contra o
+  que conferi-lo. A recusa acontece **antes** da confirmação, para que ninguém
+  digite o nome inteiro da imagem para ouvir um não depois.
+- **Não havendo entrada de firmware nenhuma, o ARCA recusa em vez de criar.**
+  Criar uma do zero é código sem original, e o lugar disso é o `arca prepare`
+  da E10.
+- **C-6 ganhou a metade que faltava.** Até aqui a rejeição silenciosa do §3.1
+  era só relatada, por duas leituras. Agora o armar **escreve** o `device` da
+  entrada e relê: um `device` que não mudou é a rejeição, e o armar para ali.
+
+**O que o `estado.json` ganhou aqui, e por quê.** Um sexto campo, `situacao`,
+que a E7 escreve como `armado`. Quem o lê e o muda é a E8, ao colher — mas ele
+nasce aqui porque armar é quando o job passa a existir, e um estado que não diz
+se já foi colhido não pode ser escrito depois sem reabrir o arquivo. O ADR-0006
+avisava que a discussão sobre escrever o JSON à mão voltaria com o campo novo
+na mesa; ela voltou, e o campo passa — **porque ele tem alfabeto fechado**, que
+é por que ele é um estado e não uma data.
+
+**O que a revisão pegou, e o que ela mostra sobre o método.** Três achados
+nesta etapa, e o mais grave é sobre um **teste** e não sobre o código:
+
+- **Dois construtores do duplo pareciam compor e não compunham.** O
+  `FirmwareDeMentira` ganhou `modelando_o_fwbootmgr` nesta etapa — o duplo
+  antigo, que respondia de cor, não dava conta de um comando que **desarma e
+  depois arma**, porque as duas escritas caem no mesmo alvo e esperam respostas
+  contrárias. O novo modelo aplicava a escrita e devolvia "deu certo" para
+  **qualquer** argumento, o que matava o `recusando_o_executar` em silêncio: um
+  teste escrito como `.modelando_o_fwbootmgr(...).recusando_o_executar(...)` —
+  a forma natural de exercitar um `/set description` que falha — passaria verde
+  sem a recusa nunca disparar. Um teste que não prova nada é pior do que um que
+  falta, porque ele ocupa o lugar. Corrigido, e há agora o teste que ele teria
+  escondido: `uma_migracao_que_o_bcdedit_recusa_nao_passa_por_migrada`.
+- **A letra do volume podia divergir em caixa.** `Alvo::ler` normaliza para
+  maiúscula o que vem do `bcdedit`, e a comparação de C-6 é por igualdade de
+  `Alvo`. Um `r` minúsculo vindo da enumeração de volumes nunca casaria com o
+  `R` relido, e o ARCA diria que o `bcdedit` recusou o alvo em silêncio quando
+  ele o aceitou. Latente hoje — a enumeração monta as letras de `b'A'` —, e é
+  por isso que depender disso sem dizer sairia caro.
+- **A linha do desfecho mostrava a metade que não serve para procurar.**
+  `Desfecho esperado em backup-2026-08-22_Apps` não é um lugar: nada ali diz
+  que aquilo mora sob `ARCA-LOGS\` no `ARCAVAULT`. E o `caminho_do_desfecho`, o
+  `PathBuf` inteiro, **não tinha chamador nenhum** — o único lugar que o
+  exibiria mostrava o nome da pasta.
+
+E um defeito que a revisão **não** pegou, e que a execução real pegou: as
+frases do `--dry-run` diziam "esta é a receita que a **etapa E7** armaria" e
+"armar é a etapa E7". Eram verdade até esta etapa, e viraram a pior mentira que
+um `--dry-run` pode contar — uma afirmação sobre o que o comando de verdade faz
+— no instante em que a E7 ficou pronta. É a lição da E6 outra vez: **depois de
+corrigir, releia o que a correção encostou.** Corrigi a frase final do pré-voo e
+não reli o rodapé do ensaio, que ficava vinte linhas abaixo. Agora há um teste
+que reprova qualquer frase do ensaio que adie o armar para uma etapa futura.
+
+**O que falta para o marco, nomeado:**
+
+- **Se o firmware honra o `bootsequence`** sobre uma entrada de fora da ordem.
+  O `bcdedit` aceita e a releitura confirma; o que o firmware faz com isso é o
+  reinício. É a metade de P-18 que só o hardware responde.
+- **Se o Clonezilla executa a receita** que o ARCA gravou. Todo o mecanismo de
+  desfecho — `arca-fim.txt`, selo, `ARCA_FIM`, `if/then/else` — estreia de uma
+  vez (P-16).
+- **O `grub.cfg` do dispositivo é escrito pelo ARCA pela primeira vez em sete
+  etapas.** A cópia fora do dispositivo é `recursos/capturas/grub-inerte-arcaboot.cfg`,
+  conferida por SHA256 antes de qualquer gravação:
+  `4B33DA61A89CE258B2524F11AE443A58E515B56052306F9550C63B499F47AA3D`.
+
+**O marco é seguro, e vale saber por quê.** A receita é de backup: lê o
+`nvme0n1` e escreve no `ARCAVAULT`. Não há operação destrutiva sobre o disco de
+origem. O pior caso é um reinício perdido — a máquina volta ao Windows, e o
+§5.5 chama isso de "o boot não aconteceu". Destrutivo é a E9.
 
 ### E8 · Colher o desfecho
 
@@ -611,7 +770,7 @@ Nenhum requisito do PRD fica sem etapa.
 | E4 | C-1 — e aplica C-3 (releitura depois de escrever) e defende C-5 (a ordem permanente não muda ao desarmar) |
 | E5 | R-6, S-6 |
 | E6 | B-2, B-3, B-4, B-5, B-6 |
-| E7 | C-4, C-5, C-9, S-2 |
+| E7 | C-4, C-5, C-9, S-2 — e a segunda metade de C-6, que até aqui só era relatada por leitura |
 | E8 | S-4, S-5, D8 |
 | E9 | R-1, R-2, R-3 |
 | E10 | §7.1 |
@@ -622,6 +781,19 @@ Nenhum requisito do PRD fica sem etapa.
 **P-6 continua aberto, e sucesso não o fecha.** O ramo de falha do `ocs-sr` nunca foi observado — por definição, execuções bem-sucedidas não o exercitam. No backup existem **dois** sinais independentes do código de saída, e não um: a conferência nativa que o Clonezilla faz por padrão (e que `-scs` desligaria, razão de ele ficar de fora — ver ADR-0004) e o `ocs-chkimg` explícito de B-9. **Na restauração não há segundo sinal**: se o `ocs-sr` devolver 0 ao falhar, o `if/then/else` de R-5 escreve `OK` sobre uma restauração quebrada. O que segura esse caso hoje é o Windows subir ou não.
 
 **O mecanismo de desfecho nunca rodou** (P-16, achado na E3). Nenhuma das três receitas preservadas escreve `arca-fim.txt`, grava selo ou usa `if/then/else` — o que existe no dispositivo veio de trabalho manual de validação. O plano supunha que a E7 e a E9 confirmariam um mecanismo pronto; elas são a **primeira execução** dele. E o padrão já se repetiu duas vezes: antes de tratar qualquer linha do §3 do PRD como medida, procurar o original em `recursos/capturas/`.
+
+**A ordem permanente de boot desta máquina foi alterada, e não pelo ARCA**
+(achado na E7). Em 21/08 — o backup que o §3.3 do PRD chama de validado — o
+dispositivo estava **em primeiro** na `BootOrder`, o que explica o boot inteiro
+sem passar por boot único. É o **quinto** caso do mesmo padrão, depois do
+`ARCA_VEREDITO=`, do `arca-fim.txt`, do `set default` e do `498,7 GB`. A tabela
+das oito capturas está no §3.1 do PRD, com a data de cada leitura — e datar as
+capturas foi o que desfez uma contradição aparente entre duas ferramentas que,
+lidas no mesmo dia, concordam.
+
+Daí uma regra que vale além desta etapa: **antes de chamar duas medições de
+contraditórias, confira se são do mesmo momento.** Foi o que quase custou uma
+etapa aqui.
 
 **A entrada de firmware é o ponto de falha mais caro.** Um erro do parser da E2 leva a máquina a bootar no lugar errado com uma receita armada. É a única etapa cujos testes precisam cobrir os dois idiomas do `bcdedit`.
 
