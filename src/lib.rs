@@ -19,7 +19,9 @@ pub mod erro;
 pub mod firmware;
 pub mod formato;
 pub mod imagens;
+pub mod nome;
 pub mod portas;
+pub mod receita;
 pub mod registro;
 
 pub use erro::{Erro, Resultado};

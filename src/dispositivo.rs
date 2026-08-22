@@ -19,6 +19,15 @@ pub const ARCAVAULT: &str = "ARCAVAULT";
 /// job.
 pub const ARCABOOT: &str = "ARCABOOT";
 
+/// A pasta de logs do dispositivo, dentro do `ARCAVAULT` (§4 do PRD).
+///
+/// E onde a receita grava o `arca-fim.txt` de cada job — no `ARCAVAULT`, e
+/// nao dentro da pasta da imagem, porque na restauracao a imagem e a origem:
+/// escrever dentro dela seria escrever no que se esta lendo. Quem escreve e
+/// a receita ([`crate::receita`]); quem a pula ao enumerar imagens e
+/// [`crate::imagens`], porque ela nao e imagem nem residuo.
+pub const ARCA_LOGS: &str = "ARCA-LOGS";
+
 /// Onde o estado do job mora, dentro do `ARCABOOT` (§4 e §4.1 do PRD).
 ///
 /// No dispositivo, e nunca no `C:`, porque e o `C:` que a restauracao

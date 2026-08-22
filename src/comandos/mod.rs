@@ -5,5 +5,6 @@
 //! porque a saida do `arca list` e criterio de aceite da etapa E1 — e
 //! criterio de aceite merece teste que rode sem o dispositivo conectado.
 
+pub mod backup;
 pub mod list;
 pub mod status;

@@ -20,6 +20,17 @@ pub enum Erro {
         etapa: &'static str,
     },
 
+    /// B-2: o nome que o usuario digitou nao serve. A recusa carrega o motivo
+    /// proprio — quem digitou um nome com acento precisa ouvir "acento", e
+    /// nao "nome invalido".
+    #[error("nome de imagem recusado (B-2): {0}")]
+    NomeRecusado(crate::nome::Recusa),
+
+    /// C-2: o porteiro da receita recusou, **antes** de qualquer gravacao.
+    /// Este erro nunca chega depois de o `grub.cfg` ter sido tocado.
+    #[error("receita recusada (C-2): {0}")]
+    ReceitaRecusada(crate::receita::RecusaDaReceita),
+
     /// O UAC foi recusado ou fechado. Nao e falha do ARCA, e uma decisao do
     /// usuario, e merece mensagem propria.
     #[error(
@@ -100,7 +111,10 @@ impl Erro {
     /// elevacao — o mesmo que o clap usa —, `1` para o resto.
     pub fn codigo_de_saida(&self) -> u8 {
         match self {
-            Erro::ElevacaoRecusada | Erro::AindaNaoImplementado { .. } => 2,
+            // Nome recusado e uso incorreto, como o `clap` o entende: quem
+            // chamou o ARCA de um script precisa distinguir "voce digitou um
+            // nome invalido" de "alguma coisa falhou".
+            Erro::ElevacaoRecusada | Erro::AindaNaoImplementado { .. } | Erro::NomeRecusado(_) => 2,
             _ => 1,
         }
     }

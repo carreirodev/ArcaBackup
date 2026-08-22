@@ -32,7 +32,11 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
         Comando::List => return comandos::list::executar(contexto),
         Comando::Status => return comandos::status::executar(contexto),
 
-        Comando::Backup { .. } => ("backup", "E7"),
+        // Com `--dry-run` o backup ja monta e imprime as receitas (E3); sem
+        // ele, quem arma e a E7 — e e o proprio comando que diz isso, porque
+        // o nome ainda precisa ser julgado por B-2 antes de qualquer resposta.
+        Comando::Backup { nome } => return comandos::backup::executar(contexto, nome),
+
         Comando::Resultado => ("resultado", "E8"),
         Comando::Restore => ("restore", "E9"),
         Comando::Verify { .. } => ("verify", "E11"),

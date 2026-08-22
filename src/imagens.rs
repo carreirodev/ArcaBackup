@@ -18,7 +18,12 @@ use std::path::Path;
 const MD5SUMS: &str = "MD5SUMS";
 
 /// Onde o `ocs-chkimg` deixa o veredito, por B-9.
-const CHECK_LOG: &str = "arca-check.log";
+///
+/// Publico porque quem **escreve** este arquivo e a receita da E3
+/// ([`crate::receita`]), e quem o lê e este modulo. Um nome so, num lugar so:
+/// mudar o arquivo aqui muda a receita junto, e nao ha como um lado divergir
+/// do outro em silencio.
+pub const CHECK_LOG: &str = "arca-check.log";
 
 /// Pastas de servico do `ARCAVAULT`: existem no dispositivo e nunca sao
 /// imagem nem residuo.
@@ -30,8 +35,14 @@ const CHECK_LOG: &str = "arca-check.log";
 /// de mentira aparecendo na lista do que um de verdade escondido dela: um
 /// residuo escondido e um nome que o pre-voo vai recusar sem que ninguem
 /// tenha visto por que (B-3).
-const RESERVADAS: [&str; 4] = [
-    "ARCA-LOGS",
+///
+/// Publica porque [`crate::nome`] tem de **recusar** estes nomes: uma imagem
+/// chamada `ARCA-LOGS` seria gravada por cima da pasta de logs e, pior,
+/// desapareceria desta enumeracao — invisivel no `arca list` e invisivel para
+/// o pre-voo de B-3, que e quem recusaria o nome repetido. O que esta lista
+/// esconde, aquela recusa tem de impedir que exista.
+pub const RESERVADAS: [&str; 4] = [
+    crate::dispositivo::ARCA_LOGS,
     "ARCA-DOCS",
     "$RECYCLE.BIN",
     "System Volume Information",
@@ -157,39 +168,46 @@ fn somar(
 ///
 /// O arquivo tem duas formas no dispositivo, e as duas sao legitimas. A
 /// receita de B-9 redireciona a saida crua do `ocs-chkimg`, cheia de escapes
-/// de terminal; um log mais novo pode trazer, no fim, a linha
-/// `ARCA_VEREDITO=APROVADA` acrescentada de proposito. Quando ela esta la,
-/// ela decide — e um marcador que alguem escreveu para ser lido, e nao um
-/// texto de terminal que se interpreta.
+/// de terminal; um log mais novo traz, no fim, a linha `ARCA_VEREDITO=`
+/// acrescentada de proposito pela receita (E3). O marcador e o caminho
+/// preferido — e algo que alguem escreveu para ser lido, e nao um texto de
+/// terminal que se interpreta.
 ///
-/// Sem o marcador, vale o resumo do `ocs-chkimg`. A marca de falha e
-/// procurada **antes** da de sucesso: um log de falha lista as particoes que
-/// prestam junto da que nao presta, e ler na outra ordem transformaria uma
-/// imagem quebrada em imagem aprovada.
+/// **Mas ele nao tem a ultima palavra sobre aprovar.** Toda forma de reprovar
+/// vem antes de toda forma de aprovar: o marcador de reprovacao e o
+/// `not restorable` do resumo reprovam os dois, e so depois de nenhum deles
+/// aparecer e que se procura aprovacao. Um log de falha lista as particoes
+/// que prestam junto da que nao presta, e a receita **acrescenta** a linha ao
+/// log — as duas marcas cabem no mesmo arquivo, por mais de um caminho.
 ///
 /// Nao havendo nem uma coisa nem outra, o veredito e `None`. Ausencia de
 /// prova nunca vira aprovacao: imagem nao verificada e suposicao.
 ///
-/// Registrado em `docs/adr/0003-veredito-lido-do-arca-check-log.md`.
+/// Registrado em `docs/adr/0003-veredito-lido-do-arca-check-log.md`, com o
+/// ajuste da ordem em `docs/adr/0004-a-receita-transcreve-o-que-rodou.md`.
 pub fn interpretar_veredito(texto: &str) -> Option<Veredito> {
-    // Reprovacao antes de aprovacao, nos dois caminhos e pelo mesmo motivo:
-    // um arquivo pode conter as duas marcas. No resumo, porque um log de
-    // falha lista as particoes que prestam junto da que nao presta; no
-    // marcador, porque a receita **acrescenta** a linha ao log, e uma
-    // verificacao repetida deixa a marca antiga por cima. Em qualquer dos
-    // dois casos, qualquer sinal de reprovacao reprova (S-5).
-    if texto.contains("ARCA_VEREDITO=REPROVADA") {
+    // Toda forma de reprovar vem antes de toda forma de aprovar, e nao
+    // reprovacao-antes-de-aprovacao dentro de cada caminho. A diferenca
+    // passou a importar na etapa E3: ate ela, o `ARCA_VEREDITO=APROVADA` so
+    // existia porque **alguem o escreveu depois de olhar**. Agora quem o
+    // escreve e a receita, a partir do codigo de saida do `ocs-chkimg`.
+    //
+    // Se o `ocs-chkimg` sair zero com um `NOT restorable` no texto — que e
+    // P-6 aplicado a ele —, o log fica com as duas marcas. Deixar o marcador
+    // decidir ali transformaria uma imagem quebrada em imagem aprovada, que e
+    // o contrario de S-5. Qualquer sinal de reprovacao reprova.
+    let minusculo = texto.to_lowercase();
+
+    if texto.contains("ARCA_VEREDITO=REPROVADA") || minusculo.contains("not restorable") {
         return Some(Veredito::Reprovada);
-    }
-    if texto.contains("ARCA_VEREDITO=APROVADA") {
-        return Some(Veredito::Aprovada);
     }
 
-    let minusculo = texto.to_lowercase();
-    if minusculo.contains("not restorable") {
-        return Some(Veredito::Reprovada);
-    }
-    if minusculo.contains("were checked and are restorable") {
+    // Sem nenhum sinal de reprovacao, o marcador decide — e ele e o caminho
+    // preferido porque e algo que alguem escreveu para ser lido, e nao um
+    // texto de terminal que se interpreta.
+    if texto.contains("ARCA_VEREDITO=APROVADA")
+        || minusculo.contains("were checked and are restorable")
+    {
         return Some(Veredito::Aprovada);
     }
 
@@ -266,6 +284,27 @@ mod testes {
             "ARCA_FIM\n",
             "This partition image is NOT restorable: nvme0n1p3\n",
             "ARCA_VEREDITO=REPROVADA\n",
+            "ARCA_FIM\n"
+        );
+
+        assert_eq!(interpretar_veredito(log), Some(Veredito::Reprovada));
+    }
+
+    #[test]
+    fn o_marcador_de_aprovacao_nao_apaga_uma_reprovacao_no_resumo() {
+        // O caso que a etapa E3 criou. Ate ela, o `ARCA_VEREDITO=APROVADA` so
+        // aparecia porque alguem o escreveu depois de olhar o log. Agora quem
+        // o escreve e a receita, a partir do codigo de saida do `ocs-chkimg`
+        // — e um `ocs-chkimg` que saisse zero com um `NOT restorable` no
+        // texto (P-6 aplicado a ele) deixaria as duas marcas no arquivo.
+        //
+        // Se o marcador decidisse, esta imagem quebrada sairia como aprovada,
+        // e sairia **por causa** de uma mudanca feita para melhorar a leitura
+        // do veredito. Qualquer sinal de reprovacao reprova (S-5).
+        let log = concat!(
+            "This partition image is restorable: nvme0n1p1\n",
+            "This partition image is NOT restorable: nvme0n1p3\n",
+            "ARCA_VEREDITO=APROVADA\n",
             "ARCA_FIM\n"
         );
 

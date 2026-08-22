@@ -3,6 +3,7 @@
 **Automatizador de Clonezilla para backup e restauração de imagem de disco.**
 
 Versão 5.1 · 22/08/2026 · Substitui a v4
+Última revisão: 22/08/2026, etapa E3 — §3.1, §3.2, §3.5, §10 e os requisitos B-8, B-9, C-6, R-4, R-5, R-6, S-4 reescritos contra as receitas preservadas em `recursos/capturas/`
 Uso pessoal · Um usuário · Sem distribuição
 
 > **As fundações não são hipótese.** O mecanismo descrito neste documento foi
@@ -65,10 +66,19 @@ Tudo abaixo foi medido em hardware, não projetado.
 | Fato | Evidência |
 |---|---|
 | Entrada de firmware apontando para SSD externo funciona | Boot único disparado e executado, múltiplas vezes |
-| `bcdedit` **rejeita `Removable Media` em silêncio** — responde "êxito" e mantém o valor antigo | Pendrive testado e recusado; SSD (`External hard disk media`) aceito |
+| `bcdedit` **rejeita mídia removível em silêncio** — responde "êxito" e mantém o valor antigo | Pendrive testado e recusado; SSD aceito |
 | Partição primária comum basta — não precisa marcar tipo EFI | SSD preparado assim boota normalmente |
 | O `bcdedit` **não traduz** os nomes de campo: só `identificador` sai em português | Parser por valor é o correto |
 | A entrada legada desta máquina chama-se **`Clonezilla`**, GUID `{f4057bd0-…}` | Procurar só por `ARCA` criaria entrada órfã |
+
+> **As palavras `Removable Media` e `External hard disk media` não saem do
+> `bcdedit`.** Procuradas no `bcdedit.exe` e nos seus recursos `pt-BR` e
+> `en-US`: não estão lá. São valores de `MediaType` do WMI (`Win32_DiskDrive`,
+> em `cimwin32.dll`) — outra ferramenta, outra pergunta. Nenhum parser da
+> saída do `bcdedit` pode produzi-las. **Quem revela a rejeição silenciosa é a
+> releitura de C-3**: um `device` que não mudou depois da escrita. O
+> `GetDriveType` do Windows dá o sinal antecipado, antes de qualquer
+> tentativa. Medido na etapa E2; ver `recursos/capturas/PROVENIENCIA.md`.
 
 ### 3.2 — Receita desatendida
 
@@ -77,9 +87,12 @@ Tudo abaixo foi medido em hardware, não projetado.
 | `ocs_repository="dev:///LABEL=..."` funciona e elimina a ambiguidade `sda`/`sdb` | Backup real gravado no destino certo |
 | `locales=` vazio abre tela de idioma mesmo em batch — fixar `locales=en_US.UTF-8` | Observado |
 | `-batch -sfsck -senc` suprimem todas as perguntas | Backup real sem uma única tela |
+| **`-batch`, e nunca `-b`** | O help do `ocs-sr` desta versão: *"You have to use '-batch' instead of '-b' when you want to use it in the boot parameters. Otherwise the program init on system will honor '-b', too."* |
+| **O padrão de `-p\|--postaction` é `reboot`** — sem `-p true`, o `ocs-sr` reinicia assim que termina de gravar, e nada depois dele roda | Help do `ocs-sr`. É por isso que as duas receitas reais o trazem |
 | `ask_user` é válido para imagem e dispositivo, salvando e restaurando | Documentação oficial + uso |
 | **Verificação não roda sozinha em batch** — `ocs-chkimg` tem que ser chamado | Primeiro backup gerou checksum que ninguém conferiu |
 | **Pipe (`\|`, `tee`) invalida a string inteira**: o Clonezilla descarta a receita e abre o menu interativo, sem executar nada | Medido. Só redirecionamento simples (`>`, `>>`) é permitido |
+| **A receita é uma string única em `ocs_live_run="bash -c '...'"`**, numa linha só do `grub.cfg` — nunca um script de várias linhas | As três receitas preservadas em `recursos/capturas/` |
 
 ### 3.3 — Backup validado
 
@@ -109,6 +122,15 @@ Restauração real sobre o `nvme0n1`. Do comando ao Windows restaurado, **sem in
 | # | Pendência |
 |---|---|
 | P-6 | **O `ocs-sr` devolve código diferente de zero quando falha?** O ramo de sucesso foi medido; o de falha não. Uma restauração bem-sucedida não fecha isso, por definição. Fecha com falha forçada, provavelmente em VM |
+| P-16 | **O mecanismo de desfecho nunca rodou.** Nenhuma das três receitas preservadas escreve `arca-fim.txt`, grava selo ou usa `if/then/else`. O `arca-fim.txt` que existe no dispositivo veio de trabalho manual de validação, como o `ARCA_VEREDITO=` do ADR-0003. **S-4, C-11, C-12, R-5 e R-6 são código novo**, e a E7 é a primeira execução de todos eles ao mesmo tempo |
+
+> **Uma advertência sobre esta seção inteira.** Duas vezes já se descobriu que
+> algo documentado como fundação validada na verdade veio do **trabalho de
+> validação em volta dela**, e não da receita: o `ARCA_VEREDITO=` (ADR-0003) e
+> agora o `arca-fim.txt` (P-16). O padrão se repete porque a evidência que
+> sobra no dispositivo não distingue o que a receita escreveu do que uma
+> pessoa escreveu depois. Antes de tratar qualquer linha desta seção como
+> medida, vale procurar o original em `recursos/capturas/`.
 
 ## 4. Estrutura de um dispositivo
 
@@ -318,11 +340,11 @@ Todos exigem privilégio administrativo.
 | ID | Requisito |
 |---|---|
 | C-1 | **Desarmar a receita anterior incondicionalmente**, como primeiro passo, sem consultar estado nenhum |
-| C-2 | **Validar a receita antes de gravar** no `grub.cfg`: rejeitar pipes, aspas desbalanceadas e nomes inseguros |
+| C-2 | **Validar a receita antes de gravar** no `grub.cfg`: rejeitar pipes, **toda** aspa (não só as desbalanceadas — um par de aspas simples fecha o `bash -c` e abre outra string), substituição de comando, caractere de controle, não-ASCII, e a linha que não coubesse no `COMMAND_LINE_SIZE` do kernel (§10.2.3). Nomes inseguros já param antes, em B-2 |
 | C-3 | Nunca confiar no retorno do `bcdedit`; sempre conferir com `/enum` e parsear **por valor** |
 | C-4 | Procurar a entrada `ARCA`; não havendo, migrar a legada `Clonezilla` em vez de criar outra |
 | C-5 | Boot único — nunca alterar a ordem permanente |
-| C-6 | Recusar `Removable Media` como alvo de entrada de boot; orientar F12 |
+| C-6 | **Recusar mídia removível como alvo de entrada de boot; orientar F12.** A recusa não se lê numa etiqueta do `bcdedit` — essas palavras não saem dele (§3.1). Verifica-se de dois jeitos: o `GetDriveType` do Windows dá o sinal antecipado, e a releitura de C-3 revela a rejeição como um `device` que não mudou |
 | C-7 | Repassar os argumentos ao relançar com elevação por UAC |
 | C-8 | Escapar aspas com **barra invertida**, não crase — quem reparte a linha é o parser do Windows |
 | C-9 | Avisar, antes de reiniciar, para remover o SSD ao terminar |
@@ -335,14 +357,14 @@ Todos exigem privilégio administrativo.
 | ID | Requisito |
 |---|---|
 | B-1 | Localizar o dispositivo pela partição `ARCAVAULT` |
-| B-2 | Recusar nome com espaço, acento ou caractere inválido para nome de pasta |
+| B-2 | Recusar nome com espaço, acento ou caractere inválido para nome de pasta. **Por lista de permissão** (`A-Z a-z 0-9 . _ -`), e não de recusa: uma lista de recusa só está certa enquanto ninguém esquecer um caractere. Recusar também: nome reservado do Windows (`CON`, `COM0`–`COM9`, `LPT0`–`LPT9`, …), as pastas de serviço do dispositivo (`ARCA-LOGS`, `ARCA-DOCS`), nome começando com `-` (o `ocs-sr` o leria como opção) ou com `.`, e nome acima de 48 caracteres (§10.2.3) |
 | B-3 | **Recusar nome cuja pasta já exista** — mesmo sem `MD5SUMS`. Pasta sem `MD5SUMS` é resíduo de backup interrompido; o usuário apaga à mão |
 | B-4 | Espaço mínimo: o maior entre `maior imagem do dispositivo × 1,3` e `em uso × 0,45`. Entre 1× e 1,5× disso: avisar e pedir confirmação digitada |
 | B-5 | Verificar Inicialização Rápida; oferecer `powercfg /h off` |
 | B-6 | Rodar `chkdsk /scan`; oferecer agendar `/f` se acusar erro |
 | B-7 | Receita com nome e disco embutidos — **sem `ask_user`** |
-| B-8 | Sempre `-batch -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -scs`. O `-batch` é o que suprime as perguntas (§3.2) — sem ele, a receita abre tela |
-| B-9 | Sempre chamar `ocs-chkimg` explicitamente, com saída redirecionada para arquivo |
+| B-8 | Sempre `-q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true`, **nesta ordem** — é a sequência que rodou nos dois backups validados. `-batch` é o que suprime as perguntas (§3.2). `-p true` é o que impede o `ocs-sr` de reiniciar antes de o `ocs-chkimg` rodar, já que o padrão de `-p` é `reboot`. **Nunca `-scs`**: ele é `--skip-check-restorable` e pula a conferência nativa, o oposto do que B-9 quer |
+| B-9 | Sempre chamar `ocs-chkimg` explicitamente, com saída redirecionada para arquivo, **dentro do ramo de êxito do `savedisk`**: com o backup falhando, a pasta da imagem pode nem existir, e o redirecionamento falharia junto |
 | B-10 | Nunca apagar nada |
 
 ### 9.3 — Restauração
@@ -352,9 +374,9 @@ Todos exigem privilégio administrativo.
 | R-1 | Listar as imagens **no Windows**; a escolha acontece antes do reinício |
 | R-2 | Conferir o destino contra `disk`/`blkdev.list` da imagem |
 | R-3 | Exigir o nome da imagem digitado por extenso |
-| R-4 | Sempre `-batch -k0 -iefi -j2`, sempre **sem** `-g auto` |
-| R-5 | Receita com `if/then/else`: escrever `ARCA_RESTORE=OK` ou `ARCA_RESTORE=FALHOU` |
-| R-6 | Ler esse arquivo na volta e **conferir o selo antes de acreditar nele** (C-11) |
+| R-4 | Sempre `-e1 auto -e2 -batch -j2 -k0 -iefi -p true`, **nesta ordem**, sempre **sem** `-g auto`. `-e1` e `-e2` acertam a geometria CHS da partição de boot NTFS: inócuos no mesmo disco, e é o que faz a restauração funcionar em outro (R-7). Estavam na restauração validada e o requisito não os listava. `-p true` em vez do `-p poweroff` que rodou, porque com a máquina desligando dentro do `ocs-sr` o desfecho de R-5 nunca seria escrito |
+| R-5 | Receita com `if/then/else`: escrever `ARCA_RESTORE=OK` ou `ARCA_RESTORE=FALHOU`. **Código novo** — as três receitas preservadas encadeiam com `;` (P-16) |
+| R-6 | Ler esse arquivo na volta e **conferir o selo antes de acreditar nele** (C-11). O job fantasma que isto previne é **risco herdado**, e não corrente: §4.1 eliminou a causa ao tirar o ARCA do `C:`, e só imagens feitas antes disso carregam estado dentro de si. O selo cobre de qualquer forma, e é o mesmo mecanismo dos outros três casos (§4.3) |
 | R-7 | Destino diferente do disco de origem é **permitido**, com confirmação que nomeia o disco de destino. Recusar sempre que o destino for **menor** que a origem: `-k0` copia a tabela inteira e, num disco menor, corrompe em vez de falhar. Em disco novo, `-iefi` não encontra entrada correspondente e o `bcdboot` volta a ser necessário — ao contrário do que §3.4 mediu no disco original |
 
 ### 9.4 — Segurança
@@ -364,7 +386,7 @@ Todos exigem privilégio administrativo.
 | S-1 | O ARCA nunca abre o disco de origem em **acesso raw** de escrita. Chamar `powercfg` ou `chkdsk` (B-5, B-6) não é isso: são operações do próprio sistema, pelas quais o Windows responde |
 | S-2 | Operação destrutiva exige texto digitado, nunca só `s` |
 | S-3 | Destino sempre por LABEL — nunca por letra, `sda` ou número de série |
-| S-4 | Veredito sempre gravado em arquivo, nunca só em tela |
+| S-4 | Veredito e desfecho sempre gravados em arquivo, nunca só em tela — o `arca-check.log` e o `arca-fim.txt`, ambos escritos pela receita. **Código novo**: nenhuma receita real chegou a escrever `arca-fim.txt` (P-16) |
 | S-5 | Falha parcial é tratada como falha total |
 | S-6 | **Nunca comparar uma data escrita pelo Windows com outra escrita pelo Linux.** O que liga um job ao seu desfecho é o selo (C-11), nunca o tempo |
 
@@ -387,64 +409,125 @@ Todos exigem privilégio administrativo.
 
 ## 10. Implementação
 
+> **A receita não é um script.** As versões anteriores deste documento
+> mostravam as duas receitas como `#!/bin/bash` de várias linhas. Isso nunca
+> existiu: o que roda é **uma string única**, dentro de
+> `ocs_live_run="bash -c '...'"`, numa linha só do `grub.cfg` — como o
+> [ADR-0002](../docs/adr/0002-receita-como-string-no-grub.md) decidiu e as
+> três receitas preservadas em `recursos/capturas/` comprovam. As seções
+> abaixo mostram a forma real. A indentação existe só para caber na página;
+> no `grub.cfg` tudo é uma linha.
+
 ### 10.1 — Receita de backup
 
-```bash
-#!/bin/bash
-NOME="2026-08-22_Apps"
-DISCO="nvme0n1"
-SELO="a3f1c9e07b2d4856"
-LOG="/home/partimag/ARCA-LOGS/$NOME"
-mkdir -p "$LOG"
+Gerada por `src/receita.rs`, para `NOME=2026-08-22_Apps`, `DISCO=nvme0n1` e um
+selo de exemplo:
 
-echo "ARCA_SELO=$SELO" > "$LOG/arca-fim.txt"
-
-if ocs-sr -batch -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -scs -p true \
-          savedisk "$NOME" "$DISCO"; then
-  echo "ARCA_BACKUP=OK" >> "$LOG/arca-fim.txt"
-else
-  echo "ARCA_BACKUP=FALHOU" >> "$LOG/arca-fim.txt"
-fi
-
-ocs-chkimg -b -or /home/partimag "$NOME" \
-  > "/home/partimag/$NOME/arca-check.log" 2>&1
-
-echo "ARCA_FIM" >> "$LOG/arca-fim.txt"
-sleep 20
+```text
+mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-22_Apps;
+echo ARCA_SELO=a3f1c9e07b2d4856 > /home/partimag/ARCA-LOGS/backup-2026-08-22_Apps/arca-fim.txt;
+if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-22_Apps nvme0n1;
+  then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-22_Apps/arca-fim.txt;
+    if ocs-chkimg -b -or /home/partimag 2026-08-22_Apps > /home/partimag/2026-08-22_Apps/arca-check.log 2>&1;
+      then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-22_Apps/arca-check.log;
+      else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-22_Apps/arca-check.log;
+    fi;
+  else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-22_Apps/arca-fim.txt;
+fi;
+echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-22_Apps/arca-fim.txt;
+sleep 20;
 poweroff
 ```
+
+A verificação de B-9 mora **dentro** do ramo de êxito: com o `savedisk`
+falhando, a pasta da imagem pode nem existir, e o redirecionamento do
+`ocs-chkimg` falharia junto do `else` dele.
+
+O `ARCA_VEREDITO=` é acrescentado ao `arca-check.log` porque é o marcador que
+o leitor prefere ([ADR-0003](../docs/adr/0003-veredito-lido-do-arca-check-log.md)),
+e escrevê-lo tira o veredito da dependência de interpretar frases em inglês do
+`ocs-chkimg`.
 
 ### 10.2 — Receita de restauração
 
-```bash
-#!/bin/bash
-NOME="2026-08-22_Apps"
-SELO="7e02b4d1af963c85"
-LOG="/home/partimag/ARCA-LOGS/$NOME"
-mkdir -p "$LOG"
-
-echo "ARCA_SELO=$SELO" > "$LOG/arca-fim.txt"
-
-if ocs-sr -batch -j2 -k0 -iefi -p true restoredisk "$NOME" nvme0n1; then
-  echo "ARCA_RESTORE=OK" >> "$LOG/arca-fim.txt"
-else
-  echo "ARCA_RESTORE=FALHOU" >> "$LOG/arca-fim.txt"
-fi
-echo "ARCA_FIM" >> "$LOG/arca-fim.txt"
-sleep 20
+```text
+mkdir -p /home/partimag/ARCA-LOGS/restauracao-2026-08-22_Apps;
+echo ARCA_SELO=7e02b4d1af963c85 > /home/partimag/ARCA-LOGS/restauracao-2026-08-22_Apps/arca-fim.txt;
+if ocs-sr -e1 auto -e2 -batch -j2 -k0 -iefi -p true restoredisk 2026-08-22_Apps nvme0n1 > /home/partimag/ARCA-LOGS/restauracao-2026-08-22_Apps/arca-restore.log 2>&1;
+  then echo ARCA_RESTORE=OK >> /home/partimag/ARCA-LOGS/restauracao-2026-08-22_Apps/arca-fim.txt;
+  else echo ARCA_RESTORE=FALHOU >> /home/partimag/ARCA-LOGS/restauracao-2026-08-22_Apps/arca-fim.txt;
+fi;
+echo ARCA_FIM >> /home/partimag/ARCA-LOGS/restauracao-2026-08-22_Apps/arca-fim.txt;
+sleep 20;
 poweroff
 ```
 
-O `LOG` mora no `ARCAVAULT`, que a restauração não toca — a imagem substitui o `nvme0n1`, e o desfecho sobrevive num disco que não estava no caminho.
+O `LOG` mora no `ARCAVAULT`, que a restauração não toca — a imagem substitui o `nvme0n1`, e o desfecho sobrevive num disco que não estava no caminho. Sem verificação: B-9 é do backup, e aqui não há imagem nova para conferir.
+
+**A pasta do log leva a operação, e não só o nome da imagem.** Toda receita começa truncando o próprio `arca-fim.txt` com um `>`. Se as duas dividissem o caminho, um `arca restore X` rodado antes de o backup de X ser colhido apagaria o desfecho dele, e §5.5 leria um backup bem-sucedido como desfecho ausente. O selo não cobre isso: ele julga um desfecho **encontrado**, e não serve para nada quando o arquivo já foi por cima.
+
+### 10.2.3 — O orçamento da linha de comando
+
+A receita inteira vira uma linha só, e o `COMMAND_LINE_SIZE` do kernel no x86_64 é **2048 caracteres**. Estourar não dá erro: o kernel **trunca em silêncio**, e uma receita truncada é uma string inválida — o caso do §3.2, em que o Clonezilla descarta tudo e abre o menu.
+
+O nome da imagem aparece dez vezes na receita de backup, e cada caractere a mais custa dez na linha. O orçamento:
+
+| | |
+|---|---|
+| Teto do kernel | 2048 |
+| Reservado para o `menuentry` base | 512 (medido nas capturas: 206, 369, 369) |
+| Sobra para o que o ARCA gera | 1536 |
+| Receita de backup com o nome mais longo que B-2 aceita (48) | 1271 |
+
+A recusa acontece nos dois pontos: B-2 limita o nome a 48 caracteres, e a montagem da receita confere a linha pronta contra os 1536 — porque o limite do nome é uma estimativa e o tamanho da linha é o fato.
+
+### 10.2.1 — Como as receitas entram no `grub.cfg`
+
+Os cinco parâmetros que a receita exige na linha `$linux_cmd`, idênticos nas
+três capturas:
+
+```text
+locales=en_US.UTF-8 keyboard-layouts=NONE ocs_repository="dev:///LABEL=ARCAVAULT" ocs_live_run="bash -c '<a receita>'" ocs_live_batch="yes"
+```
+
+O resto da linha — `hostname`, `vga`, `toram`, as blacklists de driver — é do
+`menuentry` base do Clonezilla, e não da receita. Quem o reproduz é o desarmar
+(E4), a partir do `grub.cfg` que já está no dispositivo.
+
+### 10.2.2 — O que destas receitas nunca rodou
+
+Distinção que custou uma etapa inteira para aparecer, e que vale mais do que
+qualquer das linhas acima:
+
+| Parte | Origem |
+|---|---|
+| As flags do `ocs-sr` e a ordem delas | Transcrito das três capturas |
+| O `ocs-chkimg` com saída redirecionada | Transcrito de `ARCA-TESTE-03` |
+| Os cinco parâmetros de boot | Transcrito das três |
+| A forma `bash -c '...'` com `;` entre os passos | Transcrito das três |
+| O `if/then/else` de R-5 | **Código novo** — as três encadeiam com `;` |
+| O `arca-fim.txt`, o `ARCA_SELO=`, o `ARCA_FIM` | **Código novo** — nenhuma receita real o escreveu (P-16) |
+| O `ARCA_VEREDITO=` no `arca-check.log` | **Código novo** — ADR-0003 |
+| O `sleep 20` | **Código novo** — nenhuma captura o tem |
+
+Ver [ADR-0004](../docs/adr/0004-a-receita-transcreve-o-que-rodou.md).
 
 > **Por que `if/then/else` e não `;`.** Encadear com `;` não olha código de saída: uma restauração que falhasse produziria exatamente o mesmo rastro de uma que desse certo.
 
 ### 10.3 — Restrições da receita
 
 - **Sem pipes.** Só `>` e `>>`. Um pipe invalida a string inteira e o Clonezilla abre o menu interativo, sem executar nada e sem avisar
+- **Nenhuma aspa, nem simples nem dupla.** A receita mora dentro de um `bash -c '...'` que mora dentro de um `ocs_live_run="..."`: uma aspa simples fecha o primeiro, uma dupla fecha o segundo. Não basta que estejam balanceadas — um par de aspas simples fecha a string do `bash` e abre outra, produzindo algo sintaticamente válido e semanticamente diferente
+- **Nenhuma substituição de comando** (`` ` ``, `$(`, `${`, `$`). O que se validou deixaria de ser o que roda
+- **Nada que não seja ASCII imprimível.** A receita é uma linha só do `grub.cfg`, e uma quebra de linha dentro dela transformaria o resto em outra diretiva do grub
 - `locales=en_US.UTF-8` explícito
 - `toram` mantido — evita acoplar o live system ao dispositivo que ele remonta
 - Validar a string antes de gravar (C-2)
+
+O nome da imagem é a única parte da receita que vem de fora, e ele passa por
+B-2 antes: **lista de permissão** (`A-Z a-z 0-9 . _ -`), e não lista de
+recusa. Uma lista de recusa só está certa enquanto ninguém esquecer um
+caractere, e esquecer um caractere aqui custa uma execução real.
 
 ### 10.4 — Stack
 
@@ -459,7 +542,8 @@ Cada uma custou uma execução real para aparecer.
 | Armadilha | Efeito | Defesa |
 |---|---|---|
 | Pipe na receita | Clonezilla ignora tudo e abre o menu — indistinguível de "o boot não funcionou" | C-2 |
-| `;` em vez de `if/then/else` | Falha deixa o mesmo rastro que sucesso | R-5 |
+| `;` em vez de `if/then/else` | Falha deixa o mesmo rastro que sucesso | R-5 — e a defesa nunca rodou: as três receitas preservadas usam `;` (P-16) |
+| Documentar como fundação o que veio do trabalho de validação | O `ARCA_VEREDITO=` e o `arca-fim.txt` do dispositivo pareciam prova de que a receita os escrevia. Nenhuma escreve | Procurar o original em `recursos/capturas/` antes de chamar qualquer coisa de medida |
 | Relógio do Clonezilla 3h adiantado | Ele lê o RTC (hora local do Windows) como UTC. Uma trava construída sobre comparação de datas reprovou um backup perfeito | S-6 |
 | Argumentos perdidos na reelevação | `--dry-run` virou execução real, sem aviso | C-7 |
 | Crase como escape | O parser do Windows reparte a linha, não o do PowerShell | C-8 |
@@ -483,6 +567,10 @@ Cada uma custou uma execução real para aparecer.
 | Escolha da imagem no Windows, execução sem telas | A lista à vista, antes do ponto sem volta |
 | `-iefi` e `-k0` sempre na restauração | Validados por medição |
 | Verificação sempre, veredito em arquivo | Imagem não verificada é suposição |
+| **Nunca `-scs`** — a conferência nativa do Clonezilla fica ligada, ao lado do `ocs-chkimg` explícito | `-scs` é `--skip-check-restorable`. B-8 o pedia sempre; o hardware rodou sem ele. Dois sinais independentes valem mais do que um ([ADR-0004](../docs/adr/0004-a-receita-transcreve-o-que-rodou.md)) |
+| `-e1 auto -e2` sempre na restauração | Estavam na única restauração que deu certo. Inócuos no mesmo disco, e é o que faz a partição de boot bater com a geometria de outro (R-7) |
+| A receita escreve `ARCA_VEREDITO=` no `arca-check.log` | Tira o veredito da dependência de interpretar frases em inglês do `ocs-chkimg` ([ADR-0003](../docs/adr/0003-veredito-lido-do-arca-check-log.md)) |
+| A receita transcreve o que rodou, e o que não tem original é marcado como código novo | Duas vezes já se documentou como fundação validada o que veio do trabalho de validação em volta dela (ADR-0004) |
 | O ARCA não cria partições | Princípio P1 |
 | `toram` mantido | Evita acoplar o live system ao dispositivo que ele remonta |
 | Job ligado ao desfecho por selo, nunca por data | Não há relógio comum entre Windows e Clonezilla (P-7) |
@@ -498,7 +586,9 @@ Cada uma custou uma execução real para aparecer.
 | P-6 | O `ocs-sr` devolve código ≠ 0 quando falha? Fecha com falha forçada em VM |
 | P-7 | O deslocamento de 3 h é permanente. Existe para a próxima pessoa que for comparar datas |
 | P-14 | `arca resultado` deve rodar sozinho no logon? Começar sem, decidir com uso |
-| P-15 | A receita de backup publicada em §10.1 divergia da fundação §3.2 quanto ao `-batch`. Adotado o `-batch`, alinhando à fundação medida — mas **qual das duas rodou no hardware não está registrado**. Confirmar na primeira execução pelo ARCA |
+| ~~P-15~~ | ~~A receita de backup publicada em §10.1 divergia da fundação §3.2 quanto ao `-batch`.~~ **Fechada em 22/08/2026, etapa E3.** `-batch` rodou, nas três receitas preservadas em `recursos/capturas/`. O help do `ocs-sr` diz por que é `-batch` e não `-b`: em parâmetro de boot, o `init` do sistema também honraria `-b` |
+| P-16 | **O mecanismo de desfecho nunca rodou** — ver §3.5. Fecha no marco em hardware da E7, que estreia `arca-fim.txt`, selo na receita, `ARCA_FIM` e `if/then/else` de uma vez |
+| P-17 | **`-icds` contradiz R-7.** O help diz que o Clonezilla confere o tamanho do disco de destino **por padrão** e desiste se for menor que a origem; `-icds` é quem desliga essa conferência. R-7 e a decisão 5 do plano supõem o contrário — que `-k0` num disco menor corromperia em vez de falhar. A receita não usa `-icds`, e há teste cobrando isso. Resolver é da E9 |
 
 ---
 
