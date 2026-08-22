@@ -3,8 +3,9 @@
 **Automatizador de Clonezilla para backup e restauração de imagem de disco.**
 
 Versão 5.1 · 22/08/2026 · Substitui a v4
-Última revisão: 22/08/2026, etapa E4 — §3.2 ganhou o `set default`, que é o que faz o boot ser desatendido e não estava documentado; §4.4 define o **estado inerte**, que o §5.2, o §5.4 e o §6.3 pressupunham; §8 ganhou `arca desarmar`; P-18 aberta sobre a §3.1
-Revisão anterior: etapa E3 — §3.1, §3.2, §3.5, §10 e os requisitos B-8, B-9, C-6, R-4, R-5, R-6, S-4 reescritos contra as receitas preservadas em `recursos/capturas/`
+Última revisão: 22/08/2026, etapa E5 — §4.3 ganhou o **formato do selo** e os três lugares por onde ele passa; §5.5 ganhou a linha do `arca-fim.txt` **sem selo nenhum**, que a tabela não tinha
+Revisão anterior: etapa E4 — §3.2 ganhou o `set default`, que é o que faz o boot ser desatendido e não estava documentado; §4.4 define o **estado inerte**, que o §5.2, o §5.4 e o §6.3 pressupunham; §8 ganhou `arca desarmar`; P-18 aberta sobre a §3.1
+E antes: etapa E3 — §3.1, §3.2, §3.5, §10 e os requisitos B-8, B-9, C-6, R-4, R-5, R-6, S-4 reescritos contra as receitas preservadas em `recursos/capturas/`
 Uso pessoal · Um usuário · Sem distribuição
 
 > **As fundações não são hipótese.** O mecanismo descrito neste documento foi
@@ -196,6 +197,40 @@ Isso existe porque **não há relógio comum**: o Clonezilla lê o RTC (hora loc
 
 O selo resolve quatro casos com um mecanismo só: desfecho de um job anterior, desfecho vindo de dentro de uma imagem antiga (§11, job fantasma), desfecho ausente porque o boot nunca aconteceu, e arquivo truncado por desligamento no meio.
 
+#### O formato, e os três lugares por onde ele passa
+
+Construído na etapa E5. Estava só no código, e o C-11 fala de três lugares sem
+dizer que forma tem a coisa que atravessa os três:
+
+| | |
+|---|---|
+| **Forma** | 16 dígitos hexadecimais **minúsculos** — `a3f1c9e07b2d4856` |
+| **De onde vem** | 8 bytes de `BCryptGenRandom` ([ADR-0006](../docs/adr/0006-o-selo-e-o-estado-sem-dependencia-nova.md)) |
+| **1 · `estado.json`** | campo `"selo"`, em `ARCABOOT\arca\estado.json` |
+| **2 · receita** | `echo ARCA_SELO=<selo> > .../arca-fim.txt`, o **primeiro** passo que escreve |
+| **3 · `arca-fim.txt`** | `ARCA_SELO=<selo>` na **primeira linha, e só nela** |
+
+Minúsculas, e não `hexdigit` genérico: um selo que mudasse de caixa entre o
+`estado.json` e o `arca-fim.txt` deixaria de casar, e casar é a única coisa que
+o selo faz. **Primeira linha e só ela** porque a receita o escreve com `>`, que
+trunca — num arquivo que a receita produziu, ele não pode estar em outro lugar,
+e aceitar um selo achado no meio faria o rastro de dois jobs passar pelo
+segundo deles.
+
+Mudar essa forma obriga a mexer nos três lugares de uma vez, como o
+[ADR-0001](../docs/adr/0001-selo-liga-job-ao-desfecho.md) já avisava. Dois deles
+são código deste lado do reinício, e eles **compartilham a constante**
+`MARCA_DO_SELO`: `src/receita.rs` a declara e escreve, `src/desfecho.rs` a
+importa e lê. O terceiro é o `arca-fim.txt` que o Clonezilla produz a partir da
+receita, do outro lado. O `src/estado.rs` guarda o selo como valor e não conhece
+o marcador — quem quiser mudar a forma mexe nos dois primeiros.
+
+**O momento do armar não pertence a este mecanismo.** Ele está no
+`estado.json` e é informativo: nunca é comparado com nada escrito pelo Linux
+(S-6). O tipo que o carrega guarda texto e não deriva ordenação, para que a
+violação exija uma linha deliberada em vez de um descuido —
+`tests/s6_o_tempo_nao_decide.rs` cobra isso a cada build.
+
 ### 4.4 — O estado inerte
 
 O documento pressupunha este estado sem nunca defini-lo. O §6.3 conta com ele
@@ -304,8 +339,30 @@ Vale para backup e para restauração. Nenhuma linha desta tabela é silêncio: 
 | Selo bate, desfecho `FALHOU` | O Clonezilla falhou e disse | Reporta falha e aponta o log |
 | Selo bate, sem `ARCA_FIM` | Truncado — desligamento no meio | Falha; a pasta é resíduo (B-3) |
 | Selo não bate | Job fantasma | Ignora o arquivo e avisa |
+| **`arca-fim.txt` sem linha de selo, com selo repetido, ou sem marcador de desfecho** | **Não é desfecho de job nenhum do ARCA** — anterior ao mecanismo, escrito por outra coisa, ou cortado antes de a primeira linha existir | **Recusa nomeando qual dos três. Nunca diz "o selo não bate": não há selo a bater** |
 | Sem `arca-fim.txt`, com job pendente | O boot não aconteceu, ou o Clonezilla abriu menu | Falha, nomeando as duas causas |
 | Sem `arca-fim.txt`, sem job pendente | Não há nada a colher | Diz isso e para |
+
+> **A linha do "sem selo" nasceu na etapa E5, e ela não estava aqui.** A tabela
+> tinha *"selo não bate"* e tinha *"sem `ARCA_FIM`"*, e o único `arca-fim.txt`
+> que existe neste dispositivo não é nem um nem outro: ele tem `ARCA_FIM`, tem
+> `ARCA_RESTORE=OK` e **não tem `ARCA_SELO=` nenhum**. Vinte e cinco bytes,
+> duas linhas, conferido em 22/08/2026. É P-16 outra vez — ele veio do trabalho
+> manual de validação, e não de receita alguma.
+>
+> Dizer *"o selo não bate"* sobre esse arquivo seria mentira, e é o ramo que um
+> leitor tomaria por descuido: comparar o selo achado com o esperado, achando
+> vazio, e reportar divergência.
+>
+> **Aquele arquivo é inalcançável pelo ARCA de hoje**, e isso é verdade: a E3
+> decidiu que a pasta do log leva a operação no nome (`restauracao-<nome>`), e
+> ele está em `ARCA-LOGS\2026-08-21_WindowsCompleto\`. Mesmo assim a linha vale
+> código, porque **"sem selo" é alcançável por outro caminho**: toda receita
+> começa com `echo ARCA_SELO=... > arca-fim.txt`, e o `>` **trunca ao abrir**,
+> antes de o `echo` rodar. Medido em bash: um redirecionamento que abre e não
+> escreve deixa o arquivo em zero byte. Um desligamento nessa janela produz
+> exatamente um `arca-fim.txt` sem linha de selo — o caso que o §4.3 diz que o
+> selo cobre, com o selo sendo justamente o que foi cortado.
 
 ## 6. Fluxo: restauração
 

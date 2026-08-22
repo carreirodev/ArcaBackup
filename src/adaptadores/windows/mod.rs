@@ -8,6 +8,8 @@ pub mod linha_de_comando;
 #[cfg(windows)]
 pub mod console;
 #[cfg(windows)]
+pub mod entropia;
+#[cfg(windows)]
 pub mod firmware;
 #[cfg(windows)]
 pub mod privilegios;

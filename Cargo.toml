@@ -32,6 +32,9 @@ features = [
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Security",
+    # `BCryptGenRandom`, de onde vem o selo (C-11). Ver
+    # `docs/adr/0006-o-selo-e-o-estado-sem-dependencia-nova.md`.
+    "Win32_Security_Cryptography",
     "Win32_System_Com",
     "Win32_System_Console",
     "Win32_System_Diagnostics_Debug",

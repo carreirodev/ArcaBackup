@@ -31,6 +31,23 @@ pub enum Erro {
     #[error("receita recusada (C-2): {0}")]
     ReceitaRecusada(crate::receita::RecusaDaReceita),
 
+    /// O `estado.json` do `ARCABOOT` nao pode ser lido nem escrito sem
+    /// adivinhacao.
+    ///
+    /// "Nao entendi o arquivo" nunca vira "nao ha job pendente": um
+    /// dispositivo com job armado e estado corrompido continua armado, e
+    /// tratar as duas coisas como iguais mandaria alguem reiniciar achando que
+    /// nao ha nada esperando.
+    #[error("o estado do job nao pode ser lido: {0}")]
+    EstadoRecusado(crate::estado::RecusaDoEstado),
+
+    /// A fonte de entropia do Windows recusou. Sem selo nao se arma (C-11):
+    /// um job sem selo e um job cujo desfecho ninguem consegue reclamar.
+    #[error(
+        "o Windows nao entregou os bytes do selo (NTSTATUS {estado:#010x}). Sem selo nao ha como ligar o desfecho ao job, e o ARCA nao arma sem isso"
+    )]
+    EntropiaIndisponivel { estado: i32 },
+
     /// O `grub.cfg` do dispositivo nao pode ser desarmado sem adivinhacao.
     /// Como o de C-2, este erro chega **antes** da gravacao: um `grub.cfg`
     /// armado ainda boota, e um pela metade nao.
@@ -141,6 +158,28 @@ pub enum Erro {
 }
 
 impl Erro {
+    /// Se este erro e "o arquivo nao esta la", e nao "nao consegui olhar".
+    ///
+    /// # Por que isto existe em vez de um `existe()` antes da leitura
+    ///
+    /// [`crate::portas::Arquivos::existe`] devolve `bool`, e um `bool` nao tem
+    /// como dizer "nao sei": `Path::exists` transforma **qualquer** falha de
+    /// I/O em `false`. Quem perguntasse antes de lê para separar "nao ha
+    /// desfecho" de "nao consegui lê o desfecho" estaria fazendo a pergunta a
+    /// quem ja confundiu as duas — um `arca-fim.txt` num volume com problema
+    /// de leitura sairia como "o boot nao aconteceu", e quem lesse concluiria
+    /// que o backup nunca rodou.
+    ///
+    /// A saida e nao perguntar: tenta-se a leitura, e o `ErrorKind` que volta
+    /// diz qual dos dois casos e. E mais preciso, e nao ha janela entre a
+    /// pergunta e a leitura.
+    pub fn e_arquivo_ausente(&self) -> bool {
+        matches!(
+            self,
+            Erro::Arquivo { origem, .. } if origem.kind() == std::io::ErrorKind::NotFound
+        )
+    }
+
     /// Codigo de saida do processo. `2` para uso incorreto e recusa de
     /// elevacao — o mesmo que o clap usa —, `1` para o resto.
     pub fn codigo_de_saida(&self) -> u8 {

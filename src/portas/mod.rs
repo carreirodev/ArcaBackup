@@ -1,9 +1,14 @@
 //! As fronteiras perigosas, cada uma atras de uma porta.
 //!
-//! Sao tres: o firmware (`bcdedit`), a enumeracao de discos e o sistema de
-//! arquivos. Toda conversa do ARCA com o mundo passa por uma delas. E o que
-//! permite que o parser do `bcdedit`, o validador da receita e a regra de
-//! espaco tenham teste sem hardware, com os duplos de [`crate::duplos`].
+//! As tres do primeiro dia sao o firmware (`bcdedit`), a enumeracao de discos
+//! e o sistema de arquivos. Toda conversa do ARCA com o mundo passa por uma
+//! delas. E o que permite que o parser do `bcdedit`, o validador da receita e
+//! a regra de espaco tenham teste sem hardware, com os duplos de
+//! [`crate::duplos`].
+//!
+//! A etapa E5 acrescentou [`entropia`], de onde sai o selo — pequena, e pela
+//! mesma razao das outras: sem duplo, nenhum teste sobre o `estado.json`
+//! saberia que selo esperar.
 //!
 //! # S-1 e uma propriedade destas assinaturas
 //!
@@ -20,12 +25,14 @@
 
 pub mod arquivos;
 pub mod discos;
+pub mod entropia;
 pub mod firmware;
 pub mod privilegios;
 pub mod relogio;
 
 pub use arquivos::{Arquivos, Entrada};
 pub use discos::{DiscoFisico, Discos, TipoDeMidia, Volume};
+pub use entropia::Entropia;
 pub use firmware::Firmware;
 pub use privilegios::Privilegios;
 pub use relogio::Relogio;

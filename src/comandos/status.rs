@@ -12,12 +12,14 @@
 //! no Windows com um job armado esperando.
 
 use crate::app::Contexto;
+use crate::desfecho::{self, Encontrado};
 use crate::dispositivo::{self, Dispositivo};
 use crate::erro::Resultado;
+use crate::estado::{self, Estado};
 use crate::firmware::{self, Alvo, Leitura, Procedencia};
 use crate::formato::{linha, tamanho};
 use crate::imagens::{self, Pasta};
-use crate::portas::{TipoDeMidia, Volume};
+use crate::portas::{Arquivos, TipoDeMidia, Volume};
 
 use super::list;
 
@@ -26,17 +28,40 @@ use super::list;
 const ALVO: &str = "firmware";
 
 /// Se ha job por colher, pelo que o `ARCABOOT` mostra.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Ate a etapa E4 isto era so "o arquivo existe". A E5 passou a **lê o
+/// conteudo**, porque um `estado.json` que existe e nao se lê nao e o mesmo
+/// que nao haver job — e a diferenca decide se alguem vai reiniciar achando
+/// que nao ha nada esperando.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EstadoDoJob {
     Nenhum,
 
-    /// Ha um `estado.json` gravado. O que ele diz — selo, comando, alvo — e a
-    /// etapa E5 que lê; aqui basta que ele exista.
-    Presente,
+    /// Ha job armado, e o que ele diz. Junto vai o que se encontrou no lugar
+    /// onde o desfecho dele apareceria — julgado pelo selo (C-11, §5.5).
+    Pendente {
+        estado: Estado,
+        desfecho: Encontrado,
+    },
 
-    /// Sem `ARCABOOT` nao ha onde olhar, e isso nao e o mesmo que nao haver
+    /// O `estado.json` esta la e nao da para entender. **Nao e "nao ha job"**:
+    /// o dispositivo pode estar armado, e o que dizia qual job era este se
+    /// perdeu.
+    ///
+    /// Carrega o motivo em texto porque ha duas origens diferentes com o mesmo
+    /// significado para quem lê — o arquivo nao se deixou abrir, ou abriu e
+    /// nao se deixou entender — e nenhuma das duas pode virar ausencia.
+    Ilegivel { motivo: String },
+
+    /// Nao ha caminho para o `estado.json`, e isso nao e o mesmo que nao haver
     /// job: e o ARCA nao ter conseguido perguntar.
-    SemOndeOlhar,
+    ///
+    /// Carrega o motivo porque ha **dois**, e eles pedem reacoes diferentes:
+    /// nao existir `ARCABOOT`, e existir sem letra atribuida
+    /// (`Erro::VolumeSemLetra`). No segundo o dispositivo esta na mesa e pode
+    /// ter job armado — dizer "sem ARCABOOT" ali mandaria alguem procurar um
+    /// dispositivo que ja esta conectado.
+    SemOndeOlhar { motivo: String },
 }
 
 /// Tudo que o `status` colheu, antes de virar texto.
@@ -49,25 +74,32 @@ pub struct Diagnostico<'a> {
 
 pub fn executar(contexto: &Contexto) -> Resultado<()> {
     let dispositivo = dispositivo::encontrar(contexto.discos)?;
-    let pastas = imagens::enumerar(contexto.arquivos, &dispositivo.raiz_do_vault()?)?;
+    let raiz_do_vault = dispositivo.raiz_do_vault()?;
+    let pastas = imagens::enumerar(contexto.arquivos, &raiz_do_vault)?;
 
     let firmware = firmware::ler(&contexto.firmware.enumerar(ALVO)?);
 
-    let estado_do_job = match dispositivo.caminho_do_estado() {
-        Ok(caminho) if contexto.arquivos.existe(&caminho) => EstadoDoJob::Presente,
-        Ok(_) => EstadoDoJob::Nenhum,
-        // So ha um motivo para nao haver caminho: nao ha `ARCABOOT`.
-        Err(_) => EstadoDoJob::SemOndeOlhar,
-    };
+    let estado_do_job = ler_o_job(contexto.arquivos, &dispositivo, &raiz_do_vault);
 
     contexto.registro.info(format!(
-        "status · {} entrada(s) no firmware · entrada do ARCA: {} · boot unico: {} · estado: {estado_do_job:?}",
+        "status · {} entrada(s) no firmware · entrada do ARCA: {} · boot unico: {} · job: {}",
         firmware.entradas.len(),
         match firmware.entrada_do_arca() {
             Some(achado) => format!("{} ({:?})", achado.descricao, achado.procedencia),
             None => "nenhuma".to_string(),
         },
         if firmware.tem_boot_unico() { "armado" } else { "nao armado" },
+        match &estado_do_job {
+            EstadoDoJob::Nenhum => "nenhum".to_string(),
+            EstadoDoJob::Pendente { estado, desfecho } => format!(
+                "{} `{}` · selo {} · desfecho: {desfecho}",
+                estado.comando.nome(),
+                estado.nome,
+                estado.selo
+            ),
+            EstadoDoJob::Ilegivel { motivo } => format!("estado ilegivel: {motivo}"),
+            EstadoDoJob::SemOndeOlhar { motivo } => format!("sem onde olhar: {motivo}"),
+        },
     ));
 
     print!(
@@ -80,6 +112,71 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
         })
     );
     Ok(())
+}
+
+/// O job pendente, pelo `estado.json`, e o que ha no lugar do desfecho dele.
+///
+/// Nao ha decisao nenhuma sendo tomada aqui: `arca status` diagnostica. Quem
+/// colhe o desfecho, desarma e imprime a §5.4 e a etapa E8. O que este comando
+/// entrega e a resposta a "o que ha no dispositivo agora", com o selo ja
+/// julgado — e e por isso que ele e o comando que se roda antes de armar.
+fn ler_o_job(
+    arquivos: &dyn Arquivos,
+    dispositivo: &Dispositivo,
+    raiz_do_vault: &std::path::Path,
+) -> EstadoDoJob {
+    // Nao ha **um** motivo para nao haver caminho, ha dois: nao existir
+    // `ARCABOOT`, e existir sem letra atribuida (`Erro::VolumeSemLetra`). Sao
+    // situacoes diferentes para quem esta olhando — na segunda o dispositivo
+    // esta na mesa e pode ter job armado —, e por isso o motivo vai junto em
+    // vez de virar uma frase so.
+    let caminho = match dispositivo.caminho_do_estado() {
+        Ok(caminho) => caminho,
+        Err(erro) => {
+            return EstadoDoJob::SemOndeOlhar {
+                motivo: erro.to_string(),
+            };
+        }
+    };
+
+    // Sem `existe()` antes, e nao por descuido. Um `bool` nao tem como dizer
+    // "nao sei", e `Path::exists` transforma qualquer falha de I/O em `false`:
+    // perguntar antes de lê seria fazer a pergunta a quem ja confundiu "nao
+    // esta la" com "nao consegui olhar". Lê-se, e o erro diz qual dos dois foi
+    // — ver [`Erro::e_arquivo_ausente`].
+    let estado = match estado::ler(arquivos, &caminho) {
+        Ok(estado) => estado,
+        Err(erro) if erro.e_arquivo_ausente() => return EstadoDoJob::Nenhum,
+        // Tudo o mais e o arquivo estar la sem se deixar entender — recusado
+        // pelo leitor, ou nao lido por problema de disco ou permissao. **Nunca**
+        // vira "nao ha job": um dispositivo com job armado e estado corrompido
+        // continua armado.
+        Err(erro) => {
+            return EstadoDoJob::Ilegivel {
+                motivo: erro.to_string(),
+            };
+        }
+    };
+
+    let onde = estado::caminho_do_desfecho(raiz_do_vault, estado.comando, &estado.nome);
+
+    // Pelo mesmo caminho: "nao ha desfecho" quer dizer que o boot nao
+    // aconteceu (C-12), e "nao consegui lê" nao diz nada sobre o boot.
+    // Confundi-las faria um backup bem-sucedido com o arquivo ilegivel sair
+    // como boot que nunca ocorreu — o padrao que o ADR-0005 nomeou no firmware.
+    //
+    // `ler_texto_alheio` porque quem escreveu foi o `echo` de um bash do outro
+    // lado do reinicio, e nao o ARCA: um byte solto nao pode fazer o desfecho
+    // inteiro sumir.
+    let desfecho = match arquivos.ler_texto_alheio(&onde) {
+        Ok(texto) => Encontrado::Arquivo(desfecho::julgar(&desfecho::ler(&texto), &estado.selo)),
+        Err(erro) if erro.e_arquivo_ausente() => Encontrado::SemArquivo,
+        Err(erro) => Encontrado::NaoDeuParaLer {
+            motivo: erro.to_string(),
+        },
+    };
+
+    EstadoDoJob::Pendente { estado, desfecho }
 }
 
 /// O diagnostico inteiro, em texto.
@@ -105,7 +202,7 @@ pub fn montar(diagnostico: &Diagnostico) -> String {
 
     saida.push_str(&secao_do_job(
         diagnostico.firmware,
-        diagnostico.estado_do_job,
+        &diagnostico.estado_do_job,
     ));
     saida
 }
@@ -231,8 +328,18 @@ fn confere_com_o_arcaboot(alvo: &Alvo, dispositivo: &Dispositivo) -> String {
     }
 }
 
-/// Se ha job por colher, pelos dois sinais que a E2 sabe ler.
-fn secao_do_job(leitura: &Leitura, estado: EstadoDoJob) -> String {
+/// Se ha job por colher, pelos dois sinais independentes que existem: a marca
+/// de boot unico no firmware e o `estado.json` do `ARCABOOT`.
+///
+/// # Os dois podem discordar, e discordar nao e contradicao
+///
+/// Um `arca desarmar` limpa a marca de boot unico e **nao toca no
+/// `estado.json`** — desarmar nao consulta estado nenhum (C-1) e nao escreve
+/// nele. Depois dele esta secao mostra "Boot unico: nao armado" ao lado de um
+/// job pendente, e isso e exatamente o que aconteceu: o dispositivo esta
+/// inerte, e o job continua registrado por colher. Quem encerra o job e a E8,
+/// ao colher o desfecho.
+fn secao_do_job(leitura: &Leitura, estado: &EstadoDoJob) -> String {
     let mut saida = String::from("Job pendente\n");
 
     saida.push_str(&linha(
@@ -246,12 +353,46 @@ fn secao_do_job(leitura: &Leitura, estado: EstadoDoJob) -> String {
 
     saida.push_str(&linha(
         "Estado no ARCABOOT",
-        match estado {
-            EstadoDoJob::Nenhum => "nenhum",
-            EstadoDoJob::Presente => "presente — o selo e o alvo, na etapa E5",
-            EstadoDoJob::SemOndeOlhar => "sem ARCABOOT, nao da para olhar",
+        &match estado {
+            EstadoDoJob::Nenhum => "nenhum".to_string(),
+            EstadoDoJob::Pendente { estado, .. } => {
+                format!("{} `{}`", estado.comando.nome(), estado.nome)
+            }
+            EstadoDoJob::Ilegivel { .. } => "presente e ILEGIVEL".to_string(),
+            // O motivo vai na linha, e nao uma frase fixa: com o `ARCABOOT`
+            // sem letra, dizer "sem ARCABOOT" mandaria alguem procurar um
+            // dispositivo que ja esta conectado.
+            EstadoDoJob::SemOndeOlhar { motivo } => format!("nao da para olhar — {motivo}"),
         },
     ));
+
+    match estado {
+        EstadoDoJob::Pendente { estado, desfecho } => {
+            // O selo aparece inteiro: e ele que a mensagem de job fantasma vai
+            // nomear, e sem os dois lados a vista ninguem confere nada.
+            saida.push_str(&linha("Selo", estado.selo.como_texto()));
+            saida.push_str(&linha("Disco alvo", estado.disco.como_texto()));
+            saida.push_str(&linha(
+                "Armado em",
+                &format!("{} · informativo, nunca comparado", estado.armado_em),
+            ));
+            saida.push_str(&linha(
+                "Pasta do desfecho",
+                &desfecho::pasta_do_job(estado.comando, &estado.nome),
+            ));
+            saida.push_str(&linha("Desfecho", &desfecho.to_string()));
+        }
+        EstadoDoJob::Ilegivel { motivo } => {
+            saida.push_str(&format!(
+                "\n  O `estado.json` esta no dispositivo e nao da para entender:\n\
+                 \x20 {motivo}\n\
+                 \x20 Isto nao e o mesmo que nao haver job. Se o boot unico acima estiver\n\
+                 \x20 armado, ha uma receita esperando e nao se sabe qual — rode\n\
+                 \x20 `arca desarmar` antes de reiniciar.\n"
+            ));
+        }
+        EstadoDoJob::Nenhum | EstadoDoJob::SemOndeOlhar { .. } => {}
+    }
 
     saida
 }
@@ -259,12 +400,48 @@ fn secao_do_job(leitura: &Leitura, estado: EstadoDoJob) -> String {
 #[cfg(test)]
 mod testes {
     use super::*;
-    use crate::duplos::{momento, volume};
+    use crate::duplos::{
+        ArquivosEmMemoria, ArquivosQueRecusam, RelogioParado, momento, volume,
+    };
+    use crate::estado::MomentoDoArmar;
     use crate::imagens::{Especie, Veredito};
+    use crate::nome::Nome;
+    use crate::receita::{Disco, Operacao, Selo};
 
     const PT: &str = include_str!("../../recursos/capturas/bcdedit-enum-firmware-pt.txt");
     const LEGADO: &str =
         include_str!("../../recursos/capturas/bcdedit-enum-firmware-legado-pt.txt");
+
+    const DO_JOB: &str = "a3f1c9e07b2d4856";
+    const DE_OUTRO: &str = "7e02b4d1af963c85";
+    const ESTADO: &str = r"R:\arca\estado.json";
+
+    fn estado_gravado() -> Estado {
+        Estado {
+            selo: Selo::novo(DO_JOB).unwrap(),
+            comando: Operacao::Backup,
+            nome: Nome::novo("2026-08-22_Apps").unwrap(),
+            disco: Disco::novo("nvme0n1").unwrap(),
+            armado_em: MomentoDoArmar::agora(&RelogioParado::em("2026-08-22T18:14:03")),
+        }
+    }
+
+    fn job_pendente(desfecho: Encontrado) -> EstadoDoJob {
+        EstadoDoJob::Pendente {
+            estado: estado_gravado(),
+            desfecho,
+        }
+    }
+
+    /// O diagnostico montado com um estado de job qualquer, e o resto fixo.
+    fn com_estado(estado_do_job: EstadoDoJob) -> String {
+        montar(&Diagnostico {
+            dispositivo: &dispositivo_conectado(),
+            pastas: &uma_imagem(),
+            firmware: &firmware::ler(PT),
+            estado_do_job,
+        })
+    }
 
     fn dispositivo_conectado() -> Dispositivo {
         Dispositivo {
@@ -417,21 +594,240 @@ mod testes {
 
     #[test]
     fn o_estado_do_job_tem_uma_linha_para_cada_caso() {
-        let dispositivo = dispositivo_conectado();
-        let leitura = firmware::ler(PT);
-
-        let com = |estado| {
-            montar(&Diagnostico {
-                dispositivo: &dispositivo,
-                pastas: &uma_imagem(),
-                firmware: &leitura,
-                estado_do_job: estado,
+        assert!(com_estado(EstadoDoJob::Nenhum).contains(&linha("Estado no ARCABOOT", "nenhum")));
+        assert!(
+            com_estado(EstadoDoJob::SemOndeOlhar {
+                motivo: "o dispositivo conectado nao tem a particao ARCABOOT".to_string()
             })
+            .contains("nao da para olhar — o dispositivo conectado nao tem a particao ARCABOOT")
+        );
+        assert!(
+            com_estado(EstadoDoJob::Ilegivel {
+                motivo: "o arquivo termina no meio".to_string()
+            })
+            .contains("presente e ILEGIVEL")
+        );
+        assert!(
+            com_estado(job_pendente(Encontrado::SemArquivo))
+                .contains(&linha("Estado no ARCABOOT", "backup `2026-08-22_Apps`"))
+        );
+    }
+
+    // ─────────────────────── o job pendente da E5 ───────────────────────
+
+    #[test]
+    fn o_job_pendente_mostra_o_selo_o_alvo_e_o_momento() {
+        // O `estado.json` deixou de ser "existe ou nao existe" na E5. O selo
+        // aparece inteiro porque e ele que a mensagem de job fantasma nomeia:
+        // sem os dois lados a vista, ninguem confere nada.
+        let saida = com_estado(job_pendente(Encontrado::SemArquivo));
+
+        assert!(saida.contains(&linha("Selo", DO_JOB)), "{saida}");
+        assert!(saida.contains(&linha("Disco alvo", "nvme0n1")), "{saida}");
+        assert!(saida.contains("Pasta do desfecho"), "{saida}");
+        assert!(saida.contains("backup-2026-08-22_Apps"), "{saida}");
+    }
+
+    #[test]
+    fn o_momento_do_armar_sai_dizendo_que_nao_decide_nada() {
+        // S-6 na tela. Quem lê uma data ao lado de um job pendente vai
+        // compara-la com a data de uma imagem mais cedo ou mais tarde, e o
+        // deslocamento de 3 h do Clonezilla (P-7) faria a conta dar errado.
+        let saida = com_estado(job_pendente(Encontrado::SemArquivo));
+        assert!(saida.contains("Armado em"), "{saida}");
+        assert!(saida.contains("informativo, nunca comparado"), "{saida}");
+    }
+
+    #[test]
+    fn o_selo_divergente_aparece_como_job_fantasma_na_tela() {
+        // O criterio de aceite da etapa, pelo comando que o expoe.
+        let saida = com_estado(job_pendente(Encontrado::Arquivo(
+            crate::desfecho::Julgamento::JobFantasma {
+                encontrado: Selo::novo(DE_OUTRO).unwrap(),
+            },
+        )));
+
+        assert!(saida.contains("job fantasma"), "{saida}");
+        assert!(saida.contains(DE_OUTRO), "{saida}");
+    }
+
+    #[test]
+    fn o_estado_ilegivel_manda_desarmar_em_vez_de_dizer_que_nao_ha_job() {
+        // "Nao entendi o arquivo" nao pode virar "nao ha nada esperando": o
+        // dispositivo pode estar armado e ninguem saber com o que.
+        let saida = com_estado(EstadoDoJob::Ilegivel {
+            motivo: "o arquivo termina no meio".to_string(),
+        });
+
+        assert!(saida.contains("nao e o mesmo que nao haver job"), "{saida}");
+        assert!(saida.contains("arca desarmar"), "{saida}");
+    }
+
+    #[test]
+    fn boot_unico_limpo_ao_lado_de_job_pendente_nao_e_contradicao() {
+        // O que se ve depois de um `arca desarmar`: o dispositivo esta inerte
+        // e o job continua registrado por colher, porque desarmar nao toca no
+        // `estado.json` (C-1). As duas linhas aparecem, e cada uma diz o que e.
+        let saida = com_estado(job_pendente(Encontrado::SemArquivo));
+
+        assert!(saida.contains(&linha("Boot unico", "nao armado")), "{saida}");
+        assert!(saida.contains("backup `2026-08-22_Apps`"), "{saida}");
+    }
+
+    // ──────────────────── o comando inteiro, lendo o disco ────────────────────
+
+    #[test]
+    fn o_comando_lê_o_conteudo_do_estado_e_julga_o_desfecho() {
+        // A E4 so perguntava se o arquivo existia. A E5 lê o que ele diz e
+        // procura o desfecho no caminho que a **propria receita** escreveria.
+        let arquivos = ArquivosEmMemoria::novo()
+            .com(r"E:\2026-08-21_WindowsCompleto\MD5SUMS", "abc")
+            .com(ESTADO, &estado_gravado().como_json().unwrap())
+            .com(
+                r"E:\ARCA-LOGS\backup-2026-08-22_Apps\arca-fim.txt",
+                &format!("ARCA_SELO={DE_OUTRO}\nARCA_BACKUP=OK\nARCA_FIM\n"),
+            );
+
+        let dispositivo = dispositivo_conectado();
+        let job = ler_o_job(&arquivos, &dispositivo, std::path::Path::new(r"E:\"));
+
+        match job {
+            EstadoDoJob::Pendente { estado, desfecho } => {
+                assert_eq!(estado.selo.como_texto(), DO_JOB);
+                assert_eq!(
+                    desfecho,
+                    Encontrado::Arquivo(crate::desfecho::Julgamento::JobFantasma {
+                        encontrado: Selo::novo(DE_OUTRO).unwrap()
+                    })
+                );
+            }
+            outro => panic!("esperava job pendente, veio {outro:?}"),
+        }
+    }
+
+    #[test]
+    fn sem_arca_fim_no_lugar_do_desfecho_o_comando_nomeia_as_duas_causas() {
+        // C-12: ausencia de desfecho e falha, nunca silencio.
+        let arquivos = ArquivosEmMemoria::novo()
+            .com(r"E:\2026-08-21_WindowsCompleto\MD5SUMS", "abc")
+            .com(ESTADO, &estado_gravado().como_json().unwrap());
+
+        let dispositivo = dispositivo_conectado();
+        match ler_o_job(&arquivos, &dispositivo, std::path::Path::new(r"E:\")) {
+            EstadoDoJob::Pendente { desfecho, .. } => {
+                assert_eq!(desfecho, Encontrado::SemArquivo);
+                assert!(desfecho.to_string().contains("boot nao aconteceu"));
+            }
+            outro => panic!("esperava job pendente, veio {outro:?}"),
+        }
+    }
+
+    #[test]
+    fn o_estado_truncado_no_disco_chega_como_ilegivel_e_nao_como_ausencia() {
+        let arquivos = ArquivosEmMemoria::novo()
+            .com(r"E:\2026-08-21_WindowsCompleto\MD5SUMS", "abc")
+            .com(ESTADO, "{\n  \"selo\": \"a3f1c9e0");
+
+        let dispositivo = dispositivo_conectado();
+        assert!(matches!(
+            ler_o_job(&arquivos, &dispositivo, std::path::Path::new(r"E:\")),
+            EstadoDoJob::Ilegivel { .. }
+        ));
+    }
+
+    #[test]
+    fn sem_estado_json_nao_ha_job_e_nada_e_procurado() {
+        let arquivos = ArquivosEmMemoria::novo();
+        let dispositivo = dispositivo_conectado();
+
+        assert_eq!(
+            ler_o_job(&arquivos, &dispositivo, std::path::Path::new(r"E:\")),
+            EstadoDoJob::Nenhum
+        );
+    }
+
+    // ───── "nao consegui olhar" nunca vira "nao ha nada" (ADR-0005) ─────
+
+    #[test]
+    fn o_estado_que_nao_se_deixa_lê_nao_vira_ausencia_de_job() {
+        // A revisao desta etapa achou isto: a versao anterior perguntava
+        // `arquivos.existe()` antes de lê, e `Path::exists` transforma
+        // **qualquer** falha de I/O em `false`. Um `estado.json` presente num
+        // volume com problema de leitura sairia como "Estado no ARCABOOT:
+        // nenhum", e alguem reiniciaria achando que nao ha nada esperando.
+        //
+        // A defesa que eu tinha escrito estava construida sobre a funcao que
+        // ja confundia os dois casos — o padrao de sempre: peca nova encaixada
+        // em peca antiga que ninguem releu.
+        let arquivos = ArquivosQueRecusam::com(
+            ESTADO,
+            std::io::ErrorKind::PermissionDenied,
+            "acesso negado",
+        );
+        let dispositivo = dispositivo_conectado();
+
+        match ler_o_job(&arquivos, &dispositivo, std::path::Path::new(r"E:\")) {
+            EstadoDoJob::Ilegivel { motivo } => assert!(motivo.contains("acesso negado")),
+            outro => panic!("um estado ilegivel virou {outro:?}"),
+        }
+    }
+
+    #[test]
+    fn o_desfecho_que_nao_se_deixa_lê_nao_vira_boot_que_nao_aconteceu() {
+        // Mesmo mecanismo, do outro lado: um `arca-fim.txt` presente e
+        // ilegivel saindo como "o boot nao aconteceu" faria alguem concluir
+        // que o backup nunca rodou — quando ele pode ter terminado bem.
+        let desfecho_em = r"E:\ARCA-LOGS\backup-2026-08-22_Apps\arca-fim.txt";
+        let arquivos = ArquivosQueRecusam::com(
+            desfecho_em,
+            std::io::ErrorKind::PermissionDenied,
+            "acesso negado",
+        )
+        .com_arquivo(ESTADO, &estado_gravado().como_json().unwrap());
+
+        let dispositivo = dispositivo_conectado();
+        match ler_o_job(&arquivos, &dispositivo, std::path::Path::new(r"E:\")) {
+            EstadoDoJob::Pendente { desfecho, .. } => {
+                assert!(
+                    matches!(desfecho, Encontrado::NaoDeuParaLer { .. }),
+                    "um desfecho ilegivel virou {desfecho:?}"
+                );
+            }
+            outro => panic!("esperava job pendente, veio {outro:?}"),
+        }
+    }
+
+    #[test]
+    fn arcaboot_sem_letra_nao_e_relatado_como_arcaboot_ausente() {
+        // Terceiro achado da revisao. `caminho_do_estado` falha por **dois**
+        // motivos, e o codigo dizia que so havia um. Com o `ARCABOOT` na mesa
+        // e sem letra, "sem ARCABOOT" mandaria alguem procurar um dispositivo
+        // que ja esta conectado.
+        let dispositivo = Dispositivo {
+            boot: Some(Volume {
+                letra: None,
+                ..volume(dispositivo::ARCABOOT, 'R', 1_700_000_000, 1_070_000_000)
+            }),
+            ..dispositivo_conectado()
         };
 
-        assert!(com(EstadoDoJob::Nenhum).contains(&linha("Estado no ARCABOOT", "nenhum")));
-        assert!(com(EstadoDoJob::Presente).contains("presente — o selo e o alvo, na etapa E5"));
-        assert!(com(EstadoDoJob::SemOndeOlhar).contains("sem ARCABOOT, nao da para olhar"));
+        match ler_o_job(
+            &ArquivosEmMemoria::novo(),
+            &dispositivo,
+            std::path::Path::new(r"E:\"),
+        ) {
+            EstadoDoJob::SemOndeOlhar { motivo } => {
+                assert!(
+                    motivo.contains("letra"),
+                    "o motivo nao diz que o problema e a letra: {motivo}"
+                );
+                assert!(
+                    !motivo.contains("nao tem a particao"),
+                    "a particao esta la; o motivo mente: {motivo}"
+                );
+            }
+            outro => panic!("esperava sem onde olhar, veio {outro:?}"),
+        }
     }
 
     #[test]

@@ -53,7 +53,22 @@ use std::fmt;
 const PARTIMAG: &str = "/home/partimag";
 
 /// O arquivo do desfecho (§4.3, C-11, S-4).
-const ARCA_FIM: &str = "arca-fim.txt";
+///
+/// Publico porque quem **escreve** este arquivo e a receita, deste lado do
+/// reinicio, e quem o lê e [`crate::desfecho`], do outro. Um nome so, num
+/// lugar so — o mesmo motivo de [`crate::imagens::CHECK_LOG`] ser publico.
+pub const ARCA_FIM: &str = "arca-fim.txt";
+
+/// O marcador que abre o `arca-fim.txt` e carrega o selo (§4.3, C-11).
+///
+/// Publico pela mesma razao: a receita escreve `ARCA_SELO=<selo>` na primeira
+/// linha, e [`crate::desfecho`] lê de la. Mudar o marcador aqui muda os dois
+/// lados de uma vez.
+pub const MARCA_DO_SELO: &str = "ARCA_SELO=";
+
+/// A linha que separa um desfecho completo de um truncado por desligamento no
+/// meio (§5.5).
+pub const MARCA_DO_FIM: &str = "ARCA_FIM";
 
 /// As flags de B-8, **na ordem em que rodaram** nas duas capturas de backup.
 ///
@@ -228,6 +243,13 @@ pub struct Selo(String);
 /// Quantos digitos hexadecimais tem um selo, como §10.1 do PRD o mostra.
 const DIGITOS_DO_SELO: usize = 16;
 
+/// Quantos bytes de entropia produzem esses digitos.
+///
+/// Cada byte vira dois digitos hexadecimais. Publico porque quem pede os bytes
+/// a [`crate::portas::Entropia`] e [`crate::estado::gerar_selo`], e o tamanho
+/// do buffer tem de sair daqui — nao de um `8` digitado la.
+pub const BYTES_DO_SELO: usize = DIGITOS_DO_SELO / 2;
+
 impl Selo {
     pub fn novo(bruto: &str) -> Result<Selo, RecusaDaReceita> {
         // Minusculas so, e nao `is_ascii_hexdigit`: um selo que mudasse de
@@ -245,8 +267,24 @@ impl Selo {
         Ok(Selo(bruto.to_string()))
     }
 
-    /// Um selo para o `--dry-run`, enquanto a E5 — que gera o de verdade —
-    /// nao existe.
+    /// O selo a partir dos bytes que [`crate::portas::Entropia`] entregou.
+    ///
+    /// Funcao pura de proposito: quem fala com o sistema e
+    /// [`crate::estado::gerar_selo`], e o que este modulo sabe fazer e a
+    /// conversao — oito bytes viram os dezesseis digitos hexadecimais
+    /// **minusculos** que [`Selo::novo`] exige. Nao ha caminho por onde um
+    /// selo gerado saia recusado pelo proprio validador; ha teste cobrando.
+    pub fn de_bytes(bytes: &[u8; BYTES_DO_SELO]) -> Selo {
+        let mut texto = String::with_capacity(DIGITOS_DO_SELO);
+        for byte in bytes {
+            // `{:02x}` e minusculo e sempre de dois digitos: sem o `02`, um
+            // byte abaixo de 16 sairia com um digito so e o selo encolheria.
+            texto.push_str(&format!("{byte:02x}"));
+        }
+        Selo(texto)
+    }
+
+    /// Um selo para o `--dry-run`.
     ///
     /// Zeros, e nao um valor plausivel: um ensaio que imprima um selo com cara
     /// de real convida a comparar com um `arca-fim.txt` de verdade.
@@ -491,8 +529,18 @@ impl Receita {
 ///
 /// O selo nao resolve isso: ele diz se um desfecho **encontrado** pertence ao
 /// job corrente, e nao serve para nada quando o arquivo ja foi por cima.
+///
+/// Publica porque o mesmo nome de pasta tem de ser montado dos **dois lados do
+/// reinicio**: aqui, dentro de um caminho Linux que a receita escreve, e em
+/// [`crate::desfecho`], dentro de um caminho Windows que o ARCA lê na volta.
+/// Devolve so o nome da pasta, e nao o caminho, justamente para que nenhum dos
+/// dois lados precise conhecer o do outro.
+pub fn pasta_do_log(operacao: Operacao, nome: &Nome) -> String {
+    format!("{}-{nome}", operacao.nome())
+}
+
 fn log_do_job(operacao: Operacao, nome: &Nome) -> String {
-    format!("{PARTIMAG}/{ARCA_LOGS}/{}-{nome}", operacao.nome())
+    format!("{PARTIMAG}/{ARCA_LOGS}/{}", pasta_do_log(operacao, nome))
 }
 
 /// Onde a receita grava o desfecho (S-4, C-11).
@@ -529,7 +577,7 @@ fn montar_backup(pedido: &Pedido) -> String {
 
     let passos = [
         format!("mkdir -p {log}"),
-        format!("echo ARCA_SELO={selo} > {desfecho}"),
+        format!("echo {MARCA_DO_SELO}{selo} > {desfecho}"),
         format!(
             "if ocs-sr {FLAGS_DE_BACKUP} savedisk {nome} {disco}; \
              then echo {marcador}=OK >> {desfecho}; \
@@ -538,7 +586,7 @@ fn montar_backup(pedido: &Pedido) -> String {
              else echo ARCA_VEREDITO=REPROVADA >> {veredito}; fi; \
              else echo {marcador}=FALHOU >> {desfecho}; fi"
         ),
-        format!("echo ARCA_FIM >> {desfecho}"),
+        format!("echo {MARCA_DO_FIM} >> {desfecho}"),
         format!("sleep {ESPERA_ANTES_DE_DESLIGAR}"),
         "poweroff".to_string(),
     ];
@@ -569,13 +617,13 @@ fn montar_restauracao(pedido: &Pedido) -> String {
 
     let passos = [
         format!("mkdir -p {log}"),
-        format!("echo ARCA_SELO={selo} > {desfecho}"),
+        format!("echo {MARCA_DO_SELO}{selo} > {desfecho}"),
         format!(
             "if ocs-sr {FLAGS_DE_RESTAURACAO} restoredisk {nome} {disco} > {registro_do_clonezilla} 2>&1; \
              then echo {marcador}=OK >> {desfecho}; \
              else echo {marcador}=FALHOU >> {desfecho}; fi"
         ),
-        format!("echo ARCA_FIM >> {desfecho}"),
+        format!("echo {MARCA_DO_FIM} >> {desfecho}"),
         format!("sleep {ESPERA_ANTES_DE_DESLIGAR}"),
         "poweroff".to_string(),
     ];

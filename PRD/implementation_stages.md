@@ -13,7 +13,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E2 | Leitura do firmware | I | ✅ | 2026-08-22 14:28 |
 | E3 | Geração e validação da receita | II | ✅ | 2026-08-22 16:04 |
 | E4 | Desarmar | II | ✅ | 2026-08-22 17:36 |
-| E5 | Estado e selo | II | ⬜ | — |
+| E5 | Estado e selo | II | ✅ | 2026-08-22 18:37 |
 | E6 | Pré-voo | III | ⬜ | — |
 | E7 | Armar e disparar | III | ⬜ | — |
 | E8 | Colher o desfecho | III | ⬜ | — |
@@ -216,6 +216,143 @@ O selo entra na receita e volta dentro do `arca-fim.txt`. Na colheita, só é ac
 
 **Cobre**: R-6, S-6
 **Pronto quando**: um `arca-fim.txt` com selo divergente é rejeitado como job fantasma, com mensagem própria.
+
+**Executado de verdade em 22/08/2026, com o dispositivo conectado.** O critério
+de aceite está cumprido nos dois níveis em que ele existe: `desfecho::julgar`
+devolve `JobFantasma` nomeando o selo encontrado, e `arca status` o imprime na
+tela ao lado do selo do job pendente. O `grub.cfg` saiu com o **mesmo SHA256**
+de antes (`4B33DA61…F947AA3D`) — esta etapa não arma nada.
+
+**Medido nesta etapa, e não previsto pelo plano:**
+
+- **O único `arca-fim.txt` do dispositivo não tem linha de selo.** Vinte e
+  cinco bytes, duas linhas: `ARCA_RESTORE=OK` e `ARCA_FIM`. É P-16 pela
+  terceira vez — ele veio do trabalho manual de validação. E a tabela do §5.5
+  **não tinha linha para ele**: tem "selo não bate" e tem "sem `ARCA_FIM`", e
+  este arquivo não é nem um nem outro. Dizer "o selo não bate" seria mentira,
+  porque não há selo a bater. Linha nova aplicada ao §5.5.
+- **Aquele arquivo é inalcançável, e a linha vale código assim mesmo.** A E3
+  decidiu que a pasta do log leva a operação no nome, e ele está em
+  `ARCA-LOGS\2026-08-21_WindowsCompleto\` — o ARCA de hoje nunca olha para lá.
+  Mas **"sem selo" é alcançável por outro caminho**, e ele foi medido em bash:
+  toda receita começa com `echo ARCA_SELO=... > arca-fim.txt`, e o `>` **trunca
+  ao abrir**, antes de o `echo` rodar. Um redirecionamento que abre e não
+  escreve deixa o arquivo em zero byte. Um desligamento nessa janela produz
+  exatamente o caso — com o selo sendo justamente o que foi cortado. Sem a
+  linha, esse arquivo cairia no ramo que o código tomasse por descuido, e o
+  ramo natural produziria a mensagem que não pode ser dada.
+- **`R:\arca\` não existia**, e `criar_diretorio` nunca tinha rodado em
+  produção. Medido em `examples/estado_no_arcaboot.rs`, contra o FAT32 real:
+  cria, é idempotente na segunda passada, os cinco campos voltam byte a byte,
+  nenhum `.arca-tmp` fica para trás, e um arquivo cortado ao meio é recusado —
+  no disco, e não só na memória. A pasta fica; é onde o estado vai morar.
+- **`BCryptGenRandom` já estava no `windows-sys`**, atrás da feature
+  `Win32_Security_Cryptography`, desligada desde a E0. Nenhum crate novo. O
+  `Cargo.lock` não mudou.
+- **`ConvertTo-Json` do PowerShell 5.1 não escapa não-ASCII.** Medido, e é
+  achado para a E6: a saída sai com bytes crus na página de código do console.
+  A esperança de que o JSON fosse ASCII puro por construção estava errada, e
+  `de_pagina_de_codigo` continua obrigatório.
+
+**Decidido nesta etapa:**
+
+- **O selo vem de `BCryptGenRandom`, e o `estado.json` é escrito à mão** — sem
+  `rand` e sem `serde`. As três dependências do projeto continuam três. O
+  raciocínio inteiro, incluindo por que o relógio ficou de fora (colide, e não
+  por S-6) e por que escrever JSON à mão é seguro aqui (os cinco alfabetos não
+  alcançam nada que precise de escape), está no
+  [ADR-0006](../docs/adr/0006-o-selo-e-o-estado-sem-dependencia-nova.md).
+- **`Entropia` é uma quarta porta**, e o `src/portas/mod.rs` dizia "são três".
+  Ela entra pelo mesmo motivo das outras: sem duplo, nenhum teste sobre o
+  `estado.json` saberia que selo esperar.
+- **`Entropia` não entrou no `Contexto`.** Nada em produção gera selo nesta
+  etapa — o selo nasce ao armar, e armar é a E7. Um campo que nenhum comando lê
+  seria peso morto. O que fecha o buraco que a E4 nomeou — *o primeiro uso real
+  de uma porta é onde as surpresas moram* — é a medição contra o dispositivo.
+- **`MomentoDoArmar` guarda texto, e não um `DateTime`.** O plano pedia o campo
+  "informativo, nunca comparado"; isso já era um comentário em
+  `src/portas/relogio.rs` e comentário não impede nada — a trava que reprovou um
+  backup perfeito neste projeto tinha o comentário do lado. Guardando texto não
+  há o que subtrair nem o que comparar, e violar S-6 exigiria parsear a string
+  de volta de propósito, num `let` que apareceria no diff.
+- **`tests/s6_o_tempo_nao_decide.rs`**, na forma dos testes de arquitetura de
+  S-1 e B-10. Cobra que `MomentoDoArmar` não derive ordenação, que nada em
+  `src/estado.rs` devolva um tempo comparável, e — a metade que vale mais —
+  que **`src/desfecho.rs` não mencione tempo em forma nenhuma**. Quem julga a
+  quem um desfecho pertence não alcança o relógio.
+- **O leitor do `estado.json` recusa em vez de adivinhar**: escape, chave
+  desconhecida, chave repetida, chave faltando e texto depois do `}`. Chave
+  desconhecida ser recusa é deliberado — agir sobre metade de um estado que
+  arma uma operação destrutiva é pior do que recusar o arquivo inteiro.
+- **`arca status` passa a ler o conteúdo do `estado.json`**, e não só a
+  perguntar se ele existe. Mostra selo, comando, nome, disco alvo, momento e o
+  que há no lugar do desfecho, já julgado pelo selo. Um `estado.json` presente e
+  ilegível aparece como **ilegível**, nunca como ausência: um dispositivo com
+  job armado e estado corrompido continua armado.
+
+**O que os testes pegaram, e que eu não pegaria lendo:**
+
+- **O teste do arquivo truncado achou uma borda no primeiro `cargo test`.** Em
+  vez de escolher um ponto de corte, ele corta o `estado.json` em **todos** os
+  comprimentos possíveis — e reprovou no corte 150 de 151, que tira só a quebra
+  de linha final e deixa um objeto completo. O leitor aceitar isso é correto e
+  deliberado (nada garante que quem gravou terminou com `\n`); o teste é que
+  cobrava demais, e passou a cobrar até o fim do **conteúdo**. A borda apareceu
+  porque o teste não escolheu o caso fácil — que é exatamente a lição da revisão
+  da E4.
+
+**O que a revisão pegou, e é o mesmo padrão de sempre:**
+
+Os três achados têm **uma raiz só**, e ela é a peça antiga que ninguém releu ao
+encaixar a nova: **`Arquivos::existe` devolve `bool`, e um `bool` não tem como
+dizer "não sei".** `Path::exists` transforma qualquer falha de I/O em `false`.
+
+- **A defesa contra "não consegui olhar" estava construída sobre a função que já
+  confundia os dois casos.** Eu tinha acabado de separar `SemArquivo` de
+  `NaoDeuParaLer` — o padrão que o ADR-0005 nomeou no firmware — e então
+  perguntei `existe()` antes de ler. Um `arca-fim.txt` num volume com problema
+  de leitura sairia como *"o boot não aconteceu"*, e `NaoDeuParaLer` ficava
+  inalcançável por aquele caminho. **A correção que eu escrevi criou o defeito
+  que ela vinha corrigir**, que é literalmente o achado da revisão da E3.
+- **O mesmo no `estado.json`, com consequência pior**: um estado presente e
+  não-estatável virava `EstadoDoJob::Nenhum`, e a tela dizia "não há job
+  pendente" — a afirmação que o próprio comentário do enum diz que nunca pode
+  sair de uma falha de leitura. Alguém reiniciaria achando que não há nada
+  esperando.
+- **`caminho_do_estado` falha por dois motivos, e o código dizia que era um.**
+  O comentário afirmava "só há um motivo para não haver caminho: não há
+  `ARCABOOT`". Falso: `Erro::VolumeSemLetra` também o produz, e nesse caso o
+  `ARCABOOT` **está na mesa** e pode ter job armado. Dizer "sem ARCABOOT"
+  mandaria alguém procurar um dispositivo que já está conectado.
+
+A correção não foi a óbvia. Trocar `exists()` por `try_exists()` resolveria os
+sintomas e deixaria de pé a pergunta que não deveria ser feita. **O código
+deixou de perguntar "existe?" e passou a ler**, deixando o `ErrorKind` dizer
+qual dos dois casos é (`Erro::e_arquivo_ausente`). É mais preciso, e não há
+janela entre a pergunta e a leitura. `SemOndeOlhar` passou a carregar o motivo.
+
+E os testes não pegavam nada disso porque **nenhum duplo sabia recusar uma
+leitura**: `ArquivosEmMemoria` só sabe ter ou não ter o arquivo, e contra ele
+o código errado passa sempre. Nasceu `ArquivosQueRecusam`, em que um caminho
+existe e não se deixa ler — sem ele, os três testes novos não teriam como
+falhar.
+
+**E a correção foi confirmada no hardware, e não só nos testes.** Com uma ACL de
+negação sobre o `arca-fim.txt` do `ARCAVAULT` — arquivo presente, leitura
+recusada, ACL devolvida logo depois — o `arca status` disse *"está lá e não se
+deixou ler … NÃO é o mesmo que o boot não ter acontecido"*, com o `os error 5`
+junto. Antes da correção esse mesmo arquivo sairia como *"o boot não
+aconteceu"*.
+
+**Aberto nesta etapa, e não resolvido aqui:**
+
+- **`arca status` e `arca desarmar` mostram um par que lê como contradição.**
+  Depois de um `arca desarmar`, a tela diz "Boot único: não armado" ao lado de
+  um job pendente — e está certa: desarmar não toca no `estado.json` (C-1), e
+  quem encerra o job é a E8, ao colher. Está dito na tela e no código; quem
+  fecha é a E8.
+- **Nada em produção gera selo ainda.** `gerar_selo` existe, é testado e foi
+  medido contra o hardware; quem o chama é a E7.
 
 ## Fase III — Backup ponta a ponta
 

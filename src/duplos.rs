@@ -7,7 +7,8 @@
 
 use crate::erro::{Erro, Resultado, erro_de_arquivo};
 use crate::portas::{
-    Arquivos, DiscoFisico, Discos, Entrada, Firmware, Privilegios, Relogio, TipoDeMidia, Volume,
+    Arquivos, DiscoFisico, Discos, Entrada, Entropia, Firmware, Privilegios, Relogio, TipoDeMidia,
+    Volume,
 };
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use std::cell::RefCell;
@@ -39,6 +40,58 @@ impl RelogioParado {
 impl Relogio for RelogioParado {
     fn agora(&self) -> DateTime<Local> {
         self.momento
+    }
+}
+
+/// Uma entropia de mentira: entrega os bytes que lhe deram, ou recusa.
+///
+/// Existe porque um teste sobre o `estado.json` precisa saber que selo
+/// esperar, e um gerador de verdade nunca deixaria. Sabe fazer as duas coisas
+/// que importam: entregar bytes conhecidos e **recusar** — sem o segundo, o
+/// caminho em que a falta de entropia vira um selo de zeros ficaria sem teste,
+/// e zeros sao o selo de ensaio.
+pub struct EntropiaDeMentira {
+    bytes: Vec<u8>,
+    recusar: bool,
+}
+
+impl EntropiaDeMentira {
+    pub fn com(bytes: &[u8]) -> EntropiaDeMentira {
+        EntropiaDeMentira {
+            bytes: bytes.to_vec(),
+            recusar: false,
+        }
+    }
+
+    pub fn recusando() -> EntropiaDeMentira {
+        EntropiaDeMentira {
+            bytes: Vec::new(),
+            recusar: true,
+        }
+    }
+}
+
+impl Entropia for EntropiaDeMentira {
+    fn preencher(&self, destino: &mut [u8]) -> Resultado<()> {
+        if self.recusar {
+            return Err(Erro::EntropiaIndisponivel {
+                estado: -1073741823,
+            });
+        }
+
+        // Preencher parcialmente e o que a porta proibe: ou vai tudo, ou
+        // falha. Um duplo mais frouxo que o contrato esconderia justamente o
+        // caso em que o selo sai com zeros no fim.
+        if destino.len() != self.bytes.len() {
+            panic!(
+                "a entropia de mentira tem {} byte(s) e pediram {}",
+                self.bytes.len(),
+                destino.len()
+            );
+        }
+
+        destino.copy_from_slice(&self.bytes);
+        Ok(())
     }
 }
 
@@ -382,6 +435,92 @@ impl Arquivos for ArquivosEmMemoria {
 
     fn espaco_livre(&self, _caminho: &Path) -> Resultado<u64> {
         Ok(self.espaco_livre)
+    }
+}
+
+/// Um sistema de arquivos em que um caminho **existe e nao se deixa lê**.
+///
+/// Existe por causa de um achado da revisao da etapa E5: a diferenca entre
+/// "nao esta la" e "nao consegui olhar" nao tem como ser testada com um
+/// duplo que so sabe ter ou nao ter o arquivo. Sem ele, o codigo que confunde
+/// os dois casos passa em todo teste — e foi o que aconteceu.
+///
+/// Delega tudo a um [`ArquivosEmMemoria`], menos o caminho recusado.
+pub struct ArquivosQueRecusam {
+    dentro: ArquivosEmMemoria,
+    recusado: PathBuf,
+    especie: std::io::ErrorKind,
+    mensagem: String,
+}
+
+impl ArquivosQueRecusam {
+    pub fn com(
+        recusado: impl Into<PathBuf>,
+        especie: std::io::ErrorKind,
+        mensagem: &str,
+    ) -> ArquivosQueRecusam {
+        ArquivosQueRecusam {
+            dentro: ArquivosEmMemoria::novo(),
+            recusado: recusado.into(),
+            especie,
+            mensagem: mensagem.to_string(),
+        }
+    }
+
+    /// Um arquivo que se lê normalmente, ao lado do recusado.
+    pub fn com_arquivo(self, caminho: impl Into<PathBuf>, conteudo: &str) -> ArquivosQueRecusam {
+        ArquivosQueRecusam {
+            dentro: self.dentro.com(caminho, conteudo),
+            ..self
+        }
+    }
+
+    fn recusa(&self, caminho: &Path) -> Option<Erro> {
+        (caminho == self.recusado).then(|| {
+            erro_de_arquivo("leitura", caminho)(std::io::Error::new(
+                self.especie,
+                self.mensagem.clone(),
+            ))
+        })
+    }
+}
+
+impl Arquivos for ArquivosQueRecusam {
+    /// **`true` para o caminho recusado**, que e o ponto do duplo: um arquivo
+    /// que esta la. Um `Path::exists` de verdade diria `false` aqui, e e essa
+    /// mentira que o duplo existe para nao reproduzir.
+    fn existe(&self, caminho: &Path) -> bool {
+        caminho == self.recusado || self.dentro.existe(caminho)
+    }
+
+    fn ler_texto(&self, caminho: &Path) -> Resultado<String> {
+        match self.recusa(caminho) {
+            Some(erro) => Err(erro),
+            None => self.dentro.ler_texto(caminho),
+        }
+    }
+
+    fn ler_texto_alheio(&self, caminho: &Path) -> Resultado<String> {
+        match self.recusa(caminho) {
+            Some(erro) => Err(erro),
+            None => self.dentro.ler_texto_alheio(caminho),
+        }
+    }
+
+    fn escrever_atomico(&self, caminho: &Path, conteudo: &str) -> Resultado<()> {
+        self.dentro.escrever_atomico(caminho, conteudo)
+    }
+
+    fn criar_diretorio(&self, caminho: &Path) -> Resultado<()> {
+        self.dentro.criar_diretorio(caminho)
+    }
+
+    fn listar(&self, caminho: &Path) -> Resultado<Vec<Entrada>> {
+        self.dentro.listar(caminho)
+    }
+
+    fn espaco_livre(&self, caminho: &Path) -> Resultado<u64> {
+        self.dentro.espaco_livre(caminho)
     }
 }
 
