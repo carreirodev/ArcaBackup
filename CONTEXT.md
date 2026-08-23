@@ -48,6 +48,14 @@ _Evitar_: agendar, disparar, configurar
 Devolver o `grub.cfg` ao estado inerte e limpar a marca de boot único. Acontece incondicionalmente como primeiro passo de todo comando.
 _Evitar_: cancelar, limpar, resetar
 
+**Boot único**:
+O `bootsequence` do `{fwbootmgr}`: a marca que manda o firmware bootar por uma entrada **no próximo reinício, uma vez só**. O firmware a consome ao usá-la. É o único jeito pelo qual o ARCA leva a máquina ao dispositivo, e funciona sobre uma entrada que não está na ordem permanente — medido em 22/08/2026.
+_Evitar_: BootNext, boot temporário, agendamento de boot
+
+**Ordem permanente**:
+O `displayorder` do `{fwbootmgr}`: por onde a máquina boota quando ninguém pediu nada. **O ARCA nunca a toca** — nem para pôr, nem para tirar, nem para consertar. Ela muda sozinha no ciclo de boot pelo dispositivo, e por isso é lida e relatada, e não corrigida.
+_Evitar_: BootOrder, ordem de boot, boot padrão
+
 **Estado inerte**:
 O `grub.cfg` sem nenhum `menuentry --id arca-backup` e com `set default="live-default"`, e o `{fwbootmgr}` sem `bootsequence`. Um dispositivo inerte boota no menu do Clonezilla e espera alguém. Não é uma cópia guardada: é o que sai de aplicar a regra ao `grub.cfg` que está no dispositivo.
 _Evitar_: estado limpo, estado original, estado padrão

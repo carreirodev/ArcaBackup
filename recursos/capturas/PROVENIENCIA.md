@@ -184,7 +184,9 @@ O resumo do que elas mostram, para quem chegar aqui primeiro:
 | 20/08 | `R1/nvram-antes.txt`, `R1/nvram-depois.txt` | `0000,0001` | `0001` |
 | 20/08 | `R2/nvram-antes.txt`, `R2/nvram-depois.txt` | `0003,0000` | `0003` |
 | 21/08 | `2026-08-21_WindowsCompleto/nvram-antes.txt` e `-depois.txt` | `0001,0000` | `0001` |
-| 22/08 | `bcdedit /enum {fwbootmgr}` desta máquina | `{bootmgr}` | — |
+| 22/08 manhã | `bcdedit /enum {fwbootmgr}` desta máquina | `{bootmgr}` | — |
+| 22/08 ~20:57 | **`nvram-live-2026-08-22.txt`** — está neste diretório | **`0000,0001`** | **`0001`** |
+| 22/08 21:17 | `bcdedit-enum-firmware-2026-08-22-pos-marco.txt` | `{f4057bd0}`, `{bootmgr}`, `{687478f2}` | — |
 
 Três coisas que só aparecem lendo os arquivos inteiros, e não a tabela:
 
@@ -192,15 +194,28 @@ Três coisas que só aparecem lendo os arquivos inteiros, e não a tabela:
   `efibootmgr -v` imprime os dados da variável, e lá está
   `BCDOBJECT={f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}` em UTF-16 hexadecimal. É o
   que liga as duas ferramentas, e o que dispensa deduzir a correspondência.
+  **A captura de 22/08 é a exceção, e a exceção é o achado**: ali `Boot0001`
+  chama-se `UEFI OS`, carrega `\EFI\BOOT\BOOTX64.EFI` em maiúsculas e traz
+  `data: 00 00 42 4f` — sem `BCDOBJECT` nenhum. Mesmo device path, outra
+  escrita: quem a escreveu foi o firmware, e não o `bcdedit`.
 - **O número da entrada mudou de `0001` para `0003`** entre as capturas de
   20/08, o que só acontece quando ela é recriada.
-- **Nenhuma das oito tem `BootNext`**, e isso continua não provando nada: o
+- **Nenhuma das dez tem `BootNext`**, e isso continua não provando nada: o
   firmware o consome ao usá-lo, e todas foram feitas de dentro do Clonezilla.
 
-**A ordem permanente desta máquina foi alterada por alguém, mais de uma vez.**
-C-5 existe para impedir que o ARCA o faça, e a evidência é de que já foi feito à
-mão. Em 21/08 — o backup que o §3.3 chama de validado — o dispositivo estava em
-**primeiro**, o que explica o boot inteiro sem passar por boot único (P-18).
+**A ordem permanente desta máquina muda no ciclo de boot, e não à mão.** Esta
+seção dizia o contrário — "foi alterada por alguém" — e o marco de 22/08
+mostrou o que de fato acontece: o firmware reescreve a entrada ao bootar por
+ela, e o Windows a recria no `displayorder` ao subir. As três mudanças que se
+atribuíam a trabalho manual têm essa causa, inclusive o `0001` virando `0003`.
+Ver [ADR-0009](../../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md).
+
+**E a linha de 20:57 é a que fecha P-18.** `BootCurrent: 0001` com
+`BootOrder: 0000,0001`: a máquina bootou por uma entrada que **não** era a
+primeira da ordem. Só o `bootsequence` explica. Em 21/08 a mesma leitura trazia
+`0001,0000` — o dispositivo à frente —, e era por isso que aquele backup não
+provava nada; a diferença entre as duas linhas é a diferença entre uma
+coincidência e uma medição.
 
 ## O `bootsequence`, medido pela primeira vez (etapa E7)
 
@@ -229,9 +244,95 @@ ordem, o `displayorder` **não muda** nem ao pôr nem ao tirar, e com
 `bootsequence` presente o `/deletevalue` sai com **código 0** — ao contrário do
 código 1 medido na E4 quando não há o que apagar.
 
-**O que continua sem medição é se o firmware honra a marca.** Isso custa um
-reinício, e é o marco em hardware da E7. Ver
-[ADR-0007](../../docs/adr/0007-o-bloco-do-arca-deriva-do-live-toram.md).
+**O firmware honra a marca, e isso foi medido em 22/08/2026.** Esta seção dizia
+que faltava um reinício; o reinício aconteceu, e quem o registrou foi o
+`nvram-live-2026-08-22.txt` — escrito **durante** o boot que se queria
+explicar. Ver [ADR-0007](../../docs/adr/0007-o-bloco-do-arca-deriva-do-live-toram.md)
+e [ADR-0009](../../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md).
+
+## O primeiro desfecho, e as cinco capturas do marco (etapa E8)
+
+O backup `2026-08-22_Apps` foi armado às 20:53:48 de 22/08/2026, disparado por
+boot único, e colhido às 21:14:49. É a primeira vez que uma receita montada
+pelo ARCA rodou em hardware, e a primeira vez que o mecanismo de desfecho —
+`arca-fim.txt`, selo, `ARCA_FIM`, `if/then/else` — existiu fora de um teste.
+
+Cópias byte a byte, conferidas por SHA256 contra o dispositivo depois de
+gravadas.
+
+| Arquivo | O que é | SHA256 | O que prova |
+|---|---|---|---|
+| `arca-fim-2026-08-22_Apps.txt` | `E:\ARCA-LOGS\backup-2026-08-22_Apps\arca-fim.txt`, 51 bytes | `a19d051d…375acac5` | **P-16.** O primeiro desfecho que uma receita do ARCA escreveu |
+| `arca-check-2026-08-22_Apps.log` | `E:\2026-08-22_Apps\arca-check.log`, 3832 bytes | `98024c08…76d8d44b` | As **duas formas** do ADR-0003 no mesmo arquivo, escritas pela receita e não à mão |
+| `ocs-sr-linha-de-comando-2026-08-22.txt` | `E:\2026-08-22_Apps\Info-saved-by-cmd.txt`, 103 bytes | `cc76de36…9e442653` | O `ocs-sr` que de fato rodou, escrito pelo próprio Clonezilla |
+| `nvram-live-2026-08-22.txt` | `E:\2026-08-22_Apps\efi-nvram.dat`, 1642 bytes | `44345e21…ac114a83` | **P-18.** A ordem de boot no instante do boot |
+| `bcdedit-enum-firmware-2026-08-22-pos-marco.txt` | `bcdedit /enum firmware`, 21:17, 1716 bytes | `3cd147f5…6ab02e56` | O firmware **depois** do marco: três entradas, e **duas** delas em `partition=R:` |
+
+> **O `bcdedit` redirecionado sai em UTF-8, e não em CP850.** A E2 mediu que a
+> página de código é a do console de quem chama; esta captura foi feita com
+> `Start-Process -RedirectStandardOutput`, que não dá console nenhum ao filho —
+> e o `bcdedit` escreveu UTF-8. A primeira tentativa a converteu de CP850 por
+> hábito e produziu `Inicializa├º├úo`; os bytes crus é que são a captura. Vale
+> escrito porque a regra da E2 continua certa e a conclusão prática dela — "o
+> `bcdedit` sai em CP850" — só vale quando há console.
+
+### O `arca-fim.txt` tem original, e o original é ele próprio
+
+Três linhas, e cada uma é um pedaço de código que nunca tinha rodado:
+
+```text
+ARCA_SELO=7d2d2f5153625b38
+ARCA_BACKUP=OK
+ARCA_FIM
+```
+
+O selo bate com o do `estado.json` do mesmo job, conferido a olho e não só pelo
+julgamento da E5: as duas cadeias de dezesseis dígitos são a mesma.
+
+**Este arquivo é o contrário do padrão que este documento vinha nomeando.** O
+`ARCA_VEREDITO=` (ADR-0003) e o `arca-fim.txt` de 21/08 pareciam prova de que a
+receita os escrevia, e nenhuma escrevia — vieram do trabalho de validação em
+volta. Este veio da receita, e o que o atesta é a
+`ocs-sr-linha-de-comando-2026-08-22.txt` ao lado dele: o Clonezilla registrou
+sozinho o comando que executou, e ele é o que a receita mandou executar.
+
+O `arca-fim.txt` de 21/08 continua em `E:\ARCA-LOGS\2026-08-21_WindowsCompleto\`
+e continua **sem linha de selo** — 25 bytes, `ARCA_RESTORE=OK` e `ARCA_FIM`. Os
+dois lado a lado são a diferença entre o que uma pessoa escreveu e o que a
+receita escreve.
+
+### O relógio do live está três horas atrás, e não é defeito novo
+
+O `arca-fim.txt` tem `mtime` de **18:06** lido do Windows, e foi escrito às
+**21:06**. É a armadilha do §11 pelo outro lado: o live lê o RTC — que o
+Windows grava em hora local — como se fosse UTC, e o NTFS guarda o resultado em
+UTC. Três horas, que é exatamente o offset desta máquina.
+
+Vale escrito aqui porque a próxima pessoa vai comparar esses `mtime` com o
+`armado_em` do `estado.json` e concluir que o desfecho é anterior ao job. Não
+é: é a mesma hora em dois fusos. É o motivo de S-6 e do selo existirem.
+
+### O que **não** está aqui, e por quê
+
+**O `grub.cfg` como ficou armado.** Ele não existe mais: o `arca resultado`
+desarma ao colher, e desarmar reescreve o arquivo — o armado foi substituído
+pelo inerte às 21:14:50, e `src/desarme.rs` não guarda cópia. A primeira
+receita que o ARCA gravou num dispositivo durou vinte e um minutos e não
+sobreviveu à colheita.
+
+**E não há reprodução guardada no lugar dela, de propósito.** A derivação é
+determinística e as quatro entradas são conhecidas — o inerte está aqui
+conferido por SHA256, e o nome, o disco e o selo estão no `estado.json` e no
+`arca.log` —, então reproduzi-la é fácil:
+
+```text
+cargo run --example orcamento_da_linha_do_kernel -- --arquivo
+```
+
+Guardar o resultado disso **nesta pasta** seria pôr um arquivo derivado ao lado
+de originais, que é a ambiguidade que este documento inteiro existe para
+desfazer. Quem quiser a linha, gera; e o exemplo diz, no cabeçalho, que ela é
+reprodução e não captura.
 
 ## O modelo do bloco do ARCA é o `live-toram` (etapa E7)
 

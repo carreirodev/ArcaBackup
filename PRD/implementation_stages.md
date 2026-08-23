@@ -15,21 +15,29 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E4 | Desarmar | II | ✅ | 2026-08-22 17:36 |
 | E5 | Estado e selo | II | ✅ | 2026-08-22 18:37 |
 | E6 | Pré-voo | III | ✅ | 2026-08-22 19:24 |
-| E7 | Armar e disparar | III | 🟨 | escrita 2026-08-22 21:12 · falta o marco |
-| E8 | Colher o desfecho | III | 🟨 | escrita 2026-08-22 21:12 · falta o marco |
+| E7 | Armar e disparar | III | ✅ | 2026-08-22 21:06 · marco cumprido |
+| E8 | Colher o desfecho | III | ✅ | 2026-08-22 21:14 · marco cumprido |
 | E9 | Restauração | IV | ⬜ | — |
 | E10 | `arca prepare` | IV | ⬜ | — |
 | E11 | `arca verify` | IV | ⬜ | — |
 
-Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi escrito. As duas etapas com marco em hardware (E7 e E9) exigem a execução real para fechar.
+Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi escrito. As três etapas com marco em hardware (E7, E8 e E9) exigem a execução real para fechar.
 
 **🟨 é escrita, revisada e commitada, com o marco em hardware devendo.** O
 estado nasceu na E7, e ele existe porque ✅ seria mentira e ⬜ seria pior: quem
 lesse ⬜ suporia que não há código. Cada seção 🟨 termina com **o que falta,
-nomeado** — e o que falta, nas duas, custa um reinício que apaga a sessão que o
-dispararia. A E4 já tinha entregue o critério dela "cumprido pela metade
-verificável"; a diferença é que lá a outra metade era barata, e aqui ela é o
+nomeado** — e o que falta, nas duas, custava um reinício que apagava a sessão
+que o dispararia. A E4 já tinha entregue o critério dela "cumprido pela metade
+verificável"; a diferença é que lá a outra metade era barata, e aqui ela era o
 marco inteiro.
+
+**As duas viraram ✅ em 22/08/2026, e o 🟨 fica documentado porque vai voltar
+na E9.** O reinício aconteceu numa sessão à parte: o backup `2026-08-22_Apps`
+foi armado às 20:53:48, a máquina bootou pelo dispositivo por boot único,
+gravou 39,7 GB, verificou, escreveu o desfecho às 21:06:02 e desligou; a
+colheita foi às 21:14:49. Os blocos **"o que falta para o marco, nomeado"** das
+duas seções continuam lá, reescritos contra o que aconteceu — apagá-los
+perderia o registro de o que estava em aberto e de como cada coisa fechou.
 
 ---
 
@@ -569,10 +577,11 @@ Gravar a receita no `grub.cfg`, marcar o boot único **sem tocar na ordem perman
 **Cobre**: C-4 (migração), C-5, C-9, S-2
 **Marco em hardware**: primeiro backup completo disparado pelo ARCA, sem uma única tela.
 
-**Escrita, testada e commitada em 22/08/2026 — e o marco em hardware ficou
-devendo, de propósito.** A máquina desliga no reinício e a sessão morre junto;
-tudo que é verificável sem reiniciar está feito, e o que falta está nomeado
-abaixo.
+**Escrita, testada e commitada em 22/08/2026, e o marco cumprido às 21:06 do
+mesmo dia.** A escrita e o marco foram sessões diferentes de propósito: a
+máquina desliga no reinício e a sessão morre junto. O que era verificável sem
+reiniciar foi feito primeiro; o que só o hardware responde está no bloco do
+fim, reescrito contra o que aconteceu.
 
 **O achado da etapa, e ele é o quinto do mesmo tipo.** A ordem permanente de
 boot desta máquina **foi alterada por alguém, pelo menos três vezes**. A tabela
@@ -592,6 +601,15 @@ padrão que o método desta etapa nomeia: o que o documento chama de fundação
 validada pode ter vindo de outra coisa. `tests/e7_armar_o_dispositivo.rs` cobra
 que a entrada continue **fora** da ordem, porque é essa configuração que faz a
 medição do boot único significar alguma coisa.
+
+> **O marco corrigiu a conclusão desta seção, e não a evidência.** As três
+> mudanças de ordem são reais e continuam onde estão; o que estava errado era
+> supor **alguém**. O ciclo de boot pelo dispositivo é que mexe na ordem — o
+> firmware reescreve a entrada ao bootar por ela, o Windows a recria no
+> `displayorder` ao subir —, e isso explica os três casos sem pedir ninguém.
+> Aquele teste reprovou no marco, fazendo o que foi escrito para fazer, e
+> trocou de asserção: à frente da ordem, o dispositivo tem de estar **inerte**.
+> Ver [ADR-0009](../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md).
 
 **O que a etapa mediu escrevendo no `bcdedit`, e não estava medido:**
 
@@ -696,22 +714,38 @@ corrigir, releia o que a correção encostou.** Corrigi a frase final do pré-vo
 não reli o rodapé do ensaio, que ficava vinte linhas abaixo. Agora há um teste
 que reprova qualquer frase do ensaio que adie o armar para uma etapa futura.
 
-**O que falta para o marco, nomeado:**
+**O que faltava para o marco, e como cada coisa fechou** — cumprido em
+22/08/2026, às 21:06:
 
 - **Se o firmware honra o `bootsequence`** sobre uma entrada de fora da ordem.
-  O `bcdedit` aceita e a releitura confirma; o que o firmware faz com isso é o
-  reinício. É a metade de P-18 que só o hardware responde.
-- **Se o Clonezilla executa a receita** que o ARCA gravou. Todo o mecanismo de
-  desfecho — `arca-fim.txt`, selo, `ARCA_FIM`, `if/then/else` — estreia de uma
-  vez (P-16).
-- **O `grub.cfg` do dispositivo é escrito pelo ARCA pela primeira vez em sete
-  etapas.** A cópia fora do dispositivo é `recursos/capturas/grub-inerte-arcaboot.cfg`,
-  conferida por SHA256 antes de qualquer gravação:
-  `4B33DA61A89CE258B2524F11AE443A58E515B56052306F9550C63B499F47AA3D`.
+  **Honra.** E a evidência não é do lado Windows: é o `efi-nvram.dat` que o
+  Clonezilla escreve dentro de cada imagem, lido **durante** aquele boot —
+  `BootCurrent: 0001` com `BootOrder: 0000,0001`. A máquina bootou por uma
+  entrada que não era a primeira. P-18 fechada, e C-5 provada sustentável
+  ([ADR-0009](../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md)).
+- **Se o Clonezilla executa a receita** que o ARCA gravou. **Executa.** O
+  mecanismo de desfecho inteiro estreou de uma vez e funcionou: o
+  `arca-fim.txt` tem as três linhas, o selo bate com o do `estado.json`, e o
+  `if/then/else` tomou o ramo do sucesso. P-16 fechada. O ramo de falha
+  continua sem rodar, e é P-6.
+- **O `grub.cfg` do dispositivo foi escrito pelo ARCA pela primeira vez**, e
+  voltou ao inerte na colheita: o SHA256 de agora é o mesmo de antes de armar,
+  `4B33DA61…F947AA3D`, byte a byte. A ida e a volta se cancelaram sobre o
+  arquivo de que a máquina depende para bootar.
 
-**O marco é seguro, e vale saber por quê.** A receita é de backup: lê o
+**E o que o marco trouxe que ninguém tinha pedido**, e é o achado da noite: a
+entrada do ARCA **voltou para a ordem permanente, em primeiro**, e uma terceira
+entrada apareceu. O ARCA não fez isso — a releitura de C-5 teria falhado —, e o
+que o fez foi o próprio ciclo de boot. Está no ADR-0009, e ele reinterpreta a
+tabela do §3.1 inteira: o que ela atribuía a trabalho manual tem uma causa que
+não pede ninguém. O teste `a_entrada_do_arca_esta_fora_da_ordem_permanente`
+reprovou nesta sessão, fazendo exatamente o que foi escrito para fazer, e trocou
+de asserção pela invariante que importa — **à frente da ordem, o dispositivo tem
+de estar inerte.**
+
+**O marco era seguro, e valeu saber por quê.** A receita é de backup: lê o
 `nvme0n1` e escreve no `ARCAVAULT`. Não há operação destrutiva sobre o disco de
-origem. O pior caso é um reinício perdido — a máquina volta ao Windows, e o
+origem. O pior caso era um reinício perdido — a máquina voltar ao Windows, e o
 §5.5 chama isso de "o boot não aconteceu". Destrutivo é a E9.
 
 ### E8 · Colher o desfecho
@@ -732,8 +766,9 @@ A tabela de estados terminais que o PRD não tem (D8):
 **Cobre**: S-4, S-5, D8
 **Marco em hardware**: backup e colheita, ponta a ponta, sem intervenção.
 
-**Escrita, testada e commitada em 22/08/2026 — e o marco depende do da E7.**
-Não há desfecho a colher enquanto o primeiro backup não rodar.
+**Escrita, testada e commitada em 22/08/2026, e o marco cumprido às 21:14:49 do
+mesmo dia.** Ele dependia do da E7 — não há desfecho a colher enquanto o
+primeiro backup não rodar —, e os dois caíram na mesma noite.
 
 **A etapa é mais de fiação do que de código novo, e isso é o desenho dando
 certo.** A E5 construiu o julgamento, a E3 o leitor do veredito, a E4 o
@@ -808,26 +843,114 @@ já apareceu em quatro etapas:
   `arca desarmar` não consulta estado nenhum (C-1) e por isso funciona
   justamente ali.
 
-**O que falta para o marco, nomeado:**
+**O que faltava para o marco, e como cada coisa fechou** — cumprido em
+22/08/2026, às 21:14:49:
 
-- **P-16 fecha aqui, ou não fecha.** O `arca-fim.txt`, o selo dentro da
-  receita, o `ARCA_FIM` e o `if/then/else` nunca rodaram. Se o arquivo não
-  aparecer, ou aparecer sem selo, ou com o selo errado, **isso é o achado da
-  etapa** e vale mais que a saída bonita.
-- **O `arca-fim.txt` que voltar tem de ser guardado** em
-  `recursos/capturas/`, com procedência. Ele é o primeiro original que o
-  mecanismo de desfecho produziu, e a E9 vai querer compará-lo.
-- **A §5.4, a §3.5 e o §11 esperam a execução real.** Os números da §5.4 ainda
-  não são de uma execução do ARCA, e isso está dito na própria seção — como o
-  §5.2 esteve até a E6 corrigi-lo.
-- **A tabela do §5.5** ganha linha se a execução real mostrar uma que falta.
+- **P-16 fechou, e fechou pelo lado bom.** O `arca-fim.txt` apareceu, com selo,
+  e o selo é o do job: `7d2d2f5153625b38` nas duas pontas — no `estado.json` que
+  o ARCA escreveu antes de reiniciar e na primeira linha do arquivo que o
+  Clonezilla escreveu do outro lado. Conferido **a olho** antes de acreditar no
+  julgamento da E5, que é o que a etapa pedia.
+- **O `arca-fim.txt` está guardado**, em
+  `recursos/capturas/arca-fim-2026-08-22_Apps.txt`, com o `arca-check.log` e
+  mais três capturas do marco. A procedência de cada uma está no
+  `PROVENIENCIA.md`, e ela diz o que cada uma prova.
+- **A §5.4, a §3.5 e o §11 foram corrigidos contra a execução real.** Três
+  números da §5.4 mudaram — a imagem é de 39,7 GB e não 36,2, sobraram 125 GB e
+  não 164, e a listagem tem três imagens e não duas. E a §5.2 tinha um defeito
+  que só a execução mostraria: o `Desfecho esperado em` ainda trazia o nome da
+  pasta, quando a revisão da E7 já tinha corrigido o **código** para mostrar o
+  caminho inteiro. É a lição da E6 pela terceira vez, e desta vez o que ficou
+  para trás foi o documento.
+- **A tabela do §5.5 não ganhou linha**, e isso é resultado. A execução produziu
+  exatamente o primeiro caso, e o `arca resultado` o classificou nele. As outras
+  seis continuam sem original.
 
-**O que a etapa já prova sem reiniciar**, em `tests/e8_colher_o_desfecho.rs`:
-que o único `arca-fim.txt` deste dispositivo continua **sem selo** — P-16 fixado
-no hardware —, que ele continua inalcançável pelo ARCA de hoje (a pasta do log
-leva a operação no nome, decisão da E3, e ninguém a tinha conferido contra o
-disco), e que as duas formas de veredito do ADR-0003 continuam legíveis nas
-imagens que estão lá.
+**O que o §10.2.3 ganhou, e não estava previsto.** A linha que rodou pode ser
+medida — `cargo run --example orcamento_da_linha_do_kernel` —, e a medição
+corrige um número que parecia folgado: o `menuentry` base **deste** dispositivo
+ocupa 471 bytes, e a reserva é 512. As capturas mediam 206, 369 e 369, e o
+documento dizia que 512 era "quase 40% acima do maior já visto". Sobram 41
+bytes, não 143. É o argumento do ADR-0007 visto pelo outro lado: as capturas
+descreviam um `menuentry` mais pobre do que o modelo de que o ARCA deriva.
+
+A primeira versão daquele exemplo contava o **recuo do bloco** junto da linha, e
+a revisão pegou: o recuo é do `grub.cfg`, não do que o `grub` entrega ao kernel.
+Eram dois caracteres, e os números inflados já tinham sido transcritos para o
+PRD. Vale registrar porque é o erro que a §5.2 acabara de cometer na mesma
+sessão — medir a coisa errada e publicar o número —, e é o mesmo do `498,7 GB`
+que a E6 corrigiu.
+
+**O que a colheita apagou, e não dá para recuperar.** O `grub.cfg` como ficou
+armado não existe mais: o `arca resultado` desarma ao colher, e desarmar
+reescreve o arquivo. A primeira receita que o ARCA gravou num dispositivo durou
+vinte e um minutos. A reprodução é determinística e o exemplo acima a gera, mas
+**reprodução não é captura** — e é por isso que ela não foi guardada em
+`recursos/capturas/`, que é a pasta dos originais.
+
+**O que a etapa prova em `tests/e8_colher_o_desfecho.rs`**: que o `arca-fim.txt`
+de 21/08 continua **sem selo**, que ele continua inalcançável pelo ARCA de hoje
+(a pasta do log leva a operação no nome, decisão da E3, e ninguém a tinha
+conferido contra o disco), e que as duas formas de veredito do ADR-0003
+continuam legíveis nas imagens que estão lá.
+
+**E ganhou o teste que o marco tornou possível.** Um daqueles se chamava
+`o_unico_arca_fim_do_dispositivo_continua_sem_selo`, e o comentário dele previa
+o próprio fim: *"a partir do primeiro `arca backup` colhido, haverá um segundo
+`arca-fim.txt`, esse sim com selo"*. Há. O teste virou
+`o_arca_fim_de_21_08_continua_sem_selo`, e ao lado dele entrou
+`o_desfecho_do_marco_e_julgado_como_operacao_concluida` — que corre contra a
+captura, e não contra o dispositivo, porque o arquivo no `ARCAVAULT` será
+truncado pelo próximo `arca backup 2026-08-22_Apps`: toda receita começa com
+`echo ARCA_SELO=… >`, e o `>` trunca ao abrir.
+
+Ele prova o que a etapa inteira existia para provar: **o julgamento da E5,
+escrito contra texto inventado e duplos, classifica o primeiro original de
+verdade no ramo certo** — `Concluida` com o selo do job, `JobFantasma` com
+outro. O selo faz nas duas direções o que se esperava dele.
+
+**O que a revisão do marco pegou, e os dois piores são o mesmo erro.** A linha
+`Ordem de boot` que o ADR-0009 mandou acrescentar ao `arca status` nasceu com
+dois furos, e os dois são a mesma pergunta mal feita — *onde está a entrada
+chamada `ARCA`?* em vez de *alguma entrada alcança este dispositivo?*:
+
+- **A captura desta máquina tem duas entradas para `partition=R:`**, e a linha
+  só olhava uma. A `{687478f2}` `UEFI OS` — que o firmware criou, e por onde o
+  `nvram-live-2026-08-22.txt` mostra a máquina tendo bootado — é invisível para
+  quem procura pelo nome. Com ela em primeiro e a do ARCA atrás do Windows, o
+  `status` diria *"o Windows vem antes"* e engoliria o aviso, enquanto todo
+  reinício com o SSD conectado continuaria bootando no dispositivo. **A
+  evidência que desmentia o código estava na captura que a mesma sessão tinha
+  acabado de guardar.**
+- **O `o Windows vem antes` era texto fixo**, e não o que estava de fato à
+  frente. Agora a linha nomeia a entrada que vem antes, lendo a descrição dela.
+- **A seção não guardava em `viu_o_gerenciador`.** `firmware::ler` nunca falha:
+  um `bcdedit` que não se deixou entender devolve `ordem_permanente` vazia, e
+  vazia é indistinguível de "o dispositivo está fora da ordem" — a resposta
+  tranquilizadora. O `armar` e o `desarme` guardam nessa flag desde a E4; o
+  caminho novo não guardava, e transformava "não entendi a resposta" numa
+  afirmação de segurança. É C-3 pelo avesso, e o teste que o cobre monta o caso
+  difícil: o `{fwbootmgr}` faltando **enquanto** os blocos das entradas saem
+  certos, que é quando `entrada_do_arca()` responde normalmente e só a flag
+  separa uma coisa da outra.
+- **O teste da invariante dizia "na ordem" e devia dizer "em primeiro".** Ele
+  usava `.any()` — pertinência — enquanto o ADR e o §11 falam de estar à frente.
+  Consequência concreta: com o dispositivo em segundo e legitimamente armado —
+  o estado **normal** da janela entre o `arca backup` e o reinício — a suíte
+  ficaria vermelha acusando um perigo inexistente, e contradizendo o
+  `arca status`, que declara essa mesma configuração segura.
+- **O exemplo do orçamento contava o recuo do bloco**, e os números inflados já
+  tinham ido para o §10.2.3. Dois caracteres, e é o mesmo erro do `498,7 GB` da
+  E6: medir a coisa errada e publicar o número.
+- **O `PROVENIENCIA.md` afirmava conferência por SHA256 e não registrava os
+  hashes.** Era a única coisa que aquele documento existe para permitir.
+
+**E a decisão do ADR-0008 foi exercitada em hardware, e não só em duplo.**
+`arca resultado` rodado uma segunda vez sobre o mesmo job diz que ele já foi
+colhido, mostra o selo, e **não desarma de novo** — conferido pelos dois lados:
+o `grub.cfg` continua com o SHA256 de antes de armar e o `mtime` da colheita, e
+o `estado.json` continua em `"situacao": "colhido"`, intocado. Era a
+consequência que o ADR previa, e ela custava um marco para ser vista.
 
 ## Fase IV — O resto
 
@@ -875,7 +998,7 @@ Nenhum requisito do PRD fica sem etapa.
 
 **P-6 continua aberto, e sucesso não o fecha.** O ramo de falha do `ocs-sr` nunca foi observado — por definição, execuções bem-sucedidas não o exercitam. No backup existem **dois** sinais independentes do código de saída, e não um: a conferência nativa que o Clonezilla faz por padrão (e que `-scs` desligaria, razão de ele ficar de fora — ver ADR-0004) e o `ocs-chkimg` explícito de B-9. **Na restauração não há segundo sinal**: se o `ocs-sr` devolver 0 ao falhar, o `if/then/else` de R-5 escreve `OK` sobre uma restauração quebrada. O que segura esse caso hoje é o Windows subir ou não.
 
-**O mecanismo de desfecho nunca rodou** (P-16, achado na E3). Nenhuma das três receitas preservadas escreve `arca-fim.txt`, grava selo ou usa `if/then/else` — o que existe no dispositivo veio de trabalho manual de validação. O plano supunha que a E7 e a E9 confirmariam um mecanismo pronto; elas são a **primeira execução** dele. E o padrão já se repetiu duas vezes: antes de tratar qualquer linha do §3 do PRD como medida, procurar o original em `recursos/capturas/`.
+~~**O mecanismo de desfecho nunca rodou**~~ (P-16, achado na E3). Nenhuma das três receitas preservadas escreve `arca-fim.txt`, grava selo ou usa `if/then/else` — o que existia no dispositivo veio de trabalho manual de validação. O plano supunha que a E7 e a E9 confirmariam um mecanismo pronto; elas foram a **primeira execução** dele. **Rodou em 22/08/2026, e o ramo do sucesso funcionou inteiro**; o de falha continua sem rodar, e é P-6. O que continua valendo é a regra que o risco produziu: antes de tratar qualquer linha do §3 do PRD como medida, procurar o original em `recursos/capturas/` — cinco vezes ele não estava lá, e uma vez estava.
 
 **A ordem permanente de boot desta máquina foi alterada, e não pelo ARCA**
 (achado na E7). Em 21/08 — o backup que o §3.3 do PRD chama de validado — o

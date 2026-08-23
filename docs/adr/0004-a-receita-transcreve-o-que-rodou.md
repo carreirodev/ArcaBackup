@@ -26,6 +26,23 @@ Três decisões saíram daí, todas tomadas com `ocs-sr-help.txt` na mão:
 
 **Três mudanças menores, todas com motivo próprio.** O `-p poweroff` da restauração vira `-p true`: com a máquina desligando dentro do `ocs-sr`, o `echo` do desfecho nunca aconteceria — S-4 e R-5 seriam letra morta. O log do Clonezilla sai de `/home/partimag/restore.log`, um caminho fixo na raiz que a restauração seguinte sobrescreveria, e vai para o `ARCA-LOGS` do job (D2 do plano). E a verificação de B-9 mora **dentro** do ramo de êxito do backup: com o `savedisk` falhando, a pasta da imagem pode nem existir, e até o `else` do `ocs-chkimg` falharia ao tentar escrever nela.
 
+> **Tudo desta seção rodou em 22/08/2026**, no marco em hardware da E7 e da E8.
+> O `if/then/else` tomou o ramo do êxito, o `arca-fim.txt` foi escrito com selo
+> e `ARCA_FIM`, o `ARCA_VEREDITO=APROVADA` foi acrescentado ao `arca-check.log`,
+> e o `-p true` fez o que se esperava dele — o `ocs-sr` devolveu o controle à
+> receita em vez de reiniciar, e os passos depois dele aconteceram. Os originais
+> estão em `recursos/capturas/`, e o que atesta que foi a receita, e não uma
+> pessoa depois, é o `ocs-sr-linha-de-comando-2026-08-22.txt`, escrito pelo
+> próprio Clonezilla.
+>
+> **O que continua sem rodar é o ramo de falha** dos dois `if`: o
+> `ARCA_BACKUP=FALHOU` e o `ARCA_VEREDITO=REPROVADA`. Uma execução
+> bem-sucedida não os exercita, por definição, e é P-6.
+>
+> O achado desta seção — que o PRD documentava como fundação validada o que
+> veio do trabalho de validação em volta — continua de pé; o que mudou é que o
+> `arca-fim.txt` e o `ARCA_VEREDITO=` deixaram de ser exemplos dele.
+
 ## O que o `bash` diz, e os testes não podiam dizer
 
 Os testes de `src/receita.rs` provam o que a **string contém**. Nenhum deles prova o que o **bash faz com ela** — e o `if/then/else` aninhado é justamente a parte sem original. `recursos/ensaio-da-receita.sh` fecha isso: roda as duas receitas num bash de verdade, com o Clonezilla substituído por comandos falsos que saem com o código que se pedir, e confere o rastro de cada desfecho.

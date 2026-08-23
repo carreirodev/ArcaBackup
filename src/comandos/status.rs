@@ -336,6 +336,131 @@ fn secao_do_firmware(leitura: &Leitura, dispositivo: &Dispositivo) -> String {
             .unwrap_or("nada — a entrada nao diz que .efi carregar"),
     ));
 
+    saida.push_str(&secao_da_ordem_de_boot(leitura, dispositivo));
+
+    saida
+}
+
+/// Se esta entrada leva ao `ARCABOOT` que esta na mesa.
+///
+/// A versao de `sim ou nao` do [`confere_com_o_arcaboot`], e ela responde
+/// **nao** para tudo que nao dá para conferir. Uma entrada por caminho de
+/// dispositivo — o `{bootmgr}` e uma — nao tem letra, e supor que ela alcanca o
+/// dispositivo faria o aviso abaixo disparar sempre, que e o mesmo que nao
+/// avisar.
+fn alcanca_o_arcaboot(entrada: &firmware::EntradaDeFirmware, dispositivo: &Dispositivo) -> bool {
+    let (Some(alvo), Some(boot)) = (&entrada.alvo, &dispositivo.boot) else {
+        return false;
+    };
+    match (alvo.letra(), boot.letra) {
+        (Some(apontada), Some(atual)) => apontada.eq_ignore_ascii_case(&atual),
+        _ => false,
+    }
+}
+
+/// Por onde a maquina boota quando ninguem pede nada, e o que isso muda no
+/// proximo reinicio.
+///
+/// **Le, e nunca escreve.** C-5 proibe o ARCA de mexer na ordem permanente, e
+/// a proibicao nao tem clausula para o caso de ele achar que esta arrumando. O
+/// que o ARCA pode fazer e dizer o que leu.
+///
+/// A linha existe desde o
+/// [ADR-0009](../../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md),
+/// e o que a motivou foi uma medicao: **o ciclo de boot pelo dispositivo poe a
+/// entrada de volta na ordem**, e depois de um backup ela costuma estar em
+/// primeiro. O dado ja vinha sendo lido em todo comando — o `{fwbootmgr}` sai
+/// inteiro do `bcdedit` — e nao estava sendo dito a ninguem.
+///
+/// # A pergunta e sobre o dispositivo, e nao sobre a entrada do ARCA
+///
+/// A primeira versao desta funcao procurava **a entrada chamada `ARCA`** na
+/// ordem, e a revisao pegou o furo com a captura desta propria maquina: o
+/// `bcdedit-enum-firmware-2026-08-22-pos-marco.txt` tem **duas** entradas em
+/// `partition=R:` — a `{f4057bd0}` do ARCA e a `{687478f2}` `UEFI OS` que o
+/// firmware criou —, e foi pela segunda que a maquina bootou (`Boot0001* UEFI
+/// OS`, no `nvram-live-2026-08-22.txt`). Com a `{687478f2}` em primeiro e a do
+/// ARCA em segundo, aquela versao diria `2o de 3 · o Windows vem antes` e
+/// engoliria o aviso, enquanto todo reinicio com o SSD conectado continuaria
+/// bootando no dispositivo.
+///
+/// O que decide o boot e **para onde a entrada aponta**, e nao como ela se
+/// chama — que e a mesma licao de C-4 e de C-6, aplicada a ordem.
+fn secao_da_ordem_de_boot(leitura: &Leitura, dispositivo: &Dispositivo) -> String {
+    // Sem o bloco do `{fwbootmgr}`, `ordem_permanente` vem vazia — e vazia e
+    // indistinguivel de "o dispositivo esta fora da ordem", que e a resposta
+    // tranquilizadora. `firmware::ler` nunca falha, e e para exatamente isto
+    // que `viu_o_gerenciador` existe: "nao entendi a resposta" nao pode virar
+    // uma afirmacao de seguranca. Mesma guarda que `armar` e `desarme` fazem.
+    if !leitura.viu_o_gerenciador {
+        return linha(
+            "Ordem de boot",
+            "nao foi possivel ler o {fwbootmgr} — nada a afirmar sobre ela",
+        );
+    }
+
+    let total = leitura.ordem_permanente.len();
+
+    // Para cada identificador da ordem, a entrada que ele nomeia — e se ela
+    // leva a este dispositivo.
+    let leva_ao_dispositivo = |identificador: &String| {
+        leitura
+            .entradas
+            .iter()
+            .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador))
+            .is_some_and(|entrada| alcanca_o_arcaboot(entrada, dispositivo))
+    };
+
+    let posicao = leitura.ordem_permanente.iter().position(leva_ao_dispositivo);
+    let quantas = leitura
+        .ordem_permanente
+        .iter()
+        .filter(|id| leva_ao_dispositivo(id))
+        .count();
+
+    let Some(posicao) = posicao else {
+        return linha(
+            "Ordem de boot",
+            &format!("{total} entrada(s), nenhuma para o dispositivo · so o boot unico leva a ele"),
+        );
+    };
+
+    // O que vem antes decide. Se ha alguma coisa a frente da primeira entrada
+    // do dispositivo, e ela que boota — e o aviso nao se aplica.
+    if posicao > 0 {
+        let antes = &leitura.ordem_permanente[0];
+        let nome = leitura
+            .entradas
+            .iter()
+            .find(|entrada| entrada.identificador.eq_ignore_ascii_case(antes))
+            .and_then(|entrada| entrada.descricao.as_deref())
+            .unwrap_or(antes.as_str());
+        return linha(
+            "Ordem de boot",
+            &format!(
+                "dispositivo em {}o de {total} · `{nome}` vem antes",
+                posicao + 1
+            ),
+        );
+    }
+
+    let quais = if quantas > 1 {
+        format!(" · {quantas} entradas levam a ele")
+    } else {
+        String::new()
+    };
+    let mut saida = linha(
+        "Ordem de boot",
+        &format!("dispositivo em 1o de {total} · todo reinicio boota nele{quais}"),
+    );
+    saida.push_str(concat!(
+        "\n  Enquanto o SSD estiver conectado, a maquina boota nele sem boot unico\n",
+        "  nenhum. Inerte, ele para no menu do Clonezilla e espera alguem;\n",
+        "  armado, a receita roda. O ARCA nao pos a entrada ai e nao a tira —\n",
+        "  mexer na ordem permanente e o que C-5 proibe. Quem a pos foi o proprio\n",
+        "  ciclo de boot pelo dispositivo (ADR-0009). Remover o SSD antes de\n",
+        "  religar resolve, e e o que o aviso de C-9 ja pedia.\n"
+    ));
     saida
 }
 
@@ -479,6 +604,10 @@ mod testes {
     const PT: &str = include_str!("../../recursos/capturas/bcdedit-enum-firmware-pt.txt");
     const LEGADO: &str =
         include_str!("../../recursos/capturas/bcdedit-enum-firmware-legado-pt.txt");
+    /// O firmware desta maquina **depois** do primeiro backup do ARCA, com a
+    /// entrada de volta na ordem permanente e em primeiro (ADR-0009).
+    const POS_MARCO: &str =
+        include_str!("../../recursos/capturas/bcdedit-enum-firmware-2026-08-22-pos-marco.txt");
 
     const DO_JOB: &str = "a3f1c9e07b2d4856";
     const DE_OUTRO: &str = "7e02b4d1af963c85";
@@ -664,6 +793,170 @@ mod testes {
         assert!(
             saida.contains(&linha("Boot unico", "nao armado")),
             "{saida}"
+        );
+    }
+
+    #[test]
+    fn sem_entrada_do_dispositivo_na_ordem_so_o_boot_unico_leva_a_ele() {
+        // A configuracao desta maquina **antes** do marco: `displayorder` com
+        // so o `{bootmgr}`. E o caso em que nao ha nada a avisar.
+        let saida = montar_com(&dispositivo_conectado(), PT);
+        assert!(
+            saida.contains(&linha(
+                "Ordem de boot",
+                "1 entrada(s), nenhuma para o dispositivo · so o boot unico leva a ele"
+            )),
+            "{saida}"
+        );
+        assert!(
+            !saida.contains("todo reinicio boota nele"),
+            "avisou de um perigo que nao ha:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn o_dispositivo_em_primeiro_na_ordem_avisa_que_todo_reinicio_boota_nele() {
+        // **O caso que motivou a linha, e ele nao e construido: e a captura do
+        // firmware desta maquina depois do primeiro backup** (ADR-0009). Um
+        // caso montado a mao aqui provaria que sei montar `displayorder`.
+        //
+        // Ela tras **duas** entradas em `partition=R:` — a `{f4057bd0}` do
+        // ARCA e a `{687478f2}` `UEFI OS` que o firmware criou —, e a linha
+        // diz isso: as duas levam ao dispositivo.
+        let saida = montar_com(&dispositivo_conectado(), POS_MARCO);
+        assert!(
+            saida.contains(&linha(
+                "Ordem de boot",
+                "dispositivo em 1o de 3 · todo reinicio boota nele · 2 entradas levam a ele"
+            )),
+            "{saida}"
+        );
+        // O aviso diz as duas metades: o que acontece inerte e o que acontece
+        // armado. Sem a segunda, ele parece um inconveniente.
+        assert!(saida.contains("menu do Clonezilla"), "{saida}");
+        assert!(saida.contains("a receita roda"), "{saida}");
+        // E diz que o ARCA nao o causou nem o conserta — senao a leitura
+        // natural e que ele deveria consertar, que e o que C-5 proibe.
+        assert!(saida.contains("C-5"), "{saida}");
+    }
+
+    #[test]
+    fn o_dispositivo_atras_do_windows_na_ordem_nao_dispara_o_aviso() {
+        // A ordem que o `efibootmgr` mediu **durante** o boot do marco:
+        // `BootOrder: 0000,0001`, o Windows a frente e o dispositivo atras.
+        // Bootar dali exige boot unico — e e o que prova P-18 —, entao nao ha
+        // perigo a anunciar.
+        //
+        // As **duas** entradas do dispositivo vao para tras, e nao so a do
+        // ARCA: deixar a `{687478f2}` na frente seria montar o caso facil, e o
+        // teste passaria pelo motivo errado.
+        let trocado = POS_MARCO.replacen(
+            concat!(
+                "displayorder            {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}\r\n",
+                "                        {bootmgr}\r\n",
+                "                        {687478f2-9e87-11f1-8a47-806e6f6e6963}"
+            ),
+            concat!(
+                "displayorder            {bootmgr}\r\n",
+                "                        {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}\r\n",
+                "                        {687478f2-9e87-11f1-8a47-806e6f6e6963}"
+            ),
+            1,
+        );
+        assert_ne!(
+            trocado, POS_MARCO,
+            "a troca nao pegou; a captura mudou de forma"
+        );
+
+        let saida = montar_com(&dispositivo_conectado(), &trocado);
+        assert!(
+            saida.contains(&linha(
+                "Ordem de boot",
+                "dispositivo em 2o de 3 · `Windows Boot Manager` vem antes"
+            )),
+            "{saida}"
+        );
+        assert!(
+            !saida.contains("todo reinicio boota nele"),
+            "avisou de um perigo que nao ha:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn a_entrada_que_o_firmware_criou_sozinho_a_frente_tambem_dispara_o_aviso() {
+        // **O furo que a revisao pegou, fixado.** A primeira versao desta
+        // secao procurava a entrada chamada `ARCA` na ordem; a captura desta
+        // maquina tem uma **segunda** entrada para o mesmo `partition=R:`, a
+        // `{687478f2}` `UEFI OS`, criada pelo firmware — e e por ela que o
+        // `nvram-live-2026-08-22.txt` mostra a maquina tendo bootado.
+        //
+        // Com a `{687478f2}` em primeiro e a do ARCA depois do Windows, aquela
+        // versao diria "o Windows vem antes" e engoliria o aviso, enquanto todo
+        // reinicio com o SSD conectado continuaria bootando no dispositivo. O
+        // que decide o boot e para onde a entrada aponta, e nao como se chama.
+        let so_a_do_firmware = POS_MARCO.replacen(
+            concat!(
+                "displayorder            {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}\r\n",
+                "                        {bootmgr}\r\n",
+                "                        {687478f2-9e87-11f1-8a47-806e6f6e6963}"
+            ),
+            concat!(
+                "displayorder            {687478f2-9e87-11f1-8a47-806e6f6e6963}\r\n",
+                "                        {bootmgr}\r\n",
+                "                        {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}"
+            ),
+            1,
+        );
+        assert_ne!(
+            so_a_do_firmware, POS_MARCO,
+            "a troca nao pegou; a captura mudou de forma"
+        );
+
+        let saida = montar_com(&dispositivo_conectado(), &so_a_do_firmware);
+        assert!(
+            saida.contains("dispositivo em 1o de 3 · todo reinicio boota nele"),
+            "a entrada que o firmware criou esta em primeiro e o aviso nao saiu:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn o_bcdedit_que_nao_se_deixou_ler_nao_vira_afirmacao_de_seguranca() {
+        // `firmware::ler` nunca falha: texto que ele nao entende vira leitura
+        // vazia, e `ordem_permanente` vazia e **indistinguivel** de "o
+        // dispositivo esta fora da ordem" — que e a resposta tranquilizadora.
+        //
+        // O caso dificil e o que **quase** se deixa ler: os blocos das entradas
+        // saem certos, e so o do `{fwbootmgr}` falta. Ali `entrada_do_arca()`
+        // responde normalmente, e so `viu_o_gerenciador` separa uma coisa da
+        // outra. E o mesmo motivo pelo qual `armar` e `desarme` guardam nessa
+        // flag, e esta secao nao guardava.
+        let sem_gerenciador = POS_MARCO.replacen("{fwbootmgr}", "{outra-coisa}", 1);
+        assert_ne!(
+            sem_gerenciador, POS_MARCO,
+            "a troca nao pegou; a captura mudou de forma"
+        );
+
+        let leitura = firmware::ler(&sem_gerenciador);
+        assert!(
+            !leitura.viu_o_gerenciador,
+            "o caso construido nao e o que se queria: o gerenciador ainda foi visto"
+        );
+        assert!(
+            leitura.entrada_do_arca().is_some(),
+            "o caso construido nao e o dificil: a entrada do ARCA tambem sumiu"
+        );
+
+        let saida = montar_com(&dispositivo_conectado(), &sem_gerenciador);
+        assert!(
+            saida.contains(&linha(
+                "Ordem de boot",
+                "nao foi possivel ler o {fwbootmgr} — nada a afirmar sobre ela"
+            )),
+            "{saida}"
+        );
+        assert!(
+            !saida.contains("so o boot unico leva a ele"),
+            "'nao entendi a resposta' virou uma afirmacao de seguranca:\n{saida}"
         );
     }
 

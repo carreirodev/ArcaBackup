@@ -314,17 +314,31 @@ fn apontar_para_o_arcaboot(
 
 /// Marca o boot unico e confere que ele pegou, sem tocar na ordem permanente.
 ///
-/// # A entrada do ARCA nao entra na ordem de boot, e isso e C-5
+/// # O ARCA nao poe a entrada na ordem de boot, e isso e C-5
 ///
-/// Medido em 22/08/2026, nesta maquina: o `displayorder` do `{fwbootmgr}` tras
-/// **so** o `{bootmgr}`, e a entrada do ARCA nao esta nele. O `bcdedit` aceita
-/// `bootsequence` para uma entrada de fora da ordem — set, releitura, e la
-/// esta ela. Pôr a entrada na ordem para "garantir" que o boot funcione seria
-/// exatamente o que C-5 proibe, e e permanente: desfeito o job, a maquina
-/// continuaria com um caminho a mais para bootar no dispositivo.
+/// Medido em 22/08/2026, nesta maquina, com o `displayorder` do `{fwbootmgr}`
+/// trazendo **so** o `{bootmgr}`: o `bcdedit` aceita `bootsequence` para uma
+/// entrada que nao esta nele — set, releitura, e la esta ela. Pôr a entrada na
+/// ordem para "garantir" que o boot funcione seria exatamente o que C-5
+/// proibe, e e permanente: desfeito o job, a maquina continuaria com um
+/// caminho a mais para bootar no dispositivo.
+///
+/// **E o firmware honra a marca assim**, o que aquela medicao nao alcancava. O
+/// marco em hardware da mesma noite bootou pela entrada do dispositivo com o
+/// Windows a frente da ordem — `BootCurrent: 0001` com `BootOrder: 0000,0001`,
+/// lido de dentro do live. Nao ha troca a fazer entre armar e respeitar C-5.
+///
+/// **O que mudou desde entao e a configuracao, nao a regra.** Depois daquele
+/// backup a entrada do ARCA voltou para o `displayorder`, posta pelo ciclo de
+/// boot e nao por este codigo. C-5 nao tem clausula para desfazer isso: o ARCA
+/// le, relata pelo `arca status`, e nao mexe. Ver
+/// `docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md`.
 ///
 /// A comparacao com `antes` e o que pega um `bcdedit` que mexeu no que nao
-/// devia. Ela custa nada: a leitura ja aconteceu.
+/// devia. Ela custa nada: a leitura ja aconteceu. E ela compara atraves da
+/// **propria escrita** — uma mudanca que acontece no reinicio, entre um comando
+/// e o seguinte, esta fora do que ela pode ver, e e por isso que a de 22/08
+/// passou sem acusar nada.
 fn marcar_o_boot_unico(
     ferramenta: &dyn Firmware,
     identificador: &str,

@@ -44,16 +44,18 @@ fn raiz_do_vault() -> Option<PathBuf> {
 }
 
 #[test]
-fn o_unico_arca_fim_do_dispositivo_continua_sem_selo() {
-    // P-16 fixado no hardware. O `arca-fim.txt` que existe neste dispositivo
-    // veio do trabalho **manual** de validacao, e nao de receita nenhuma:
-    // `ARCA_RESTORE=OK` e `ARCA_FIM`, sem `ARCA_SELO=`. E o arquivo que deu
-    // origem a linha nova do §5.5 na etapa E5.
+fn o_arca_fim_de_21_08_continua_sem_selo() {
+    // O `arca-fim.txt` de 21/08 veio do trabalho **manual** de validacao, e
+    // nao de receita nenhuma: `ARCA_RESTORE=OK` e `ARCA_FIM`, sem
+    // `ARCA_SELO=`. E o arquivo que deu origem a linha nova do §5.5 na E5.
     //
-    // Enquanto ele for a unica coisa que o mecanismo de desfecho produziu
-    // neste dispositivo, P-16 continua aberta — e este teste e o que diz
-    // quando ela fechar: a partir do primeiro `arca backup` colhido, havera um
-    // segundo `arca-fim.txt`, esse sim com selo.
+    // **Este teste se chamava "o unico", e ele deixou de ser o unico em
+    // 22/08/2026.** O comentario antigo previa o que aconteceria quando P-16
+    // fechasse — "a partir do primeiro `arca backup` colhido havera um segundo
+    // `arca-fim.txt`, esse sim com selo" — e e exatamente o que ha. O de 21/08
+    // continua aqui e continua sem selo; o do marco esta no teste seguinte.
+    // Os dois lado a lado sao a diferenca entre o que uma pessoa escreveu e o
+    // que a receita escreve.
     let Some(raiz) = raiz_do_vault() else {
         return;
     };
@@ -83,6 +85,102 @@ fn o_unico_arca_fim_do_dispositivo_continua_sem_selo() {
     assert_eq!(
         desfecho::julgar(&lido, &qualquer),
         Julgamento::NaoPertenceAoArca(NaoEDesfecho::SemLinhaDeSelo)
+    );
+}
+
+#[test]
+fn o_desfecho_do_marco_e_julgado_como_operacao_concluida() {
+    // **P-16 fechada, fixada.** O primeiro `arca-fim.txt` que uma receita do
+    // ARCA escreveu, colhido em 22/08/2026 as 21:14:49. Tres linhas, e cada
+    // uma e um pedaco de codigo que nunca tinha rodado — o selo, o desfecho e
+    // o `ARCA_FIM`.
+    //
+    // O teste corre contra a **captura**, e nao contra o dispositivo, de
+    // proposito: o arquivo no `ARCAVAULT` sera truncado pelo proximo
+    // `arca backup 2026-08-22_Apps`, porque toda receita comeca por
+    // `echo ARCA_SELO=… >` e o `>` trunca ao abrir. O original preservado e o
+    // que continua provando depois disso.
+    //
+    // E o que ele prova nao e so a forma do arquivo: e que o julgamento da E5
+    // — escrito inteiro contra texto inventado e duplos — classifica o
+    // primeiro original de verdade no ramo certo.
+    const DO_MARCO: &str = include_str!("../recursos/capturas/arca-fim-2026-08-22_Apps.txt");
+
+    // O selo que o `estado.json` do job trazia, e que o `arca.log` registrou
+    // ao armar as 20:53:48. Conferido a olho contra a primeira linha do
+    // arquivo antes de qualquer conclusao sobre o marco — que e o que a etapa
+    // pedia, e o que este teste passa a fazer sozinho.
+    let selo_do_job = Selo::novo("7d2d2f5153625b38").expect("selo valido");
+
+    let lido = desfecho::ler(DO_MARCO);
+    assert_eq!(
+        lido.linhas_de_selo, 1,
+        "o desfecho do marco tem de ter exatamente uma linha de selo: {DO_MARCO:?}"
+    );
+    assert!(lido.fim, "o desfecho do marco perdeu o ARCA_FIM: {DO_MARCO:?}");
+    assert!(
+        lido.deu_certo,
+        "o desfecho do marco perdeu o ARCA_BACKUP=OK: {DO_MARCO:?}"
+    );
+
+    assert_eq!(
+        desfecho::julgar(&lido, &selo_do_job),
+        Julgamento::Concluida,
+        "o primeiro desfecho real do ARCA nao foi julgado como concluido"
+    );
+
+    // E o outro lado, que e o que o selo existe para fazer: o mesmo arquivo,
+    // cobrado por outro job, e job fantasma — e nao "concluida".
+    let de_outro = Selo::novo("a3f1c9e07b2d4856").expect("selo valido");
+    assert!(
+        matches!(
+            desfecho::julgar(&lido, &de_outro),
+            Julgamento::JobFantasma { .. }
+        ),
+        "o desfecho do marco foi aceito por um job que nao e o dele"
+    );
+}
+
+#[test]
+fn o_arca_check_log_do_marco_traz_as_duas_formas_do_adr_0003() {
+    // O ADR-0003 achou o `arca-check.log` em **duas** formas no dispositivo: o
+    // marcador `ARCA_VEREDITO=` da `2026-08-21_WindowsCompleto`, que veio de
+    // um script de validacao manual, e a saida crua do `ocs-chkimg` da
+    // `ARCA-TESTE-03`, que e o que a receita produzia. Ele decidiu ler as duas
+    // e previu que a E3, ao acrescentar a linha, faria o marcador virar a
+    // forma preferida.
+    //
+    // **O marco mostrou que a receita produz as duas no mesmo arquivo**, e e
+    // uma coisa que nenhuma das duas capturas antigas mostrava: a saida crua
+    // inteira, com os escapes de terminal do partclone, e o
+    // `ARCA_VEREDITO=APROVADA` acrescentado no fim. O `ARCA_VEREDITO=` deixou
+    // de ser codigo sem original.
+    const DO_MARCO: &str = include_str!("../recursos/capturas/arca-check-2026-08-22_Apps.log");
+
+    assert_eq!(
+        imagens::interpretar_veredito(DO_MARCO),
+        Some(imagens::Veredito::Aprovada),
+        "o veredito escrito pela receita nao foi lido como aprovacao"
+    );
+
+    // As duas formas estao ali, e e por isso que este arquivo prova mais do
+    // que qualquer das duas capturas antigas.
+    assert!(
+        DO_MARCO.contains("ARCA_VEREDITO=APROVADA"),
+        "o marcador que a receita acrescenta sumiu do log"
+    );
+    assert!(
+        DO_MARCO
+            .to_lowercase()
+            .contains("were checked and are restorable"),
+        "o resumo cru do ocs-chkimg sumiu do log"
+    );
+
+    // E nao ha sinal de reprovacao — se houvesse, o ADR-0003 manda reprovar,
+    // e este teste estaria afirmando o contrario do que o arquivo diz.
+    assert!(
+        !DO_MARCO.to_lowercase().contains("not restorable"),
+        "o log do marco tem sinal de reprovacao, e a imagem foi dada como aprovada"
     );
 }
 

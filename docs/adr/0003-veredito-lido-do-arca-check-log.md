@@ -15,3 +15,29 @@ A E3, que transcreve a receita de backup, pode acrescentar a linha `ARCA_VEREDIT
 O preço é que o parser depende de frases em inglês do `ocs-chkimg`, que podem mudar de versão. É risco contido: se as frases mudarem, o veredito vira `sem veredito` — o modo de falha é a listagem admitir que não sabe, nunca aprovar o que não conferiu.
 
 Vale para o veredito, e não para o desfecho. O que liga um `arca-fim.txt` ao job que o produziu continua sendo o selo, nunca o texto (ver [selo liga job ao desfecho](0001-selo-liga-job-ao-desfecho.md)).
+
+## O que o marco de 22/08/2026 mostrou, e este ADR não previa
+
+A previsão acima estava certa e incompleta. A receita **produz as duas formas
+no mesmo arquivo**: o `recursos/capturas/arca-check-2026-08-22_Apps.log` traz a
+saída crua inteira do `ocs-chkimg` — escapes de terminal do partclone e o
+resumo em inglês — **e** o `ARCA_VEREDITO=APROVADA` acrescentado no fim.
+Nenhuma das duas capturas que originaram este ADR mostrava isso: a de 21/08
+tinha o marcador sobre um resumo curto, e a `ARCA-TESTE-03` não tinha marcador.
+
+Três consequências, e a primeira fecha uma pendência deste documento:
+
+- **O `ARCA_VEREDITO=` deixou de ser código sem original.** Ele era o primeiro
+  caso do padrão que o §3.5 do PRD nomeia — algo documentado como fundação
+  validada que viera do trabalho de validação em volta. Agora há um
+  `arca-check.log` em que quem escreveu a linha foi a receita.
+- **A ordem "reprovação antes de aprovação" importa mais do que parecia.** Com
+  as duas formas no mesmo arquivo, um log de falha teria o resumo listando as
+  partições boas junto da ruim **e** um marcador; deixar qualquer sinal de
+  reprovação vencer é o que impede que o marcador, sozinho, aprove. Continua
+  sem original — depende de P-6 — e continua sendo a ordem certa.
+- **O caminho do resumo não virou código morto.** Ele é o que lê a
+  `ARCA-TESTE-03`, e é a defesa para quando o `>` da receita truncar o log
+  antes de o `echo` do marcador rodar.
+
+Fixado em `tests/e8_colher_o_desfecho.rs`.

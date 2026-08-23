@@ -177,15 +177,36 @@ fn a_entrada_do_arca_existe_nesta_maquina_e_e_a_propria() {
 }
 
 #[test]
-fn a_entrada_do_arca_esta_fora_da_ordem_permanente() {
-    // **O achado da etapa, fixado.** C-5 proibe o ARCA de tocar a ordem
-    // permanente, e por isso o `bootsequence` tem de funcionar sobre uma
-    // entrada que **nao esta nela** — o que nao estava medido em lugar nenhum.
+fn o_dispositivo_a_frente_da_ordem_permanente_exige_o_dispositivo_inerte() {
+    // **Este teste ja foi outro, e a troca esta no ADR-0009.**
     //
-    // Medido em 22/08/2026: o `displayorder` do `{fwbootmgr}` desta maquina
-    // tras so o `{bootmgr}`. Este teste e o que faz a medicao do ADR-0007
-    // significar alguma coisa: se um dia a entrada do ARCA voltar para a
-    // ordem, o resultado daquela medicao deixa de valer, e P-18 reabre.
+    // Ele cobrava que a entrada do ARCA estivesse **fora** do `displayorder`,
+    // porque era essa configuracao que fazia a medicao do ADR-0007 significar
+    // alguma coisa enquanto o boot unico nao tivesse rodado. O boot unico
+    // rodou em 22/08/2026, e o que o prova nao e mais uma configuracao do
+    // firmware de hoje: e a captura `nvram-live-2026-08-22.txt`, escrita
+    // **durante** aquele boot — que o teste ao lado fixa.
+    //
+    // A premissa deixou de ser necessaria, e deixou de ser sustentavel na
+    // mesma medicao: **o ciclo de boot poe a entrada de volta na ordem.** O
+    // ARCA nao a poe (C-5, e ha releitura no armar e no desarme), mas depois
+    // de um backup ela esta la. Cobrar o contrario seria uma suite vermelha
+    // por uma condicao que o ARCA nao controla e que e agora o estado normal.
+    //
+    // O que sobra e a invariante que importa, e ela vale nos dois casos: um
+    // dispositivo **a frente da ordem** e **armado** e um backup que roda no
+    // proximo reinicio sem ninguem pedir. A janela existe de verdade — vai do
+    // fim da receita ao `arca resultado`, e em 22/08 durou oito minutos.
+    // **`a_frente` e o primeiro lugar, e nao "esta na lista".** A revisao pegou
+    // isto: com o dispositivo em segundo, atras do Windows, quem boota e o
+    // Windows — e um dispositivo armado ali e o estado **normal** da janela
+    // entre o `arca backup` e o reinicio. Cobrar inercia naquele caso deixaria
+    // a suite vermelha acusando um perigo que nao existe.
+    //
+    // E a pergunta e sobre **o dispositivo**, e nao sobre a entrada chamada
+    // `ARCA`: esta maquina tem duas entradas em `partition=R:` desde o marco, e
+    // foi pela que o firmware criou que ela bootou. Quem decide o boot e para
+    // onde a entrada aponta.
     let Some(leitura) = gerenciador() else {
         return;
     };
@@ -193,22 +214,140 @@ fn a_entrada_do_arca_esta_fora_da_ordem_permanente() {
         eprintln!("pulado: o bcdedit recusou o /enum firmware");
         return;
     };
-    let Some(achado) = firmware::ler(&texto).entrada_do_arca().map(|achado| {
-        achado.entrada.identificador.clone()
-    }) else {
-        eprintln!("pulado: nao ha entrada do ARCA nesta maquina");
+    let Some(dispositivo) = dispositivo() else {
+        return;
+    };
+    let Some(boot) = dispositivo.boot.as_ref().and_then(|boot| boot.letra) else {
+        eprintln!("pulado: o ARCABOOT nao tem letra para conferir");
         return;
     };
 
-    assert!(
-        !leitura
-            .ordem_permanente
+    let entradas = firmware::ler(&texto).entradas;
+    let leva_ao_dispositivo = |identificador: &String| {
+        entradas
             .iter()
-            .any(|entrada| entrada.eq_ignore_ascii_case(&achado)),
-        "a entrada do ARCA ({achado}) esta na ordem permanente [{}]. O ARCA nunca a poe la (C-5), \
-         entao alguem a pos — e o boot unico deixa de ser o que faz a maquina bootar no dispositivo. \
-         Ver ADR-0007 e P-18",
+            .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador))
+            .and_then(|entrada| entrada.alvo.as_ref())
+            .and_then(|alvo| alvo.letra())
+            .is_some_and(|letra| letra.eq_ignore_ascii_case(&boot))
+    };
+
+    let posicao = leitura.ordem_permanente.iter().position(leva_ao_dispositivo);
+
+    if posicao != Some(0) {
+        // A configuracao de ate 22/08 (fora da ordem) e a de um dispositivo
+        // atras do Windows. Nas duas, quem leva a maquina ao dispositivo e o
+        // boot unico — e ele e o que o proprio ARCA arma e desarma.
+        return;
+    }
+
+    let Some(caminho) = caminho_do_grub() else {
+        return;
+    };
+    let corrente = ArquivosDoSistema
+        .ler_texto(&caminho)
+        .expect("o grub.cfg do dispositivo e legivel");
+
+    let desarmado = grub::desarmar(&corrente).expect("o grub.cfg do dispositivo desarma");
+    assert!(
+        !desarmado.havia_receita(),
+        "uma entrada que leva ao ARCABOOT ({boot}:) esta em **primeiro** na ordem permanente [{}] \
+         e o grub.cfg do dispositivo esta armado. O proximo reinicio — venha de onde vier — boota \
+         no dispositivo e roda a receita, sem boot unico nenhum e sem ninguem pedir. Rode \
+         `arca resultado` para colher, ou `arca desarmar`. Ver ADR-0009",
         leitura.ordem_permanente.join(", ")
+    );
+
+    assert!(
+        !leitura.tem_boot_unico(),
+        "uma entrada que leva ao ARCABOOT ({boot}:) esta em primeiro na ordem permanente [{}] e \
+         ainda ha boot unico armado apontando para [{}]. Ver ADR-0009",
+        leitura.ordem_permanente.join(", "),
+        leitura.boot_unico.join(", ")
+    );
+}
+
+#[test]
+fn a_invariante_do_teste_acima_reprovaria_um_dispositivo_armado() {
+    // O teste acima so reprova quando o dispositivo esta **a frente da ordem e
+    // armado**, e o segundo termo depende de uma condicao que nenhum teste
+    // pode montar sem armar a maquina de quem o roda. Sem isto, a asserção que
+    // importa nunca teria sido vista disparar — e uma asserção que nunca
+    // disparou e uma suposicao com sintaxe de teste.
+    //
+    // O caso dificil aqui e o **armado de verdade**, e ele existe: a
+    // `teste-03` e a unica das quatro capturas com `set default="arca-backup"`,
+    // e a unica que provavelmente rodou desatendida (ADR-0007). E o arquivo
+    // exato que a invariante tem de reconhecer como perigoso.
+    const ARMADA: &str = include_str!("../recursos/capturas/grub-backup-arca-teste-03.cfg");
+
+    let armada = grub::desarmar(ARMADA).expect("a captura armada desarma");
+    assert!(
+        armada.havia_receita(),
+        "a `teste-03` esta armada e a invariante nao a reconheceu: o teste acima passaria verde \
+         sobre um dispositivo que roda a receita no proximo reinicio"
+    );
+
+    // E o outro lado, para que "havia receita" nao seja uma resposta que se dá
+    // a qualquer arquivo: o inerte deste dispositivo nao dispara.
+    let inerte = grub::desarmar(INERTE).expect("o inerte desarma");
+    assert!(
+        !inerte.havia_receita(),
+        "o grub.cfg inerte foi lido como armado, e o teste acima reprovaria sempre"
+    );
+}
+
+#[test]
+fn a_captura_do_live_mostra_o_boot_unico_funcionando_sobre_uma_entrada_de_tras() {
+    // **P-18 fechada, fixada onde ela foi medida.** A E7 fixou o ADR-0007
+    // contra a configuracao do firmware; este fixa o ADR-0009 contra a
+    // captura, que e o que de fato prova.
+    //
+    // O `efibootmgr` que o Clonezilla roda sozinho ao salvar uma imagem
+    // escreveu, **durante** o boot de 22/08/2026: `BootCurrent: 0001` com
+    // `BootOrder: 0000,0001`. A maquina bootou pela entrada `0001` estando a
+    // `0000` a frente. Nenhuma ordem permanente explica isso — o
+    // `bootsequence` explica, e e a metade de P-18 que so o hardware
+    // respondia.
+    //
+    // A mesma leitura, feita em 21/08, tras `BootOrder: 0001,0000` — o
+    // dispositivo a frente —, e e por isso que aquele backup nao provava nada.
+    // A diferenca entre as duas e a diferenca entre uma coincidencia e uma
+    // medicao.
+    const LIVE: &str = include_str!("../recursos/capturas/nvram-live-2026-08-22.txt");
+
+    let valor = |chave: &str| {
+        LIVE.lines()
+            .find_map(|linha| linha.strip_prefix(chave))
+            .map(str::trim)
+            .unwrap_or_else(|| panic!("a captura do live tem `{chave}`"))
+    };
+
+    let bootou_por = valor("BootCurrent:");
+    let ordem: Vec<&str> = valor("BootOrder:").split(',').map(str::trim).collect();
+
+    assert!(
+        ordem.contains(&bootou_por),
+        "a entrada que bootou ({bootou_por}) nem esta na ordem {ordem:?} — a captura mudou de \
+         forma, e a leitura precisa ser refeita antes de valer como evidencia"
+    );
+    assert_ne!(
+        ordem.first().copied(),
+        Some(bootou_por),
+        "na captura do live a entrada que bootou ({bootou_por}) e a primeira da ordem {ordem:?}. \
+         Uma ordem com o dispositivo a frente explica o boot inteiro sem passar por boot unico, e \
+         esta captura deixa de ser a prova de P-18 que o §3.1 diz que ela e"
+    );
+
+    // E o que ela carrega e o bootloader do ARCABOOT, e nao o do Windows: sem
+    // isso, "bootou por uma entrada de tras" poderia ser qualquer entrada.
+    let linha_da_entrada = LIVE
+        .lines()
+        .find(|linha| linha.starts_with(&format!("Boot{bootou_por}")))
+        .expect("a captura descreve a entrada que bootou");
+    assert!(
+        linha_da_entrada.to_ascii_uppercase().contains("BOOTX64.EFI"),
+        "a entrada que bootou nao carrega o bootloader do ARCABOOT: {linha_da_entrada}"
     );
 }
 

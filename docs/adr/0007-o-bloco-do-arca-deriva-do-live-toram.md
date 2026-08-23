@@ -131,8 +131,19 @@ Quatro coisas saem daí, e três eram desconhecidas:
    metades do comportamento estão medidas, e é sobre elas que o desarmar
    decide não acreditar em nenhuma.
 
-**O que isto ainda não prova é que o firmware honra a marca.** Isso custa um
-reinício, e é o marco em hardware da E7.
+**O que isto ainda não provava é que o firmware honra a marca.** Custava um
+reinício, e o reinício veio na mesma noite — o marco em hardware da E7, em
+22/08/2026. **O firmware honra.** A prova não é do lado Windows: é o
+`efibootmgr` lido de dentro do live, `BootCurrent: 0001` com
+`BootOrder: 0000,0001`, a máquina bootando por uma entrada que não era a
+primeira da ordem. P-18 fechada.
+
+E o mesmo marco desmentiu algo que esta seção supunha sem dizer: que a
+configuração medida acima — a entrada do ARCA **fora** do `displayorder` —
+fosse estável. Não é. O ciclo de boot pelo dispositivo a põe de volta, e depois
+daquele backup ela está na ordem, e em primeiro. Isso não desfaz nada do que
+está medido aqui; muda o que o teste que guardava essa configuração podia
+cobrar. Ver [ADR-0009](0009-a-ordem-permanente-muda-no-ciclo-de-boot.md).
 
 ## Consequências
 
