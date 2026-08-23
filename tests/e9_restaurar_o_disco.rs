@@ -29,10 +29,15 @@
 use arca::adaptadores::ArquivosDoSistema;
 use arca::adaptadores::windows::volumes::VolumesDoWindows;
 use arca::blkdev;
+use arca::desfecho::{self, Julgamento};
 use arca::dispositivo::{self, Dispositivo};
+use arca::estado::{Estado, Situacao};
+use arca::firmware;
 use arca::gpt;
 use arca::imagens;
+use arca::nome::Nome;
 use arca::portas::{Arquivos, DiscoFisico, Discos};
+use arca::receita::{Disco, Operacao, Pedido, Receita, Selo};
 use std::path::PathBuf;
 
 fn dispositivo() -> Option<Dispositivo> {
@@ -313,5 +318,191 @@ fn o_help_do_ocs_sr_continua_dizendo_que_o_destino_menor_e_recusado() {
     assert!(
         HELP.contains("By default Clonezilla will check the image if restorable before restoring"),
         "`-scr` sumiu do help"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O marco em hardware, cumprido em 23/08/2026 as 11:31:55 do relogio do live.
+//
+// Os tres testes abaixo so foram possiveis depois dele: cada um corre contra um
+// original que nao existia antes, e nenhum deles poderia ser escrito a partir
+// do codigo. Correm contra as **capturas**, e nao contra o dispositivo, pelo
+// motivo que a E8 registrou — o `arca-fim.txt` do `ARCAVAULT` sera truncado
+// pela proxima operacao com este nome, porque toda receita comeca por
+// `echo ARCA_SELO=… >` e o `>` trunca ao abrir.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn o_desfecho_da_restauracao_e_julgado_como_operacao_concluida() {
+    // **As duas pontas do selo, e cada uma escrita de um lado do reinicio.**
+    //
+    // O `estado.json` saiu do Windows, do `arca restore`, antes de a maquina
+    // desligar. O `arca-fim.txt` saiu do `bash` do live, do outro lado, e o
+    // Windows que o le agora nem e o mesmo — ele veio de dentro da imagem.
+    // Entre um e outro o disco inteiro foi apagado e reescrito.
+    //
+    // E o par so existe porque o estado mora no `ARCABOOT` (§4.1). O
+    // `arca.log` do `%LOCALAPPDATA%`, que registraria o mesmo selo do lado
+    // Windows, foi destruido por esta operacao: ele mora no `C:`.
+    const DESFECHO: &str =
+        include_str!("../recursos/capturas/arca-fim-restauracao-2026-08-22_Apps.txt");
+    const ESTADO: &str =
+        include_str!("../recursos/capturas/estado-restauracao-2026-08-22_Apps.json");
+
+    let estado = Estado::de_json(ESTADO).expect("o estado.json do marco e legivel");
+    assert_eq!(
+        estado.comando,
+        Operacao::Restauracao,
+        "o estado do marco da E9 tem de ser de uma restauracao"
+    );
+    assert_eq!(
+        estado.situacao,
+        Situacao::Colhido,
+        "o marco foi colhido em 23/08/2026 as 11:50:53, e o ADR-0008 diz que a marca fica"
+    );
+
+    let lido = desfecho::ler(DESFECHO);
+    assert_eq!(
+        lido.linhas_de_selo, 1,
+        "o desfecho da restauracao tem de ter exatamente uma linha de selo: {DESFECHO:?}"
+    );
+    assert!(lido.fim, "o desfecho da restauracao perdeu o ARCA_FIM");
+    assert!(
+        lido.deu_certo && !lido.falhou,
+        "o desfecho da restauracao nao e o do ramo de exito: {DESFECHO:?}"
+    );
+
+    assert_eq!(
+        desfecho::julgar(&lido, &estado.selo),
+        Julgamento::Concluida,
+        "o desfecho e o estado do mesmo job nao se reconheceram"
+    );
+
+    // E o outro lado, que e o que o selo existe para fazer. O selo escolhido e
+    // o do **backup** de 22/08 — o job anterior, real, cujo desfecho mora na
+    // pasta ao lado. E o job fantasma mais plausivel que este dispositivo tem.
+    let do_backup = Selo::novo("7d2d2f5153625b38").expect("selo valido");
+    assert!(
+        matches!(
+            desfecho::julgar(&lido, &do_backup),
+            Julgamento::JobFantasma { .. }
+        ),
+        "o desfecho da restauracao passou por desfecho do backup de 22/08"
+    );
+}
+
+#[test]
+fn a_receita_da_restauracao_escreve_o_marcador_que_o_original_traz() {
+    // **O ciclo da transcricao fechando.** Ate aqui o `ARCA_RESTORE=` era
+    // codigo novo, sem original: a E3 marcou o `arca-fim.txt` inteiro como
+    // nunca-executado (P-16), a E7 fechou a metade do backup, e esta e a da
+    // restauracao. O que este teste compara e a string que `src/receita.rs`
+    // monta hoje com a que o `bash` do live gravou no disco.
+    //
+    // Um teste que so cobrasse `contains("ARCA_RESTORE")` na receita provaria
+    // metade: provaria que o codigo diz o que pretende dizer, e nao que o que
+    // saiu do outro lado foi aquilo.
+    const DESFECHO: &str =
+        include_str!("../recursos/capturas/arca-fim-restauracao-2026-08-22_Apps.txt");
+
+    let pedido = Pedido {
+        operacao: Operacao::Restauracao,
+        nome: Nome::novo("2026-08-22_Apps").expect("o nome do marco passa por B-2"),
+        disco: Disco::novo("nvme0n1").expect("disco valido"),
+        selo: Selo::novo("ce04819cf0ee96f7").expect("o selo do marco"),
+    };
+    let receita = Receita::montar(&pedido).expect("a receita do marco continua valida");
+
+    for linha in DESFECHO.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        assert!(
+            receita.comando().contains(linha),
+            "o original traz `{linha}`, e a receita de hoje nao a escreveria"
+        );
+    }
+
+    // E a metade que importa mais: a receita **nao** escreveria o marcador da
+    // outra operacao. Sao dois `echo` num `if/then/else`, e trocar o marcador
+    // faria a colheita chamar o veredito da imagem de origem de verificacao
+    // desta operacao — que e a primeira das tres diferencas do §6.3.
+    assert!(
+        !receita.comando().contains("ARCA_BACKUP"),
+        "a receita de restauracao escreve o marcador do backup"
+    );
+}
+
+#[test]
+fn depois_da_restauracao_nenhuma_entrada_da_ordem_leva_ao_dispositivo() {
+    // **O achado do marco, fixado contra as duas leituras que o produziram.**
+    //
+    // O §3.4 chamava de fundacao validada que a restauracao nao mexe na NVRAM,
+    // e a evidencia era um par `nvram-antes`/`-depois` lido de **dentro do
+    // mesmo boot** do live. Aquele par continua certo, e fala do `ocs-sr`.
+    // Este fala do ciclo inteiro — armar, bootar, restaurar, religar — e diz
+    // outra coisa: atravessando o reinicio, a ordem permanente muda.
+    //
+    // O ARCA nao a mudou. C-5 proibe, e tanto o armar quanto o desarme releem
+    // (C-3); uma escrita dessas teria falhado alto. Ver o ADR-0012.
+    const ANTES: &str = include_str!(
+        "../recursos/capturas/bcdedit-enum-firmware-2026-08-23-antes-da-restauracao.txt"
+    );
+    const DEPOIS: &str =
+        include_str!("../recursos/capturas/bcdedit-enum-firmware-2026-08-23-pos-restauracao.txt");
+
+    // A letra vem das capturas, e nao do dispositivo de hoje: as duas trazem
+    // `partition=R:`, e e sobre elas que este teste fala.
+    let leva_ao_dispositivo = |leitura: &firmware::Leitura, identificador: &String| {
+        leitura
+            .entradas
+            .iter()
+            .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador))
+            .and_then(|entrada| entrada.alvo.as_ref())
+            .and_then(|alvo| alvo.letra())
+            .is_some_and(|letra| letra.eq_ignore_ascii_case(&'R'))
+    };
+
+    let antes = firmware::ler(ANTES);
+    let depois = firmware::ler(DEPOIS);
+    assert!(
+        antes.viu_o_gerenciador && depois.viu_o_gerenciador,
+        "uma das duas leituras nao achou o gerenciador, e uma leitura vazia \
+         e indistinguivel de uma ordem sem o dispositivo"
+    );
+
+    assert_eq!(
+        antes
+            .ordem_permanente
+            .iter()
+            .position(|id| leva_ao_dispositivo(&antes, id)),
+        Some(0),
+        "antes da restauracao o dispositivo estava em primeiro na ordem: [{}]",
+        antes.ordem_permanente.join(", ")
+    );
+    assert!(
+        !depois
+            .ordem_permanente
+            .iter()
+            .any(|id| leva_ao_dispositivo(&depois, id)),
+        "depois da restauracao a ordem ainda leva ao dispositivo: [{}]",
+        depois.ordem_permanente.join(", ")
+    );
+
+    // E o que diz **para onde** ela voltou, que e o achado e nao a
+    // consequencia: a leitura de depois e byte a byte a que a E2 capturou em
+    // 22/08, antes de o ciclo de boot do primeiro backup acrescentar as duas
+    // entradas. A restauracao devolveu o firmware ao que estava dentro da
+    // imagem, junto com o disco.
+    const DA_E2: &str = include_str!("../recursos/capturas/bcdedit-enum-firmware-pt.txt");
+    assert_eq!(
+        DEPOIS, DA_E2,
+        "a leitura de depois da restauracao deixou de ser identica a de 22/08"
+    );
+
+    // A entrada `{687478f2}` `UEFI OS` sumiu **inteira**, e nao so da ordem.
+    // Ela e a que o firmware criou durante o boot do backup, e o `bcdedit` a
+    // lista como `Aplicativo de Firmware` — o que ele mostra para uma entrada
+    // que nao e objeto do BCD. Foi por ela que a maquina bootou em 22/08.
+    assert!(
+        ANTES.contains("687478f2") && !DEPOIS.contains("687478f2"),
+        "a entrada que o firmware criou nao e a que separa as duas leituras"
     );
 }

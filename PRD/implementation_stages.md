@@ -17,28 +17,35 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E6 | Pré-voo | III | ✅ | 2026-08-22 19:24 |
 | E7 | Armar e disparar | III | ✅ | 2026-08-22 21:06 · marco cumprido |
 | E8 | Colher o desfecho | III | ✅ | 2026-08-22 21:14 · marco cumprido |
-| E9 | Restauração | IV | 🟨 | 2026-08-23 · escrita, revisada e commitada; **marco em hardware devendo** |
+| E9 | Restauração | IV | ✅ | 2026-08-23 11:50 · marco cumprido |
 | E10 | `arca prepare` | IV | ⬜ | — |
 | E11 | `arca verify` | IV | ⬜ | — |
 
 Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi escrito. As três etapas com marco em hardware (E7, E8 e E9) exigem a execução real para fechar.
 
-**🟨 é escrita, revisada e commitada, com o marco em hardware devendo.** O
-estado nasceu na E7, e ele existe porque ✅ seria mentira e ⬜ seria pior: quem
-lesse ⬜ suporia que não há código. Cada seção 🟨 termina com **o que falta,
-nomeado** — e o que falta, nas duas, custava um reinício que apagava a sessão
+**🟨 era escrita, revisada e commitada, com o marco em hardware devendo.** O
+estado nasceu na E7, e ele existia porque ✅ seria mentira e ⬜ seria pior: quem
+lesse ⬜ suporia que não há código. Cada seção 🟨 terminava com **o que falta,
+nomeado** — e o que faltava, nas três, custava um reinício que apagava a sessão
 que o dispararia. A E4 já tinha entregue o critério dela "cumprido pela metade
 verificável"; a diferença é que lá a outra metade era barata, e aqui ela era o
 marco inteiro.
 
-**As duas viraram ✅ em 22/08/2026, e o 🟨 voltou na E9**, que é a terceira
-etapa com marco em hardware e a única cuja operação **apaga um disco**. O
-reinício aconteceu numa sessão à parte: o backup `2026-08-22_Apps`
-foi armado às 20:53:48, a máquina bootou pelo dispositivo por boot único,
-gravou 39,7 GB, verificou, escreveu o desfecho às 21:06:02 e desligou; a
-colheita foi às 21:14:49. Os blocos **"o que falta para o marco, nomeado"** das
-duas seções continuam lá, reescritos contra o que aconteceu — apagá-los
-perderia o registro de o que estava em aberto e de como cada coisa fechou.
+**Não há mais nenhum 🟨.** As três etapas com marco em hardware fecharam, e as
+três em sessões à parte:
+
+- **E7 e E8, em 22/08/2026.** O backup `2026-08-22_Apps` foi armado às
+  20:53:48, a máquina bootou pelo dispositivo por boot único, gravou 39,7 GB,
+  verificou, escreveu o desfecho às 21:06:02 e desligou; a colheita foi às
+  21:14:49.
+- **E9, em 23/08/2026** — a única cuja operação **apaga um disco**. A
+  restauração daquela mesma imagem foi armada às 11:10:50, o `ocs-sr` encerrou
+  às 11:31:55 do relógio do live, a máquina desligou, e a colheita foi às
+  11:50:53. O Windows que colheu veio de dentro da imagem.
+
+Os blocos **"o que faltava para o marco, e como cada coisa fechou"** das três
+seções continuam lá, reescritos contra o que aconteceu — apagá-los perderia o
+registro de o que estava em aberto e de como cada coisa fechou.
 
 ---
 
@@ -960,7 +967,7 @@ consequência que o ADR previa, e ela custava um marco para ser vista.
 Só começa depois do marco da E8. Lista no Windows, com a escolha antes do ponto sem volta (R-1); conferência do destino contra a própria imagem (R-2); nome da imagem digitado por extenso (R-3). Destino divergente segue a decisão 5: passa com confirmação que nomeia o disco, e é recusado se for menor que a origem.
 
 **Cobre**: R-1, R-2, R-3, R-7, R-8, L-2 — e **P-17**, que era a etapa por escrito.
-**Marco em hardware**: restauração completa disparada pelo ARCA. Depois disto, o projeto está funcionalmente pronto.
+**Marco em hardware**: restauração completa disparada pelo ARCA. **Cumprido em 23/08/2026, às 11:50:53.** Com ele, o projeto está funcionalmente pronto: backup, colheita e restauração rodaram ponta a ponta em hardware, disparados pelo ARCA e sem uma única tela. O que resta — E10 e E11 — serve ao segundo dispositivo e à verificação rápida.
 
 #### O que a etapa entregou, e onde
 
@@ -1062,11 +1069,18 @@ O quinto — C-6 e C-10 não checados no `arca restore` — já estava corrigido
 quando a revisão terminou; ela leu uma versão anterior do arquivo. Foi achado
 relendo `prevoo::julgar` com a restauração na mão, que é a mesma defesa.
 
-#### O que falta para o marco, nomeado
+#### O que faltava para o marco, e como cada coisa fechou
 
-Tudo que é verificável sem reiniciar está feito: 543 testes, 6 deles de
-integração contra o hardware desta mesa, o `--dry-run` rodado de verdade e as
-recusas exercitadas no binário real.
+**Cumprido em 23/08/2026.** A restauração foi armada às 11:10:50, a máquina
+bootou pelo dispositivo, apagou e reescreveu o `nvme0n1`, o `ocs-sr` encerrou
+às 11:31:55 do relógio do live e desligou; a colheita foi às 11:50:53. O
+Windows que colheu **veio de dentro da imagem** — é a primeira vez neste
+projeto em que o ARCA julga uma operação de dentro do que ela produziu.
+
+O que este bloco dizia antes do reinício continua abaixo, reescrito contra o
+que aconteceu. Tudo que era verificável sem reiniciar estava feito: 546 testes,
+9 deles de integração contra o hardware desta mesa, o `--dry-run` rodado de
+verdade e as recusas exercitadas no binário real.
 
 **E o caminho sem `--dry-run` rodou inteiro, até uma linha antes do ponto sem
 volta.** Em 23/08/2026, `arca restore 2026-08-22_Apps` com a confirmação
@@ -1091,9 +1105,9 @@ Conferido pelos dois lados: o `grub.cfg` e o `estado.json` saíram com o mesmo
 SHA256 e o mesmo conteúdo de antes. É o análogo do que a E7 fez com o
 `bootsequence` — exercitar tudo que não custa um reinício.
 
-**O que falta é o reinício**, e ele apaga o disco desta máquina.
+**O que faltava era o reinício**, e ele apagou o disco desta máquina.
 
-**A imagem é a `2026-08-22_Apps`**, decidida em 23/08/2026. Três razões, e a
+**A imagem foi a `2026-08-22_Apps`**, decidida em 23/08/2026. Três razões, e a
 terceira é a que importa para o projeto:
 
 1. É a mais recente, e o que ela perde é quase nada: um atalho no Desktop
@@ -1112,22 +1126,109 @@ E o binário do `ARCABOOT` foi atualizado para o desta etapa. Não é zelo: o
 `arca.exe` de `target\release\` mora no `C:`, e a restauração o devolve à
 versão de 22/08 — que colheria a restauração com a tela do backup, chamando o
 veredito da imagem de origem de "Verificacao". É §4.1 sendo usada pela primeira
-vez para o que ela existe.
+vez para o que ela existe. **E funcionou como escrito**: o `arca resultado` que
+colheu é o `R:\arca\arca.exe`, e a tela que saiu foi a do §6.3.
 
-Falta então:
+Faltavam quatro coisas, e as quatro fecharam:
 
-1. `arca restore 2026-08-22_Apps`, a confirmação digitada, e a máquina
-   reiniciando.
-2. Do outro lado: as cinco linhas do armar (§6.1), que só existem numa execução
-   real, e o `arca-restore.log` que a receita redireciona — **nenhum dos dois
-   tem original**, como o `arca-fim.txt` não tinha antes da E7.
-3. `arca resultado` colhendo uma restauração: a tela do §6.3, também sem
-   original.
-4. E as duas leituras que respondem §3.4 pelo lado do ARCA: o `bcdedit`
-   **antes** de armar e **depois** de religar, para comparar com o
-   `efi-nvram.dat` que a restauração não escreve — ela não é um `savedisk`.
+1. **`arca restore 2026-08-22_Apps`, a confirmação digitada, e a máquina
+   reiniciando.** Aconteceu. O `estado.json` do `ARCABOOT` registra
+   `armado_em: 2026-08-23T11:10:50-03:00`, selo `ce04819cf0ee96f7`, e é o
+   **único registro do armar que sobreviveu** — a linha correspondente do
+   `arca.log` foi apagada pela própria restauração.
+2. **As cinco linhas do armar (§6.1) e o `arca-restore.log`, nenhum dos dois
+   com original.** O log tem original agora: 16.600 bytes em
+   `recursos/capturas/arca-restore-2026-08-22_Apps.log`, com o `restoredisk`
+   chegando ao fim, o `ocs-restore-mbr`, os dois `ntfsfix` e o
+   `Ending /usr/sbin/ocs-sr`. **E ele começa no meio** — uma passagem só do
+   Partclone, a da última partição, sem o `Starting` correspondente ao `Ending`.
+   O primeiro original de uma coisa costuma ensinar o que ela não é, e este
+   ensinou: o §6.3 manda procurar ali quando algo deu errado, e o que está ali
+   pode não cobrir a parte que falhou. **As cinco linhas continuam sem captura**, e
+   agora se sabe por quê: elas foram impressas de verdade, e a sessão que as
+   imprimiu morreu no reinício que ela mesma disparou. Está registrado no §6.1
+   e na `PROVENIENCIA.md` como perda, e não como pendência — reprodução não é
+   captura.
+3. **`arca resultado` colhendo uma restauração: a tela do §6.3.** Saiu, e o
+   §6.3 passou a ser execução real. As três diferenças que a etapa desenhou
+   apareceram todas: `Imagem de origem:` em vez de `Verificacao:`, o veredito
+   sem reprovar a operação, e os três conselhos. O julgamento da E5 classificou
+   o desfecho em `Concluida` com o selo do job, e o ADR-0008 foi exercitado de
+   novo — `"situacao": "colhido"` ficou no arquivo. **E as duas telas de
+   colheita existem lado a lado**, com catorze horas e uma operação destrutiva
+   entre elas: as três diferenças deixaram de ser desenho e viraram observação,
+   e a §5.4 foi conferida linha a linha contra a original.
+4. **As duas leituras que respondem §3.4 pelo lado do ARCA.** As duas estão
+   guardadas, **e o par não fechou idêntico** — é o achado do marco, e está no
+   [ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md).
 
-Uma sessão à parte colhe, como na E7 e na E8.
+#### O achado do marco: a ordem permanente estava dentro da imagem
+
+Antes de restaurar, o `displayorder` tinha três entradas, com o dispositivo em
+primeiro. Depois de restaurar e religar, tem uma: o `{bootmgr}`. E a leitura de
+depois é **byte a byte** a que a E2 capturou em 22/08 de manhã — mesmo SHA256,
+`d837093d…f204f15e`, idênticas linha a linha.
+
+O ARCA não fez isso: C-5 proíbe, e o armar e o desarme releem o firmware depois
+de escrever. O `ocs-sr` também não, e quem responde isso é o par de 21/08 do
+§3.4 — duas leituras do mesmo boot, com o Clonezilla correndo entre elas.
+**Não é o `arca-restore.log`**, e por pouco não foi: ele não tem uma linha de
+`efibootmgr`, e usar essa ausência como prova seria cometer, dentro do próprio
+achado, o erro que ele descreve — o log começa no meio. O que sobra é que a
+partição EFI está dentro da imagem, e o BCD está dentro dela: **a ordem permanente
+voltou junto com o disco.**
+
+A entrada `{687478f2}` `UEFI OS` fecha o argumento pela data. Ela nasceu na
+NVRAM durante o boot do backup de 22/08, com o Windows desligado, e nunca
+chegou ao BCD que aquela imagem carrega. Restaurar a apagou porque ela nunca
+esteve lá dentro.
+
+**Isto estreita P-20, que é da E10.** A restauração não precisa do conserto que
+o pedido descreve — ela já devolve a ordem. O pedido é sobre o **backup**, que
+suja a ordem e não a limpa. E abre P-22, que é o outro lado da mesma moeda:
+*o `bcdedit` mostra a NVRAM ou o BCD?* Se for só o BCD, a máquina pode continuar
+bootando no dispositivo enquanto o `arca status` diz que está tudo bem — uma
+afirmação de segurança sobre uma leitura que não fala da pergunta. **Um
+reinício com o SSD conectado responde**, sem risco: não há job armado e o
+`grub.cfg` está inerte, então o pior caso é um menu esperando alguém.
+
+#### O que o marco mostrou sobre o §4.1, e não estava previsto
+
+O `%LOCALAPPDATA%\ARCA\arca.log` foi destruído, como a etapa previa. O que ela
+não previa é **onde** o buraco ficaria: a última linha do lado de lá é de 22/08
+às 20:53:48 — o armar do **backup** —, e a seguinte já é a desta colheita.
+Sumiram no meio a colheita do backup das 21:14, o `--dry-run` desta manhã, a
+recusa da confirmação errada, e **a linha do armar desta própria restauração**,
+escrita quarenta minutos antes de a imagem substituí-la.
+
+**A operação apaga o registro de que ela foi armada.** O `estado.json` do
+`ARCABOOT` é o que sobrou, e é por isso que ele não é redundância do log. O
+arquivo está em `recursos/capturas/arca-log-windows-2026-08-23-pos-restauracao.txt`
+— a única captura deste projeto que está lá pelo que lhe **falta**.
+
+#### O que a etapa prova agora em `tests/e9_restaurar_o_disco.rs`
+
+Três testes que não podiam ser escritos antes do marco, cada um contra um
+original que não existia:
+
+- **As duas pontas do selo**, uma de cada lado do reinício: o `estado.json` que
+  o Windows escreveu antes de desligar e o `arca-fim.txt` que o `bash` do live
+  escreveu depois de o disco ter sido apagado. O julgamento da E5 diz
+  `Concluida` para o selo do job e `JobFantasma` para o do backup de 22/08 — que
+  é o job fantasma mais plausível que este dispositivo tem.
+- **A receita que o código monta hoje escreve as três linhas que o original
+  traz**, e não escreve `ARCA_BACKUP`. Fecha, do lado da restauração, o que a
+  E7 fechou do lado do backup: até aqui o `ARCA_RESTORE=` era código sem
+  original (P-16).
+- **A mudança da ordem permanente**, fixada contra as duas leituras do `bcdedit` e
+  contra a captura da E2.
+
+Os três passaram de primeira, o que neste projeto é motivo para desconfiar —
+então dois foram **falsificados** antes de ficarem: trocando a operação do
+pedido para `Backup`, o segundo reprova dizendo *"o original traz
+`ARCA_RESTORE=OK`, e a receita de hoje nao a escreveria"*; apontando a captura
+de depois para a de antes, o terceiro reprova nomeando as três entradas da
+ordem. É a lição da revisão da E4 aplicada antes do defeito, e não depois.
 
 ### E10 · `arca prepare`
 
@@ -1176,6 +1277,32 @@ Três coisas contra, e nenhuma é fatal:
   dispositivo de volta na ordem a cada backup. Então isto é limpeza recorrente,
   e o `arca resultado` é justamente o lugar certo para ela: roda uma vez por
   job, depois do boot que sujou a ordem.
+
+**E o marco da E9 estreitou o pedido, o que é argumento a favor e não contra.**
+Medido em 23/08/2026: uma **restauração** devolve a ordem sozinha, porque a
+partição EFI está dentro da imagem e o BCD está dentro dela — a leitura de
+depois de religar saiu byte a byte igual à captura de 22/08 de manhã
+([ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)).
+
+Duas consequências para quem for implementar:
+
+- **O conserto é sobre o backup, e só.** Metade dos casos já se resolve, e o
+  `arca resultado` de uma restauração não tem o que arrumar. Uma linha
+  `Ordem de boot: devolvida ao Windows` numa colheita de restauração seria um
+  `ok` sobre ação que não aconteceu — a mesma mentira que a E6 e a E7 pegaram
+  duas vezes.
+- **A ordem tem um terceiro dono, e ele não estava nomeado.** O ADR-0009
+  arbitrava entre o ARCA e o Windows; a imagem é o terceiro, e ela escreve sem
+  perguntar a nenhum dos dois. Um conserto que rodasse no `arca resultado` de
+  uma restauração estaria discutindo com um estado que acabou de ser gravado
+  por cima.
+
+**E há uma pergunta a fechar antes desta**, e ela é mais barata: **P-22 — o
+`bcdedit` mostra a NVRAM ou o BCD do disco?** Se mostrar só o BCD, a leitura
+que este pedido usaria para conferir o próprio conserto (C-3) não fala do que
+decide o boot — e a linha `Ordem de boot` do `arca status` já estaria
+tranquilizando sem base. Um reinício com o SSD conectado e o dispositivo inerte
+responde, sem risco.
 
 **O que medir antes de escrever**, e nada disto está medido: a forma exata do
 comando que reordena (`/set {fwbootmgr} displayorder {bootmgr} /addfirst` é o
@@ -1232,6 +1359,14 @@ Nenhum requisito do PRD fica sem etapa.
 > errada, e a distinção é a mesma que o método nomeia: **conferir se a
 > evidência fala sobre a pergunta.**
 
+> **O juiz que falta respondeu, e só sobre esta operação.** A tela do §6.3 manda
+> religar e conferir, e em 23/08/2026 o Windows subiu — este documento está
+> sendo editado nele. Isso fecha a dúvida sobre a restauração de
+> `2026-08-22_Apps`, e não fecha P-6: um êxito não exercita o ramo de falha, que
+> é o que a pendência pergunta. O que a execução acrescenta é que o desenho
+> funciona quando dá certo, e a próxima coisa a saber é o que ele faz quando dá
+> errado — em VM, com falha forçada.
+
 ~~**O mecanismo de desfecho nunca rodou**~~ (P-16, achado na E3). Nenhuma das três receitas preservadas escreve `arca-fim.txt`, grava selo ou usa `if/then/else` — o que existia no dispositivo veio de trabalho manual de validação. O plano supunha que a E7 e a E9 confirmariam um mecanismo pronto; elas foram a **primeira execução** dele. **Rodou em 22/08/2026, e o ramo do sucesso funcionou inteiro**; o de falha continua sem rodar, e é P-6. O que continua valendo é a regra que o risco produziu: antes de tratar qualquer linha do §3 do PRD como medida, procurar o original em `recursos/capturas/` — cinco vezes ele não estava lá, e uma vez estava.
 
 **A ordem permanente de boot desta máquina foi alterada, e não pelo ARCA**
@@ -1246,6 +1381,20 @@ lidas no mesmo dia, concordam.
 Daí uma regra que vale além desta etapa: **antes de chamar duas medições de
 contraditórias, confira se são do mesmo momento.** Foi o que quase custou uma
 etapa aqui.
+
+**E a ordem tem um terceiro dono, achado na E9: a imagem.** Uma restauração
+devolve a ordem permanente ao que estava dentro dela — o BCD mora na partição EFI,
+e a partição EFI é restaurada junto. Medido em 23/08/2026, e a evidência é
+forte: a leitura de depois de religar é byte a byte a que a E2 tirou em 22/08
+de manhã. O ADR-0009 arbitrava entre o ARCA e o Windows; este terceiro escreve
+sem perguntar a nenhum dos dois, e P-20 tem de ser decidido sabendo disso
+([ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)).
+
+Daí a regra irmã da anterior, e ela pegou uma linha do §3.4 que tinha original:
+**antes de tratar um par `antes`/`depois` como resposta, pergunte entre que
+dois instantes ele foi tirado, e se a pergunta cabe dentro deles.** O par que
+sustentava *"a restauração não mexe na NVRAM"* é de dentro de um boot só, e por
+isso só podia falar do `ocs-sr`.
 
 **A entrada de firmware é o ponto de falha mais caro.** Um erro do parser da E2 leva a máquina a bootar no lugar errado com uma receita armada. É a única etapa cujos testes precisam cobrir os dois idiomas do `bcdedit`.
 

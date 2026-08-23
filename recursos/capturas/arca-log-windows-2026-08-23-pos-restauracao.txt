@@ -1,0 +1,204 @@
+2026-08-22 13:05:46.274 INFO  [17172] arca 0.1.0 · elevado=sim · linha=["list", "--sem-pausa"]
+2026-08-22 13:05:46.275 INFO  [17172] comando `list`
+2026-08-22 13:05:46.275 INFO  [17172] list em E:\ · 2 imagem(ns) · 0 residuo(s)
+2026-08-22 13:05:46.298 INFO  [28936] arca 0.1.0 · elevado=sim · linha=["backup", "teste", "--dry-run", "--sem-pausa"]
+2026-08-22 13:05:46.299 INFO  [28936] comando `backup` (ensaio)
+2026-08-22 13:05:46.299 ERRO  [28936] `arca backup` chega na etapa E7; a fundacao ja esta de pe
+2026-08-22 13:05:46.352 INFO  [29924] arca 0.1.0 · elevado=sim · linha=["--version", "--sem-pausa"]
+2026-08-22 13:05:46.352 INFO  [29924] linha de comando respondida pelo proprio clap
+2026-08-22 13:42:08.342 INFO  [16648] arca 0.1.0 · elevado=sim · linha=["list", "--sem-pausa"]
+2026-08-22 13:42:08.343 INFO  [16648] comando `list`
+2026-08-22 13:42:08.344 INFO  [16648] list em E:\ · 2 imagem(ns) · 0 residuo(s)
+2026-08-22 13:42:08.372 INFO  [27812] arca 0.1.0 · elevado=sim · linha=["backup", "teste", "--dry-run", "--sem-pausa"]
+2026-08-22 13:42:08.373 INFO  [27812] comando `backup` (ensaio)
+2026-08-22 13:42:08.373 ERRO  [27812] `arca backup` chega na etapa E7; a fundacao ja esta de pe
+2026-08-22 13:42:08.432 INFO  [28484] arca 0.1.0 · elevado=sim · linha=["--version", "--sem-pausa"]
+2026-08-22 13:42:08.433 INFO  [28484] linha de comando respondida pelo proprio clap
+2026-08-22 14:27:21.992 INFO  [3116] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 14:27:21.993 INFO  [3116] comando `status`
+2026-08-22 14:27:22.150 INFO  [3116] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · estado: Nenhum
+2026-08-22 15:42:24.995 INFO  [16744] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps", "--dry-run", "--sem-pausa"]
+2026-08-22 15:42:24.996 INFO  [16744] comando `backup` (ensaio)
+2026-08-22 15:42:24.996 INFO  [16744] ensaio de backup `2026-08-22_Apps` · disco nvme0n1 (suposto) · receita de 813 caracteres · validada por C-2
+2026-08-22 15:42:25.027 INFO  [28584] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps", "--sem-pausa"]
+2026-08-22 15:42:25.028 INFO  [28584] comando `backup`
+2026-08-22 15:42:25.028 ERRO  [28584] `arca backup` chega na etapa E7; a fundacao ja esta de pe
+2026-08-22 15:42:25.060 INFO  [11156] arca 0.1.0 · elevado=sim · linha=["backup", "meu", "backup", "--dry-run", "--sem-pausa"]
+2026-08-22 15:42:25.066 AVISO [11156] linha de comando recusada: UnknownArgument
+2026-08-22 15:42:25.103 INFO  [29848] arca 0.1.0 · elevado=sim · linha=["backup", "CON", "--dry-run", "--sem-pausa"]
+2026-08-22 15:42:25.104 INFO  [29848] comando `backup` (ensaio)
+2026-08-22 15:42:25.104 ERRO  [29848] nome de imagem recusado (B-2): `CON` e nome reservado do Windows para dispositivo: o Clonezilla criaria a pasta do lado Linux, e do lado Windows nada dentro dela abriria
+2026-08-22 15:42:25.135 INFO  [29976] arca 0.1.0 · elevado=sim · linha=["backup", "backup;poweroff", "--dry-run", "--sem-pausa"]
+2026-08-22 15:42:25.136 INFO  [29976] comando `backup` (ensaio)
+2026-08-22 15:42:25.136 ERRO  [29976] nome de imagem recusado (B-2): caractere `;` nao e aceito em nome de imagem: valem letras, digitos, ponto, sublinhado e traco
+2026-08-22 15:42:25.166 INFO  [29156] arca 0.1.0 · elevado=sim · linha=["backup", "backup_do_Antonio_com_acento_", "ô", "--dry-run", "--sem-pausa"]
+2026-08-22 15:42:25.173 AVISO [29156] linha de comando recusada: UnknownArgument
+2026-08-22 15:42:25.200 INFO  [29716] arca 0.1.0 · elevado=sim · linha=["backup", "-scs", "--dry-run", "--sem-pausa"]
+2026-08-22 15:42:25.210 AVISO [29716] linha de comando recusada: UnknownArgument
+2026-08-22 15:42:25.237 INFO  [21688] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 15:42:25.238 INFO  [21688] comando `status`
+2026-08-22 15:42:25.396 INFO  [21688] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · estado: Nenhum
+2026-08-22 15:42:25.425 INFO  [22320] arca 0.1.0 · elevado=sim · linha=["list", "--sem-pausa"]
+2026-08-22 15:42:25.426 INFO  [22320] comando `list`
+2026-08-22 15:42:25.426 INFO  [22320] list em E:\ · 2 imagem(ns) · 0 residuo(s)
+2026-08-22 15:44:10.912 INFO  [30316] arca 0.1.0 · elevado=sim · linha=["backup", "meu backup", "--dry-run", "--sem-pausa"]
+2026-08-22 15:44:10.913 INFO  [30316] comando `backup` (ensaio)
+2026-08-22 15:44:10.913 ERRO  [30316] nome de imagem recusado (B-2): nome com espaco: o Clonezilla recebe o nome como palavra dentro de uma string de shell, e um espaco a reparte em duas
+2026-08-22 15:44:10.944 INFO  [29996] arca 0.1.0 · elevado=sim · linha=["backup", "backup_do_Antônio", "--dry-run", "--sem-pausa"]
+2026-08-22 15:44:10.944 INFO  [29996] comando `backup` (ensaio)
+2026-08-22 15:44:10.945 ERRO  [29996] nome de imagem recusado (B-2): nome com acento (`ô`): o que atravessa o grub e o live system e ASCII, e um acento chega do outro lado como outra coisa
+2026-08-22 15:44:10.980 INFO  [6952] arca 0.1.0 · elevado=sim · linha=["backup", "--dry-run", "--sem-pausa", "--", "-scs"]
+2026-08-22 15:44:10.980 INFO  [6952] comando `backup` (ensaio)
+2026-08-22 15:44:10.980 ERRO  [6952] nome de imagem recusado (B-2): nome comecando com `-`: o `ocs-sr` o leria como opcao, e nao como nome de imagem
+2026-08-22 15:44:11.012 INFO  [28480] arca 0.1.0 · elevado=sim · linha=["backup", "ARCA-LOGS", "--dry-run", "--sem-pausa"]
+2026-08-22 15:44:11.013 INFO  [28480] comando `backup` (ensaio)
+2026-08-22 15:44:11.013 ERRO  [28480] nome de imagem recusado (B-2): `ARCA-LOGS` e uma pasta de servico do dispositivo: a imagem seria gravada dentro dela e sumiria da listagem, sem que ninguem visse por que
+2026-08-22 15:44:11.051 INFO  [26400] arca 0.1.0 · elevado=sim · linha=["backup", "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn", "--dry-run", "--sem-pausa"]
+2026-08-22 15:44:11.052 INFO  [26400] comando `backup` (ensaio)
+2026-08-22 15:44:11.052 ERRO  [26400] nome de imagem recusado (B-2): nome com 49 caracteres, e o limite e 48
+2026-08-22 17:17:45.289 INFO  [4480] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:17:45.290 INFO  [4480] comando `desarmar`
+2026-08-22 17:17:45.338 INFO  [4480] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 0 · set default devolvido: false · grub.cfg regravado: false · boot unico: nao havia
+2026-08-22 17:17:45.367 INFO  [6272] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:17:45.368 INFO  [6272] comando `desarmar`
+2026-08-22 17:17:45.414 INFO  [6272] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 0 · set default devolvido: false · grub.cfg regravado: false · boot unico: nao havia
+2026-08-22 17:17:45.436 INFO  [1752] arca 0.1.0 · elevado=sim · linha=["desarmar", "--dry-run", "--sem-pausa"]
+2026-08-22 17:17:45.437 INFO  [1752] comando `desarmar` (ensaio)
+2026-08-22 17:17:45.591 INFO  [21708] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:17:45.591 INFO  [21708] comando `desarmar`
+2026-08-22 17:17:45.651 INFO  [21708] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 1 · set default devolvido: false · grub.cfg regravado: true · boot unico: nao havia
+2026-08-22 17:17:45.687 INFO  [1284] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:17:45.688 INFO  [1284] comando `desarmar`
+2026-08-22 17:17:45.745 INFO  [1284] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 0 · set default devolvido: true · grub.cfg regravado: true · boot unico: nao havia
+2026-08-22 17:17:45.775 INFO  [13484] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:17:45.776 INFO  [13484] comando `desarmar`
+2026-08-22 17:17:45.835 INFO  [13484] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 1 · set default devolvido: true · grub.cfg regravado: true · boot unico: nao havia
+2026-08-22 17:20:21.081 INFO  [3088] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:20:21.081 INFO  [3088] comando `desarmar`
+2026-08-22 17:20:21.132 INFO  [3088] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 0 · set default devolvido: false · grub.cfg regravado: false · boot unico: nao havia
+2026-08-22 17:20:21.162 INFO  [29128] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:20:21.163 INFO  [29128] comando `desarmar`
+2026-08-22 17:20:21.209 INFO  [29128] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 0 · set default devolvido: false · grub.cfg regravado: false · boot unico: nao havia
+2026-08-22 17:20:21.229 INFO  [14764] arca 0.1.0 · elevado=sim · linha=["desarmar", "--dry-run", "--sem-pausa"]
+2026-08-22 17:20:21.229 INFO  [14764] comando `desarmar` (ensaio)
+2026-08-22 17:20:21.264 INFO  [12236] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:20:21.265 INFO  [12236] comando `desarmar`
+2026-08-22 17:20:21.323 INFO  [12236] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 1 · set default devolvido: false · grub.cfg regravado: true · boot unico: nao havia
+2026-08-22 17:20:21.360 INFO  [21984] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:20:21.361 INFO  [21984] comando `desarmar`
+2026-08-22 17:20:21.420 INFO  [21984] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 0 · set default devolvido: true · grub.cfg regravado: true · boot unico: nao havia
+2026-08-22 17:20:21.456 INFO  [29248] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 17:20:21.457 INFO  [29248] comando `desarmar`
+2026-08-22 17:20:21.514 INFO  [29248] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 1 · set default devolvido: true · grub.cfg regravado: true · boot unico: nao havia
+2026-08-22 18:03:39.517 INFO  [29092] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:03:39.518 INFO  [29092] comando `status`
+2026-08-22 18:03:39.567 INFO  [29092] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: nenhum
+2026-08-22 18:04:05.502 INFO  [26016] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:04:05.503 INFO  [26016] comando `status`
+2026-08-22 18:04:05.561 INFO  [26016] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: job fantasma — o desfecho tras o selo `7e02b4d1af963c85`, que nao e o do job pendente. O ARCA ignora este arquivo
+2026-08-22 18:04:21.606 INFO  [27508] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:04:21.606 INFO  [27508] comando `status`
+2026-08-22 18:04:21.655 INFO  [27508] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: nao e desfecho de job nenhum: a primeira linha nao traz `ARCA_SELO=`: este arquivo nao pertence a job nenhum do ARCA. Ou e anterior ao mecanismo do selo, ou o desligamento pegou a receita entre truncar o arquivo e escrever a primeira linha
+2026-08-22 18:04:21.696 INFO  [30168] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:04:21.697 INFO  [30168] comando `status`
+2026-08-22 18:04:21.744 INFO  [30168] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: concluida — o selo bate e a receita chegou ao fim
+2026-08-22 18:04:21.766 INFO  [28800] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:04:21.767 INFO  [28800] comando `status`
+2026-08-22 18:04:21.819 INFO  [28800] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: truncado — o selo bate e falta o `ARCA_FIM`: o desligamento pegou a operacao no meio, e a pasta e residuo
+2026-08-22 18:04:21.838 INFO  [12032] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:04:21.839 INFO  [12032] comando `status`
+2026-08-22 18:04:21.885 INFO  [12032] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: nao e desfecho de job nenhum: a primeira linha nao traz `ARCA_SELO=`: este arquivo nao pertence a job nenhum do ARCA. Ou e anterior ao mecanismo do selo, ou o desligamento pegou a receita entre truncar o arquivo e escrever a primeira linha
+2026-08-22 18:04:21.905 INFO  [24596] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:04:21.906 INFO  [24596] comando `status`
+2026-08-22 18:04:21.950 INFO  [24596] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: nao ha `arca-fim.txt`: ou o boot nao aconteceu, ou o Clonezilla abriu o menu em vez de executar a receita
+2026-08-22 18:04:21.977 INFO  [26252] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:04:21.978 INFO  [26252] comando `status`
+2026-08-22 18:04:22.031 INFO  [26252] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: estado ilegivel: o arquivo termina no meio: e o rastro de um desligamento durante a gravacao. Nao da para saber o que estava armado, e o ARCA nao lê estado pela metade
+2026-08-22 18:12:59.185 INFO  [27304] arca 0.1.0 · elevado=sim · linha=[]
+2026-08-22 18:12:59.186 INFO  [27304] linha de comando respondida pelo proprio clap
+2026-08-22 18:12:59.224 INFO  [29500] arca 0.1.0 · elevado=sim · linha=["-split", "\n"]
+2026-08-22 18:12:59.225 AVISO [29500] linha de comando recusada: UnknownArgument
+2026-08-22 18:13:09.474 INFO  [21148] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:13:09.475 INFO  [21148] comando `status`
+2026-08-22 18:13:09.520 INFO  [21148] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: job fantasma — o desfecho tras o selo `7e02b4d1af963c85`, que nao e o do job pendente. O ARCA ignora este arquivo
+2026-08-22 18:13:09.543 INFO  [20156] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:13:09.544 INFO  [20156] comando `status`
+2026-08-22 18:13:09.589 INFO  [20156] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: job fantasma — o desfecho tras o selo `7e02b4d1af963c85`, que nao e o do job pendente. O ARCA ignora este arquivo
+2026-08-22 18:13:29.020 INFO  [30572] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:13:29.021 INFO  [30572] comando `status`
+2026-08-22 18:13:29.065 INFO  [30572] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: job fantasma — o desfecho tras o selo `7e02b4d1af963c85`, que nao e o do job pendente. O ARCA ignora este arquivo
+2026-08-22 18:13:29.120 INFO  [19916] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:13:29.121 INFO  [19916] comando `status`
+2026-08-22 18:13:29.164 INFO  [19916] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: o `arca-fim.txt` esta la e nao se deixou lê (leitura falhou em E:\ARCA-LOGS\backup-2026-08-22_Apps\arca-fim.txt: Acesso negado. (os error 5)). Isto **nao** e o mesmo que o boot nao ter acontecido: a operacao pode ter terminado bem, e o que falhou foi olhar
+2026-08-22 18:13:29.197 INFO  [28988] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 18:13:29.197 INFO  [28988] comando `status`
+2026-08-22 18:13:29.242 INFO  [28988] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: backup `2026-08-22_Apps` · selo a3f1c9e07b2d4856 · desfecho: job fantasma — o desfecho tras o selo `7e02b4d1af963c85`, que nao e o do job pendente. O ARCA ignora este arquivo
+2026-08-22 18:32:26.388 INFO  [28128] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps", "--sem-pausa"]
+2026-08-22 18:32:26.389 INFO  [28128] comando `backup`
+2026-08-22 18:32:45.144 INFO  [28128] pre-voo de `2026-08-22_Apps` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 18:38:13.137 INFO  [29328] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps", "--sem-pausa"]
+2026-08-22 18:38:13.138 INFO  [29328] comando `backup`
+2026-08-22 18:38:31.616 INFO  [29328] pre-voo de `2026-08-22_Apps` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 18:39:24.250 INFO  [29512] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-21_WindowsCompleto", "--sem-pausa"]
+2026-08-22 18:39:24.250 INFO  [29512] comando `backup`
+2026-08-22 18:39:25.856 ERRO  [29512] o pre-voo recusou: ja ha uma imagem chamada `2026-08-21_WindowsCompleto` no dispositivo, e o ARCA nunca escreve por cima de uma (B-3). Escolha outro nome
+2026-08-22 18:39:25.895 INFO  [18516] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Residuo", "--sem-pausa"]
+2026-08-22 18:39:25.896 INFO  [18516] comando `backup`
+2026-08-22 18:39:44.144 INFO  [18516] pre-voo de `2026-08-22_Residuo` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 18:39:44.184 INFO  [19644] arca 0.1.0 · elevado=sim · linha=["backup", "backup-com-acentuacao-ô", "--sem-pausa"]
+2026-08-22 18:39:44.185 INFO  [19644] comando `backup`
+2026-08-22 18:39:44.185 ERRO  [19644] nome de imagem recusado (B-2): nome com acento (`ô`): o que atravessa o grub e o live system e ASCII, e um acento chega do outro lado como outra coisa
+2026-08-22 18:40:12.338 INFO  [2452] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Residuo", "--sem-pausa"]
+2026-08-22 18:40:12.339 INFO  [2452] comando `backup`
+2026-08-22 18:40:13.915 ERRO  [2452] o pre-voo recusou: ja ha uma pasta chamada `2026-08-22_Residuo` no dispositivo, sem `MD5SUMS`: e residuo de um backup interrompido (B-3). Gravar por cima destruiria o que sobrou dele sem que ninguem tivesse olhado. Escolha outro nome, ou apague a pasta a mao — o ARCA nunca apaga nada (B-10)
+2026-08-22 18:40:23.327 INFO  [12396] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps", "--dry-run", "--sem-pausa"]
+2026-08-22 18:40:23.328 INFO  [12396] comando `backup` (ensaio)
+2026-08-22 18:40:41.460 INFO  [12396] pre-voo de `2026-08-22_Apps` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 18:40:41.461 INFO  [12396] ensaio de backup `2026-08-22_Apps` · disco nvme0n1 · receita de 813 caracteres · validada por C-2
+2026-08-22 18:52:27.209 INFO  [28928] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps", "--sem-pausa"]
+2026-08-22 18:52:27.209 INFO  [28928] comando `backup`
+2026-08-22 18:52:46.053 INFO  [28928] pre-voo de `2026-08-22_Apps` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 18:52:46.093 INFO  [5532] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-21_WindowsCompleto", "--sem-pausa"]
+2026-08-22 18:52:46.094 INFO  [5532] comando `backup`
+2026-08-22 18:52:47.660 ERRO  [5532] o pre-voo recusou: ja ha uma imagem chamada `2026-08-21_WindowsCompleto` no dispositivo, e o ARCA nunca escreve por cima de uma (B-3). Escolha outro nome
+2026-08-22 20:15:36.601 INFO  [30948] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps", "--dry-run", "--sem-pausa"]
+2026-08-22 20:15:36.602 INFO  [30948] comando `backup` (ensaio)
+2026-08-22 20:15:55.206 INFO  [30948] pre-voo de `2026-08-22_Apps` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 20:15:55.208 INFO  [30948] ensaio de backup `2026-08-22_Apps` · disco nvme0n1 · receita de 813 caracteres · validada por C-2
+2026-08-22 20:26:11.100 INFO  [25920] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 20:26:11.101 INFO  [25920] comando `status`
+2026-08-22 20:26:11.150 INFO  [25920] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: nenhum
+2026-08-22 20:26:11.184 INFO  [9620] arca 0.1.0 · elevado=sim · linha=["resultado", "--sem-pausa"]
+2026-08-22 20:26:11.185 INFO  [9620] comando `resultado`
+2026-08-22 20:26:11.186 INFO  [9620] resultado · nao ha job a colher
+2026-08-22 20:26:21.965 INFO  [30612] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps", "--sem-pausa"]
+2026-08-22 20:26:21.966 INFO  [30612] comando `backup`
+2026-08-22 20:26:40.373 INFO  [30612] pre-voo de `2026-08-22_Apps` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 20:26:40.374 ERRO  [30612] a confirmacao nao bate: era para digitar `2026-08-22_Apps` e veio `s`. Nada foi armado
+2026-08-22 20:26:54.724 INFO  [31096] arca 0.1.0 · elevado=sim · linha=["desarmar", "--sem-pausa"]
+2026-08-22 20:26:54.726 INFO  [31096] comando `desarmar`
+2026-08-22 20:26:54.773 INFO  [31096] desarmado · R:\boot\grub\grub.cfg · blocos removidos: 0 · set default devolvido: false · grub.cfg regravado: false · boot unico: nao havia
+2026-08-22 20:33:45.232 INFO  [20936] arca 0.1.0 · elevado=sim · linha=["resultado", "--sem-pausa"]
+2026-08-22 20:33:45.233 INFO  [20936] comando `resultado`
+2026-08-22 20:33:45.234 INFO  [20936] resultado · nao ha job a colher
+2026-08-22 20:33:45.272 INFO  [18472] arca 0.1.0 · elevado=sim · linha=["status", "--sem-pausa"]
+2026-08-22 20:33:45.273 INFO  [18472] comando `status`
+2026-08-22 20:33:45.321 INFO  [18472] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: nenhum
+2026-08-22 20:41:45.078 INFO  [17376] arca 0.1.0 · elevado=sim · linha=["status"]
+2026-08-22 20:41:45.080 INFO  [17376] comando `status`
+2026-08-22 20:41:45.242 INFO  [17376] status · 2 entrada(s) no firmware · entrada do ARCA: ARCA (Propria) · boot unico: nao armado · job: nenhum
+2026-08-22 20:42:24.046 INFO  [27144] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps"]
+2026-08-22 20:42:24.047 INFO  [27144] comando `backup`
+2026-08-22 20:42:42.311 INFO  [27144] pre-voo de `2026-08-22_Apps` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 20:43:32.953 ERRO  [27144] a confirmacao nao bate: era para digitar `2026-08-22_Apps` e veio `backup 2026-08-22_Apps`. Nada foi armado
+2026-08-22 20:43:41.942 INFO  [5472] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps"]
+2026-08-22 20:43:41.943 INFO  [5472] comando `backup`
+2026-08-22 20:44:00.490 INFO  [5472] pre-voo de `2026-08-22_Apps` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 20:46:35.128 ERRO  [5472] a confirmacao nao bate: era para digitar `2026-08-22_Apps` e veio ``. Nada foi armado
+2026-08-22 20:46:41.629 INFO  [28704] arca 0.1.0 · elevado=sim · linha=["backup", "2026-08-22_Apps"]
+2026-08-22 20:46:41.630 INFO  [28704] comando `backup`
+2026-08-22 20:47:00.524 INFO  [28704] pre-voo de `2026-08-22_Apps` · origem KINGSTON SNV3S500G · disco nvme0n1 · espaco Suficiente · inicializacao rapida Desativada · chkdsk limpo
+2026-08-22 20:53:48.328 INFO  [28704] armado `2026-08-22_Apps` · selo 7d2d2f5153625b38 · disco nvme0n1 · entrada {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34} (ja era do ARCA) · desfecho em backup-2026-08-22_Apps
+2026-08-23 11:50:53.405 INFO  [22516] arca 0.1.0 · elevado=sim · linha=["resultado"]
+2026-08-23 11:50:53.406 INFO  [22516] comando `resultado`
+2026-08-23 11:50:53.529 INFO  [22516] colhido restauracao `2026-08-22_Apps` · selo ce04819cf0ee96f7 · desfecho: concluida — o selo bate e a receita chegou ao fim · veredito: APROVADA · job Encerrado

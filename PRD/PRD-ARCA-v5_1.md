@@ -95,7 +95,22 @@ dispositivo, mais as três leituras do `bcdedit`, na ordem em que foram feitas:
 | 22/08 manhã | `bcdedit` | `{bootmgr}` — **a entrada do ARCA saiu da ordem** | — | — |
 | **22/08 ~20:57** | `efibootmgr` (`nvram-live-2026-08-22.txt`) | **`0000,0001` — Windows, ARCA** | **`0001` (ARCA)** | nenhum |
 | **22/08 21:17** | `bcdedit` (`…-pos-marco.txt`) | **`{f4057bd0}`, `{bootmgr}`, `{687478f2}` — o ARCA voltou, e em primeiro** | — | — |
-| **23/08** | `bcdedit` | **`{f4057bd0}`, `{687478f2}`, `{bootmgr}` — as duas do dispositivo à frente do Windows** | — | — |
+| **23/08 manhã** | `bcdedit` (`…-antes-da-restauracao.txt`) | **`{f4057bd0}`, `{687478f2}`, `{bootmgr}` — as duas do dispositivo à frente do Windows** | — | — |
+| **23/08 12:12** | `bcdedit` (`…-pos-restauracao.txt`) — **depois da restauração** | **`{bootmgr}` — e a `{687478f2}` sumiu inteira** | — | — |
+
+> **A última linha é a única em que a ordem melhorou, e a causa é nova.** A
+> leitura de depois da restauração é **byte a byte** a de 22/08 de manhã —
+> mesmo SHA256, `d837093d…f204f15e`. O ARCA não a escreveu (C-5, e há releitura
+> no armar e no desarme), e o `ocs-sr` não escreve na NVRAM (§3.4). O que
+> sobra é que **a ordem permanente estava dentro da imagem**: o BCD mora na
+> partição EFI, e a partição EFI é restaurada junto.
+>
+> A `{687478f2}` fecha o argumento pela data. Ela nasceu na NVRAM durante o
+> boot do backup de 22/08, com o Windows desligado, e nunca chegou ao BCD que
+> a imagem daquela noite carrega. Restaurar a apagou porque ela nunca esteve lá
+> dentro. Ver
+> [ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md),
+> e P-22 para o que isso deixa em aberto.
 
 > **As duas linhas de 21/08 eram uma só, e a que estava aqui é da
 > restauração.** Corrigido na etapa E9. Os arquivos `nvram-antes.txt` e
@@ -229,28 +244,38 @@ Restauração real sobre o `nvme0n1`. Do comando ao Windows restaurado, **sem in
 
 | Fato | Evidência |
 |---|---|
-| `-iefi` funciona | NVRAM byte-idêntica antes e depois — `ARCA-LOGS/2026-08-21_WindowsCompleto/nvram-antes.txt` e `-depois.txt`, mesmo SHA256, escritos às 14:28:36 e 14:46:51 |
+| O `ocs-sr` não toca na NVRAM | NVRAM byte-idêntica antes e depois — `ARCA-LOGS/2026-08-21_WindowsCompleto/nvram-antes.txt` e `-depois.txt`, mesmo SHA256, escritos às 14:28:36 e 14:46:51, **do mesmo boot** |
 | `-k0` preserva os PARTUUIDs **mesmo com a GPT zerada** | A entrada de boot preexistente continua resolvendo |
 | `bcdboot` não é necessário neste hardware | Consequência do anterior |
 | O Windows da imagem sobe normalmente | Máquina restaurada e em uso |
+| **Uma restauração disparada pelo ARCA vai do comando ao Windows restaurado** | **23/08/2026**, marco da E9: `2026-08-22_Apps` armada às 11:10:50, `ocs-sr` encerrado às 11:31:55, colhida às 11:50:53. `arca-fim-restauracao-2026-08-22_Apps.txt` e `arca-restore-2026-08-22_Apps.log` |
+| **A ordem permanente volta ao que está dentro da imagem** | O par `bcdedit` de 23/08, antes e depois, pelo lado Windows: **não é idêntico** ([ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)) |
 
-> **O `-iefi` era a pergunta que originou o projeto.** Está respondida: a restauração não toca na NVRAM e o Windows sobe.
+> **O `-iefi` era a pergunta que originou o projeto.** Está respondida: o
+> `ocs-sr` não toca na NVRAM e o Windows sobe.
 
-> **Nenhuma restauração foi disparada pelo ARCA até aqui.** As três desta
-> tabela — R1 e R2 em 20/08, e a de 21/08 — foram feitas à mão, pelo menu do
-> Clonezilla. O que a E9 acrescenta é a receita montada e armada pelo ARCA; o
-> mecanismo do `ocs-sr` é o mesmo, e a diferença é o envoltório que diz se deu
-> certo (§10.2.2).
+> **A primeira linha desta tabela mudou de nome no marco da E9, e a evidência
+> dela não mudou.** Ela dizia *"`-iefi` funciona — NVRAM byte-idêntica antes e
+> depois"*, e o par que a sustenta foi lido **de dentro do mesmo boot do live**,
+> separado por dezoito minutos. Isso continua verdadeiro, e o que ele mede é o
+> `ocs-sr`.
 >
-> **E é por isso que o par `nvram-antes`/`-depois` importa mais do que o
-> `efi-nvram.dat`.** Esta seção se sustenta num par — antes e depois do
-> **mesmo** evento —, e o `efi-nvram.dat` de dentro da imagem não é um par: ele
-> é uma leitura só, e mostra o estado no instante em que o Clonezilla o
-> escreveu. Duas leituras dessas, de dois boots diferentes, podem sair
-> idênticas com meia dúzia de mudanças entre elas — e foi o que aconteceu entre
-> 21/08 e 22/08 (ADR-0011). Uma restauração disparada pelo ARCA, com o
-> `bcdedit` lido antes e depois do lado Windows, é o que confirma ou desmente
-> as quatro linhas acima.
+> O par que a E9 acrescentou atravessa o reinício e é lido do lado Windows.
+> Ele responde outra pergunta — *o que a máquina tem na ordem permanente depois de
+> voltar?* — e a resposta é **o que a imagem carregava**: a leitura de depois da
+> restauração é byte a byte a que a E2 tirou em 22/08 de manhã, e as duas
+> entradas que o ciclo de boot do backup tinha posto na ordem sumiram junto com
+> o disco antigo. A partição EFI está dentro da imagem, e o BCD está dentro
+> dela.
+>
+> Nada aqui foi desmentido; o que faltava era **alcance**. A lição é a que este
+> documento já pagou cinco vezes: conferir se a evidência fala sobre a
+> pergunta. Ver o ADR-0012, e P-22 em §3.5.
+
+> **As três restaurações à mão continuam sendo as três.** R1 e R2 em 20/08, e a
+> de 21/08, feitas pelo menu do Clonezilla. O que a E9 acrescentou é a quarta,
+> e a diferença dela não é o `ocs-sr` — é o envoltório que diz se deu certo
+> (§10.2.2), e ele estreou nesta operação do lado da restauração.
 
 ### 3.5 — Ainda não medido
 
@@ -259,7 +284,9 @@ Restauração real sobre o `nvme0n1`. Do comando ao Windows restaurado, **sem in
 | P-6 | **O `ocs-sr` devolve código diferente de zero quando falha?** O ramo de sucesso foi medido; o de falha não. Uma restauração bem-sucedida não fecha isso, por definição. Fecha com falha forçada, provavelmente em VM |
 | P-19 | **Só quando ela foi consumida por `bootsequence`?** — a metade que sobrou. **A primeira metade fechou na E9, pela negativa: o firmware NÃO reescreve a entrada em todo boot pelo dispositivo.** Em 20/08 houve pelo menos três boots pelo dispositivo, e em todas as capturas a entrada continua na forma que o `bcdedit` escreve — `Clonezilla`, caminho em minúsculas, `BCDOBJECT` presente —, inclusive em dois deles com a entrada fora da frente da ordem. O que **não** fecha é datar a reescrita: uma captura feita durante o boot N mostra a NVRAM como ela está, e não qual boot a deixou assim. O experimento que fecha é **um backup disparado por F12**, com o `bcdedit` lido imediatamente antes. Ver [ADR-0011](../docs/adr/0011-as-capturas-de-21-08-sao-de-dois-boots.md) |
 | P-21 | **O `ocs-sr` sai com código diferente de zero quando desiste por destino menor?** Aberta na E9, e é P-6 com outra roupa: o help diz que ele *"quit"*, e se esse `quit` sair com zero o `if/then/else` de R-5 escreve `ARCA_RESTORE=OK` sobre uma restauração que não aconteceu. **Não é urgente**, e a razão é o desenho: R-7 recusa antes, do lado Windows, e essa pergunta só chega a importar se a recusa do ARCA tiver um furo ([ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)) |
-| P-20 | **O `arca resultado` deve devolver o `{bootmgr}` à frente do `displayorder`, esteja o dispositivo conectado ou não.** Pedido em 22/08/2026, pela fricção que o ADR-0009 mediu: com o dispositivo em primeiro, ligar a máquina com o SSD conectado boota nele. **Exige revisar C-5 e superseder o ADR-0009**, que decidiu avisar em vez de consertar. O argumento a favor é que C-5 foi escrito contra **acrescentar** um caminho para o dispositivo, e isto **remove** um — assimetria que o requisito não distingue e que nunca foi discutida. Decidir e medir na E10 |
+| P-20 | **O `arca resultado` deve devolver o `{bootmgr}` à frente do `displayorder`, esteja o dispositivo conectado ou não.** Pedido em 22/08/2026, pela fricção que o ADR-0009 mediu: com o dispositivo em primeiro, ligar a máquina com o SSD conectado boota nele. **Exige revisar C-5 e superseder o ADR-0009**, que decidiu avisar em vez de consertar. O argumento a favor é que C-5 foi escrito contra **acrescentar** um caminho para o dispositivo, e isto **remove** um — assimetria que o requisito não distingue e que nunca foi discutida. Decidir e medir na E10. **O alcance estreitou no marco da E9**: a restauração já devolve a ordem sozinha, porque ela está dentro da imagem ([ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)). O pedido é sobre o **backup**, que suja a ordem e não a limpa |
+| P-23 | **Por que o `arca-restore.log` começa no meio?** Aberta no marco da E9, medindo o primeiro original que ele teve. Ele traz uma passagem só do Partclone — a da última das quatro partições — e um `Ending /usr/sbin/ocs-sr` sem o `Starting`. A receita redireciona com `> … 2>&1`, e o `arca-check.log` do backup não tem esse corte. **Importa porque o §6.3 aponta esse arquivo a quem quer saber o que aconteceu.** Fecha na próxima restauração, e a pergunta é se o corte cai sempre no mesmo lugar |
+| P-22 | **O `bcdedit /enum firmware` mostra a NVRAM do firmware, ou o BCD do disco?** Aberta no marco da E9. Nunca precisou de resposta até a restauração devolver a ordem permanente de dentro da imagem: **se é o BCD, a NVRAM pode continuar com o dispositivo à frente e a máquina continuaria bootando nele — enquanto a linha `Ordem de boot` do `arca status` diria que está tudo bem.** Seria uma afirmação de segurança feita sobre uma leitura que não fala da pergunta, que é o defeito que a revisão do marco da E8 já pegou naquela mesma linha. **O experimento custa um reinício e nenhum risco**: religar com o SSD conectado, sem job armado e com o `grub.cfg` inerte. Parando no Windows, a NVRAM acompanhou; parando no menu do Clonezilla, não acompanhou. Ver [ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md) |
 
 **P-16 e P-18 fecharam no marco em hardware de 22/08/2026**, e as duas ficam
 registradas aqui porque a forma como fecharam é o que a próxima etapa precisa
@@ -284,6 +311,18 @@ saber:
 > registrou o comando que executou. Continua valendo procurar o original em
 > `recursos/capturas/` antes de tratar qualquer linha desta seção como medida;
 > o que mudou é que agora há um caso em que ele existe.
+>
+> **E o marco da E9 trouxe o vizinho do padrão, que é mais difícil de ver.** A
+> primeira linha do §3.4 tinha original, e o original era um par de leituras de
+> verdade, do mesmo evento, com hora. Nada nele veio de trabalho manual. O que
+> estava errado era o **alcance**: aquele par foi lido de dentro do mesmo boot
+> do live, e por isso só podia falar do `ocs-sr` — e a linha o apresentava como
+> resposta sobre a restauração inteira. Ninguém teria achado isso procurando
+> original, porque o original estava lá.
+>
+> A pergunta que separa os dois casos é outra, e vale a pena carregá-la:
+> **entre que dois instantes esta evidência foi tirada, e a pergunta cabe
+> dentro deles?** Ver o ADR-0012.
 
 ## 4. Estrutura de um dispositivo
 
@@ -575,7 +614,9 @@ Firmware carrega o Clonezilla → monta `LABEL=ARCAVAULT` em `/home/partimag` �
 ### 5.4 — Ao voltar
 
 Executado de verdade em 22/08/2026, às 21:14:49, colhendo o primeiro backup que
-o ARCA disparou:
+o ARCA disparou. **Transcrição conferida contra a tela original em 23/08/2026,
+e ela bate linha a linha** — o que estava escrito aqui era o que saiu, e não a
+lembrança de quem escreveu:
 
 ```
 > arca resultado
@@ -765,9 +806,18 @@ A escolha acontece **no Windows**, com a lista à vista. O Clonezilla executa se
 > de novo na E9 e achado **rodando o comando de verdade**, e não lendo o
 > código.
 >
-> **As cinco linhas depois da confirmação e o aviso final ainda não rodaram**:
-> elas são o marco em hardware da E9. O que está impresso ali é o que o código
-> monta, e a única parte desta tela sem execução real.
+> **As cinco linhas depois da confirmação e o aviso final rodaram em
+> 23/08/2026, e são a única parte desta tela sem captura.** Elas foram
+> impressas de verdade — o job foi armado às 11:10:50, e o `estado.json` que
+> sobrou registra selo, comando, nome, disco e momento. O que não sobrou foi a
+> tela: **a sessão que a imprimiu morreu no reinício que ela mesma disparou**, e
+> o `arca.log` que teria a linha do armar mora no `C:` e foi destruído pela
+> própria restauração (§4.1).
+>
+> É o mesmo caso do `grub.cfg` armado que a E8 registrou. O código as reproduz
+> de forma determinística, e **reprodução não é captura**. O texto acima é o
+> que o código monta; o que atesta que a operação aconteceu está ao lado dele,
+> em `recursos/capturas/`, e é o desfecho com o mesmo selo do `estado.json`.
 
 ### 6.2 — O que a imagem carrega, e o que R-2 confere
 
@@ -818,8 +868,8 @@ escrito pelo próprio Clonezilla.
 
 ### 6.3 — Ao voltar de uma restauração
 
-O mesmo `arca resultado` do §5.4, e a saída muda em três coisas. Montada na
-etapa E9; ainda sem execução real, como a segunda metade do §6.1:
+O mesmo `arca resultado` do §5.4, e a saída muda em três coisas. **Execução
+real desta máquina, em 23/08/2026 às 11:50:53** — a colheita do marco da E9:
 
 ```
 > arca resultado
@@ -828,13 +878,17 @@ Restauracao 2026-08-22_Apps
   22/08 · 39,7 GB
   Desfecho: concluida — o selo bate e a receita chegou ao fim
   Imagem de origem: APROVADA — veredito do backup que a criou, e nao desta operacao
-  Selo: <16 digitos hexadecimais>
+  Selo: ce04819cf0ee96f7
 
   Desarmando SSD .................. ok · R:\boot\grub\grub.cfg
   Job ............................. encerrado · o desfecho foi lido e dito
 
 Imagens em ARCAVAULT:
-  ...
+  2026-08-21_WindowsCompleto   21/08 · 36,2 GB · aprovada
+  2026-08-22_Apps              22/08 · 39,7 GB · aprovada
+  ARCA-TESTE-03                22/08 · 32,9 GB · aprovada
+
+125 GB livres
 
   A RESTAURACAO TERMINOU, e o `OK` acima vem de UM sinal so. Num backup o
   ARCA tem dois — a conferencia nativa do Clonezilla e o `ocs-chkimg` de
@@ -844,11 +898,34 @@ Imagens em ARCAVAULT:
   ARCA-LOGS\restauracao-2026-08-22_Apps\arca-restore.log, no ARCAVAULT, que
   a restauracao nao tocou.
   O `arca.log` do lado Windows foi DESTRUIDO por esta operacao: ele mora
-  em %LOCALAPPDATA%\ARCA, no C:, que e o que a imagem substituiu. [...]
+  em %LOCALAPPDATA%\ARCA, no C:, que e o que a imagem substituiu. O que
+  estiver la agora veio de dentro da imagem, e e de outro tempo. Quem
+  sobreviveu foi o `estado.json` do ARCABOOT, e e para isto que §4.1
+  existe.
 
   O dispositivo ja foi desarmado acima, e com isso fechou a janela em que
   um reinicio com o SSD conectado restauraria de novo (ADR-0009).
 ```
+
+**E as duas telas existem de verdade, lado a lado.** A do §5.4 saiu às 21:14:36
+de 22/08 e esta às 11:50:53 de 23/08 — mesmo dispositivo, catorze horas e uma
+operação destrutiva entre elas. O que as separa é o que está abaixo, e o que
+**não** as separa vale igual:
+
+| | Backup, 22/08 21:14 | Restauração, 23/08 11:50 |
+|---|---|---|
+| Título | `Backup 2026-08-22_Apps` | `Restauracao 2026-08-22_Apps` |
+| Veredito | `Verificacao: APROVADA` | `Imagem de origem: APROVADA — veredito do backup que a criou, e nao desta operacao` |
+| Selo | `7d2d2f5153625b38` | `ce04819cf0ee96f7` |
+| Conselho | nenhum | os três do §6.3 |
+| Desarmar, `Job`, listagem, espaço | **idênticos** | **idênticos** |
+
+A última linha é a que ninguém tinha pedido: **as três imagens saem com os
+mesmos tamanhos e os mesmos vereditos, e o espaço livre exibido é o mesmo.** A
+restauração leu 39,7 GB do `ARCAVAULT` e escreveu 16 KB nele — o
+`arca-restore.log` e o `arca-fim.txt` —, o que não move um número em GB. É a
+frase *"no ARCAVAULT, que a restauracao nao tocou"* deixando de ser afirmação e
+virando observação.
 
 **As três diferenças, e todas vêm do mesmo lugar: numa restauração a pasta é a
 imagem de *origem*, e não o que a operação produziu.**
@@ -867,6 +944,25 @@ imagem de *origem*, e não o que a operação produziu.**
    sinal só (P-6), que o `arca.log` do lado Windows foi destruído pela operação
    (§4.1), e que o desarmar acima fechou a janela do ADR-0009 — que numa
    restauração é destrutiva.
+
+> **O terceiro conselho estava certo, e a execução real mostrou que ele é
+> curto.** O `arca.log` foi mesmo destruído, e dá para ver exatamente onde: a
+> última linha do lado de lá é de 22/08 às 20:53:48 — o armar do **backup** —, e
+> a seguinte já é a desta colheita. Sumiu no meio, entre outras coisas, **a
+> linha do armar desta própria restauração**, escrita quarenta minutos antes.
+> A operação apaga o registro de que ela foi armada.
+>
+> Quem lê a tela não precisa disso para agir, e por isso o conselho fica como
+> está. Mas é a diferença entre *"o arquivo lá é de outro tempo"* e *"o arquivo
+> lá não tem esta operação"*, e a segunda é a que explica por que o
+> `estado.json` do `ARCABOOT` não é redundância. Medido em
+> `recursos/capturas/arca-log-windows-2026-08-23-pos-restauracao.txt`.
+
+> **E o segundo juiz apareceu, pelo caminho que a tela manda usar.** *"O juiz
+> que falta é o Windows subir: religue e confira"* — o Windows subiu, e este
+> documento está sendo editado nele. P-6 continua aberta, porque um êxito não
+> exercita o ramo de falha; o que a operação fecha é a dúvida sobre esta
+> restauração, e não sobre o mecanismo.
 
 ### 6.4 — Windows não boota
 
@@ -1233,7 +1329,7 @@ Cada uma custou uma execução real para aparecer.
 | Pipe na receita | Clonezilla ignora tudo e abre o menu — indistinguível de "o boot não funcionou" | C-2 |
 | `;` em vez de `if/then/else` | Falha deixa o mesmo rastro que sucesso | R-5 — e a defesa **rodou em 22/08/2026**, pela primeira vez, tomando o ramo do sucesso. O ramo da falha continua sem rodar (P-6) |
 | Documentar como fundação o que veio do trabalho de validação | O `ARCA_VEREDITO=`, o `arca-fim.txt` de 21/08, o `set default`, o `498,7 GB` e a ordem de boot com o dispositivo à frente pareciam medidas, e vieram do trabalho em volta | Procurar o original em `recursos/capturas/` antes de chamar qualquer coisa de medida. **Em 22/08 o padrão não se repetiu**: o `arca-fim.txt` do marco tem original, e o que atesta que a receita o escreveu é o `Info-saved-by-cmd.txt` que o Clonezilla escreve sozinho |
-| Relógio do Clonezilla 3h adiantado | Ele lê o RTC (hora local do Windows) como UTC. Uma trava construída sobre comparação de datas reprovou um backup perfeito | S-6. **Confirmado outra vez em 22/08, pelo outro lado**: o `arca-fim.txt` escrito às 21:06 tem `mtime` de 18:06 lido do Windows, e parece anterior ao job que o produziu. É o mesmo instante em dois fusos, e é por isso que quem liga desfecho a job é o selo |
+| Relógio do Clonezilla 3h adiantado | Ele lê o RTC (hora local do Windows) como UTC. Uma trava construída sobre comparação de datas reprovou um backup perfeito | S-6. **Confirmado outra vez em 22/08, pelo outro lado**: o `arca-fim.txt` escrito às 21:06 tem `mtime` de 18:06 lido do Windows, e parece anterior ao job que o produziu. É o mesmo instante em dois fusos, e é por isso que quem liga desfecho a job é o selo. **E de novo em 23/08, com a mesma diferença e o mesmo sinal**: o log diz `Ending /usr/sbin/ocs-sr at 2026-08-23 11:31:55 UTC`, o `mtime` visto do Windows é 08:31:55, e o job foi armado às 11:10:50 — o desfecho parece ter sido escrito quarenta minutos antes de a operação começar |
 | **Medir o firmware depois do reinício e achar que se mediu o reinício** | As duas leituras do `bcdedit` de 22/08 discordam entre si, e as duas estão certas: a ordem de boot mudou no meio — e quem a mudou foi o próprio ciclo de boot. Uma leitura feita no Windows descreve o firmware **como ele ficou** | Ler a NVRAM de dentro do live, que é onde o boot está acontecendo. O Clonezilla já grava `efi-nvram.dat` em toda imagem, de graça (§3.1, [ADR-0009](../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md)) |
 | Argumentos perdidos na reelevação | `--dry-run` virou execução real, sem aviso | C-7 |
 | Crase como escape | O parser do Windows reparte a linha, não o do PowerShell | C-8 |
@@ -1250,6 +1346,9 @@ Cada uma custou uma execução real para aparecer.
 | **Uma recusa por identidade do Windows guardando um valor do Linux** | R-8 recusa o dispositivo como destino **pela letra** (`E:`, `R:`); o nome que entra na receita é do **Linux**, e sai de um casamento por **modelo** nos `blkdev.list` (§4.5). São dois canais de identidade, e o vão entre eles apagava o dispositivo: com um segundo disco do mesmo modelo dele, `--destino <o outro>` passava pela recusa por letra e a receita saía `restoredisk <imagem> sda` — o `sda` é o dispositivo. A recusa dura tinha um contorno por acidente de modelo | Resolver o nome do Linux do **dispositivo** pelo mesmo oráculo e comparar com o do destino. Achado pela revisão de código da E9, e é o defeito mais grave que ela pegou |
 | **Uma identidade vazia casando com tudo ou com nada** | O `Model:` do `<disco>-gpt.sgdisk` era opcional, e um modelo vazio viajava: a conferência de R-2 recusava uma imagem coerente por "as fontes discordam", a busca do destino dizia "nenhum disco tem o modelo ``", e a tela de confirmação imprimia `Origem da imagem:  · nvme0n1`. É o mesmo raciocínio que faz o leitor do WMI exigir o `Model` em vez de supor | Exigir o `Model:`, com recusa própria. O modelo é a identidade do disco, e o ARCA não confere um destino contra identidade nenhuma |
 | **A recusa engolindo a notícia do desarmar** | C-1 desarma incondicionalmente, como primeiro passo; uma recusa posterior sobe como erro e corta a saída. Quem rodasse `arca restore --destino <errado>` num dispositivo armado veria só a recusa, e o job armado teria sumido em silêncio. **Aconteceu duas vezes**: a revisão da E7 pegou no `arca backup`, e a E9 cometeu de novo no `arca restore` — com o comentário que descreve o defeito a poucas linhas de distância | Imprimir o que já aconteceu **antes** de julgar. As duas telas saem em duas metades, e a primeira traz o desarmar. Achado rodando o comando de verdade, e não relendo o código |
+| **Um par honesto respondendo por um evento maior do que ele** | O §3.4 dizia que a restauração não mexe na NVRAM, sustentado num par `antes`/`depois` real, do mesmo evento, com hora — nada dele veio de trabalho manual. Só que as duas leituras são **do mesmo boot do live**, e por isso só podiam falar do `ocs-sr`. O ciclo inteiro faz outra coisa: a ordem permanente volta ao que está dentro da imagem. Procurar o original não acharia este defeito, porque o original estava lá | Perguntar **entre que dois instantes** a evidência foi tirada, e se a pergunta cabe dentro deles. O par da E9 é do lado Windows e atravessa o reinício ([ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)) |
+| **A operação apagando o registro de que foi armada** | O `%LOCALAPPDATA%\ARCA\arca.log` mora no `C:`. Numa restauração, a linha do armar é escrita minutos antes do reinício e **substituída pela imagem** junto com o resto do disco: o log que sobra salta do último comando de antes da imagem direto para a colheita. E a tela que a imprimiu morreu no reinício que ela disparou | §4.1 — o `estado.json` mora no `ARCABOOT` e sobrevive. É o único lugar que liga o selo do desfecho a um job, e a colheita de uma restauração se vira só com ele (§6.3) |
+| **O log do Clonezilla não é o log inteiro** | O `arca-restore.log` do marco tem o fim da operação e não tem o começo: uma passagem só do Partclone — a da última partição, 1,1 GB —, nenhuma das outras três, e um `Ending /usr/sbin/ocs-sr` sem o `Starting` correspondente. Causa não determinada. O §6.3 aponta esse arquivo a quem quer saber o que aconteceu, e o que está lá **pode não cobrir a parte que falhou** | Saber disso antes de concluir qualquer coisa por ausência. Medir de novo na próxima restauração, e perguntar se o corte cai sempre no mesmo lugar |
 
 ## 12. Decisões e pendências
 
@@ -1301,6 +1400,8 @@ Cada uma custou uma execução real para aparecer.
 | ~~P-16~~ | ~~O mecanismo de desfecho nunca rodou.~~ **Fechada em 22/08/2026, etapa E8.** `arca-fim.txt`, selo na receita, `ARCA_FIM` e `if/then/else` estrearam todos de uma vez, e o selo do desfecho bate com o do `estado.json`. Ver §3.5 |
 | ~~P-17~~ | ~~`-icds` contradiz R-7.~~ **Fechada em 23/08/2026, etapa E9.** O help está certo e a premissa de R-7 estava errada: o Clonezilla confere e **desiste**, não corrompe. R-7 foi reescrito — a recusa fica, e a razão passa a ser que a do Clonezilla acontece do outro lado do reinício. E resolver isso obrigou a descobrir a armadilha da régua: o `Win32_DiskDrive` e o `MSFT_Disk` dão dois tamanhos para o mesmo disco. Ver [ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md) |
 | P-21 | **O `ocs-sr` sai com código ≠ 0 quando desiste por destino menor?** — ver §3.5. É P-6 com outra roupa, e não é urgente: R-7 recusa antes, do lado Windows |
+| P-22 | **O `bcdedit /enum firmware` mostra a NVRAM, ou o BCD do disco?** — ver §3.5. Aberta no marco da E9, e importa porque a linha `Ordem de boot` do `arca status` é uma afirmação de segurança lida dali. Fecha com um reinício com o SSD conectado, sem job armado |
+| P-23 | **Por que o `arca-restore.log` começa no meio?** — ver §3.5. Aberta no marco da E9. O §6.3 aponta esse arquivo a quem quer saber o que aconteceu, e ele não traz a operação inteira. Fecha na próxima restauração |
 
 ---
 

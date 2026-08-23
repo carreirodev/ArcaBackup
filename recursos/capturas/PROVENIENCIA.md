@@ -188,7 +188,8 @@ O resumo do que elas mostram, para quem chegar aqui primeiro:
 | 22/08 manhã | `bcdedit /enum {fwbootmgr}` desta máquina | `{bootmgr}` | — |
 | 22/08 ~20:57 | **`nvram-live-2026-08-22.txt`** — está neste diretório | **`0000,0001`** | **`0001`** |
 | 22/08 21:17 | `bcdedit-enum-firmware-2026-08-22-pos-marco.txt` | `{f4057bd0}`, `{bootmgr}`, `{687478f2}` | — |
-| 23/08 | `bcdedit /enum {fwbootmgr}` desta máquina | `{f4057bd0}`, `{687478f2}`, `{bootmgr}` | — |
+| 23/08 manhã | `bcdedit-enum-firmware-2026-08-23-antes-da-restauracao.txt` | `{f4057bd0}`, `{687478f2}`, `{bootmgr}` | — |
+| **23/08 12:12** | **`bcdedit-enum-firmware-2026-08-23-pos-restauracao.txt`** — depois da restauração | **`{bootmgr}`** — e a `{687478f2}` sumiu inteira | — |
 
 > **As duas linhas de 21/08 eram uma só até a etapa E9, e a que estava aqui é
 > da restauração.** Os `nvram-antes.txt` e `-depois.txt` moram em
@@ -350,6 +351,15 @@ de originais, que é a ambiguidade que este documento inteiro existe para
 desfazer. Quem quiser a linha, gera; e o exemplo diz, no cabeçalho, que ela é
 reprodução e não captura.
 
+**As telas do `arca resultado`, pelo mesmo critério.** As duas colheitas — o
+backup em 22/08 às 21:14:36 e a restauração em 23/08 às 11:50:53 — foram vistas
+em tela e transcritas para o §5.4 e o §6.3 do PRD, e a do §5.4 foi **conferida
+linha a linha** contra a original em 23/08. Uma transcrição conferida é uma boa
+transcrição, e continua não sendo um arquivo que o hardware escreveu: o ARCA
+imprime no console, e o que ele grava em disco são o `arca.log` e o
+`estado.json`, que estão aqui. O lugar das telas é o PRD, onde elas
+documentam a interface; esta pasta é dos arquivos.
+
 ## O modelo do bloco do ARCA é o `live-toram` (etapa E7)
 
 Achado ao decidir a forma do `menuentry` que a E7 insere. A captura
@@ -400,7 +410,9 @@ Ela existe porque o §3.4 diz que `-iefi` não toca na NVRAM, e a evidência dis
 é um **par** — antes e depois do mesmo evento. As três restaurações que
 sustentam aquela seção foram feitas à mão, e o par delas foi escrito de dentro
 do live; esta é a primeira metade do par pelo lado do **Windows**, de uma
-restauração que o ARCA vai disparar. A outra metade se tira depois de religar.
+restauração que o ARCA vai disparar. A outra metade se tirou depois de religar,
+e está na seção seguinte — **o par não fechou idêntico**, e é o achado do marco
+([ADR-0012](../../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)).
 
 **As três de NVRAM só significam alguma coisa juntas**, e é por isso que estão
 aqui as três. Uma delas sozinha diz uma ordem de boot; as três em sequência
@@ -414,6 +426,63 @@ formato, e um teste contra texto inventado provaria que eu sei imaginar o
 formato do `sgdisk`. `500.107.862.016 ÷ 512 = 976.773.168` é o mesmo número que
 o `MSFT_Disk` responde hoje, byte a byte — e o `Win32_DiskDrive` responde
 `976.768.065` para o mesmo disco (ADR-0010).
+
+## As cinco capturas do marco da E9 (23/08/2026)
+
+A restauração foi armada às 11:10:50, o `ocs-sr` terminou às 11:31:55 do
+relógio do live, e a colheita foi às 11:50:53. Estas cinco são o que sobrou
+dela, e **três não tinham original nenhum** antes deste dia.
+
+| Arquivo | O que é | SHA256 | O que prova |
+|---|---|---|---|
+| `arca-fim-restauracao-2026-08-22_Apps.txt` | `E:\ARCA-LOGS\restauracao-2026-08-22_Apps\arca-fim.txt`, 52 bytes | `95991759…457a1828` | O primeiro `ARCA_RESTORE=OK` **com selo** que existiu. O `if/then/else` de R-5 tomou o ramo do êxito numa restauração |
+| `estado-restauracao-2026-08-22_Apps.json` | `R:\arca\estado.json`, 181 bytes | `7f0be5f7…785355ea` | A outra ponta do selo, escrita no Windows **antes** do reinício. É o único registro do armar que sobreviveu (§4.1) |
+| `arca-restore-2026-08-22_Apps.log` | `E:\ARCA-LOGS\restauracao-2026-08-22_Apps\arca-restore.log`, 16600 bytes | `e4cba0de…faffaa8e` | O log do Clonezilla que a receita redireciona (D2). **Começa no meio** — ver abaixo |
+| `bcdedit-enum-firmware-2026-08-23-pos-restauracao.txt` | `bcdedit /enum firmware`, 1334 bytes | `d837093d…f204f15e` | A segunda metade do par. **É byte a byte a captura da E2**, de 22/08 de manhã |
+| `arca-log-windows-2026-08-23-pos-restauracao.txt` | `%LOCALAPPDATA%\ARCA\arca.log`, 24583 bytes | `fb07ca73…1244d4aa` | §4.1 medida: o log salta de 22/08 20:53:48 direto para 23/08 11:50:53 |
+
+### As duas pontas do selo, e cada uma de um lado do reinício
+
+`ce04819cf0ee96f7`, no `estado.json` do `ARCABOOT` e na primeira linha do
+`arca-fim.txt` do `ARCAVAULT`. Uma foi escrita pelo Windows antes de a máquina
+desligar; a outra pelo `bash` do live, depois de o disco inteiro ter sido
+apagado e reescrito. E o Windows que lê as duas agora **não é o mesmo** que
+escreveu a primeira: ele veio de dentro da imagem.
+
+### O `arca-restore.log` não é o log inteiro, e isso só se vê medindo
+
+Ele tem o fim da operação e não tem o começo. Uma passagem só do Partclone — a
+da `nvme0n1p4`, 1,1 GB em 8,64 s, a última das quatro —, nenhuma da `p1`, `p2`
+ou `p3`, e nenhum `Starting /usr/sbin/ocs-sr` para o `Ending` que está lá. O
+arquivo abre com as sequências de limpeza de tela com que cada passagem do
+Partclone começa.
+
+Está aqui assim mesmo, e a cópia é byte a byte do que estava no `ARCAVAULT`:
+**o que ele é vale mais do que o que ele deveria ser.** O §6.3 manda quem
+colheu uma restauração procurar ali, e quem procurar precisa saber que o que
+está ali pode não cobrir a parte que falhou.
+
+A causa não está determinada. A pergunta para a próxima restauração é se o
+corte cai sempre no mesmo lugar.
+
+### O `arca.log` é a captura que prova o buraco, e não o que ele contém
+
+Ele é o único arquivo deste diretório que está aqui **pelo que lhe falta**. A
+última linha do lado de lá é de 22/08 às 20:53:48 — o armar do backup —, e a
+seguinte é de 23/08 às 11:50:53, a colheita da restauração. Sumiram no meio a
+colheita do backup das 21:14, o `--dry-run` da manhã de 23/08, a recusa da
+confirmação errada, e **a linha do armar desta restauração**.
+
+A operação destruiu o registro do próprio armar. O que sobrou está no
+`estado.json`, no `ARCABOOT`, e é para isto que o §4.1 existe.
+
+### O que se perdeu, e não dá para recuperar
+
+**A tela do `arca restore` depois da confirmação** — as cinco linhas do §6.1 e
+o aviso de C-9. Elas foram impressas de verdade, e a sessão que as imprimiu
+morreu no reinício que ela mesma disparou. É o mesmo caso do `grub.cfg` armado
+que a E8 registrou: o código as reproduz de forma determinística, e
+**reprodução não é captura**, que é a razão de este diretório existir.
 
 ## O que nenhuma delas contém
 

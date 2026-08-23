@@ -53,7 +53,7 @@ O `bootsequence` do `{fwbootmgr}`: a marca que manda o firmware bootar por uma e
 _Evitar_: BootNext, boot temporário, agendamento de boot
 
 **Ordem permanente**:
-O `displayorder` do `{fwbootmgr}`: por onde a máquina boota quando ninguém pediu nada. **O ARCA nunca a toca** — nem para pôr, nem para tirar, nem para consertar. Ela muda sozinha no ciclo de boot pelo dispositivo, e por isso é lida e relatada, e não corrigida.
+O `displayorder` do `{fwbootmgr}`: por onde a máquina boota quando ninguém pediu nada. **O ARCA nunca a toca** — nem para pôr, nem para tirar, nem para consertar. Ela muda sozinha no ciclo de boot pelo dispositivo, e por isso é lida e relatada, e não corrigida. **E uma restauração a devolve ao que está dentro da imagem**, porque o BCD mora na partição EFI e a partição EFI é restaurada junto — medido em 23/08/2026 ([ADR-0012](docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)).
 _Evitar_: BootOrder, ordem de boot, boot padrão
 
 **Estado inerte**:
