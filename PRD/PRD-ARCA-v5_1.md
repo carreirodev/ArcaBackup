@@ -58,7 +58,7 @@ O procedimento manual exige ~20 telas em modo texto, em inglês técnico, sendo 
 - ❌ Agendamento
 - ❌ Retenção automática
 - ❌ Interface gráfica
-- ❌ Criador de partições (ver [P1](#71--o-arca-não-cria-partições))
+- ❌ Gerenciador de discos de uso geral. O `arca prepare` particiona **o dispositivo**, e só ele, com o disco nomeado pelo usuário e confirmado por escrito — disco fixo é recusa dura (ver [P1](#71--o-arca-particiona-o-dispositivo-e-nunca-escolhe-o-disco))
 - ❌ Suporte a BIOS legada, BitLocker, RAID, Storage Spaces
 
 **Princípio:** se a informação já existe na listagem de diretórios do dispositivo, não há o que armazenar.
@@ -283,7 +283,7 @@ Restauração real sobre o `nvme0n1`. Do comando ao Windows restaurado, **sem in
 |---|---|
 | P-6 | **O `ocs-sr` devolve código diferente de zero quando falha?** O ramo de sucesso foi medido; o de falha não. Uma restauração bem-sucedida não fecha isso, por definição. Fecha com falha forçada, provavelmente em VM |
 | P-19 | **Só quando ela foi consumida por `bootsequence`?** — a metade que sobrou. **A primeira metade fechou na E9, pela negativa: o firmware NÃO reescreve a entrada em todo boot pelo dispositivo.** Em 20/08 houve pelo menos três boots pelo dispositivo, e em todas as capturas a entrada continua na forma que o `bcdedit` escreve — `Clonezilla`, caminho em minúsculas, `BCDOBJECT` presente —, inclusive em dois deles com a entrada fora da frente da ordem. O que **não** fecha é datar a reescrita: uma captura feita durante o boot N mostra a NVRAM como ela está, e não qual boot a deixou assim. O experimento que fecha é **um backup disparado por F12**, com o `bcdedit` lido imediatamente antes. Ver [ADR-0011](../docs/adr/0011-as-capturas-de-21-08-sao-de-dois-boots.md) |
-| P-21 | **O `ocs-sr` sai com código diferente de zero quando desiste por destino menor?** Aberta na E9, e é P-6 com outra roupa: o help diz que ele *"quit"*, e se esse `quit` sair com zero o `if/then/else` de R-5 escreve `ARCA_RESTORE=OK` sobre uma restauração que não aconteceu. **Não é urgente**, e a razão é o desenho: R-7 recusa antes, do lado Windows, e essa pergunta só chega a importar se a recusa do ARCA tiver um furo ([ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)) |
+| ~~P-21~~ | **Fechada por escopo em 23/08/2026** ([ADR-0015](../docs/adr/0015-a-restauracao-so-restaura-no-disco-de-origem.md)): só o disco de origem é destino válido, então o caso que esta pergunta descreve não é alcançável pelo ARCA. ~~O `ocs-sr` sai com código diferente de zero quando desiste por destino menor?~~ Aberta na E9, e é P-6 com outra roupa: o help diz que ele *"quit"*, e se esse `quit` sair com zero o `if/then/else` de R-5 escreve `ARCA_RESTORE=OK` sobre uma restauração que não aconteceu. **Não é urgente**, e a razão é o desenho: R-7 recusa antes, do lado Windows, e essa pergunta só chega a importar se a recusa do ARCA tiver um furo ([ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)) |
 | ~~P-20~~ | ~~O `arca resultado` deve devolver o `{bootmgr}` à frente do `displayorder`.~~ **Fechada em 23/08/2026, etapa E10.** Virou **C-13**. Os quatro comandos foram medidos à mão antes de virar código — `/addfirst` move e não duplica, `/remove` tira sem apagar o objeto, e os quatro respondem "êxito" com código 0 inclusive quando não mudam nada. `/addfirst {bootmgr}` ficou, e `/remove` foi descartado pelo modo de falha: ele precisa acertar **quais** entradas tirar, e essa é a pergunta que a revisão do marco da E8 já pegou respondida errado. C-5 ganhou limite explícito em vez de exceção. Ver [ADR-0013](../docs/adr/0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md) |
 | P-23 | **Por que o `arca-restore.log` começa no meio?** Aberta no marco da E9, medindo o primeiro original que ele teve. Ele traz uma passagem só do Partclone — a da última das quatro partições — e um `Ending /usr/sbin/ocs-sr` sem o `Starting`. A receita redireciona com `> … 2>&1`, e o `arca-check.log` do backup não tem esse corte. **Importa porque o §6.3 aponta esse arquivo a quem quer saber o que aconteceu.** Fecha na próxima restauração, e a pergunta é se o corte cai sempre no mesmo lugar |
 | P-22 | **O `bcdedit /enum firmware` mostra a NVRAM do firmware, ou o BCD do disco?** Aberta no marco da E9. Nunca precisou de resposta até a restauração devolver a ordem permanente de dentro da imagem: **se é o BCD, a NVRAM pode continuar com o dispositivo à frente e a máquina continuaria bootando nele — enquanto a linha `Ordem de boot` do `arca status` diria que está tudo bem.** Seria uma afirmação de segurança feita sobre uma leitura que não fala da pergunta, que é o defeito que a revisão do marco da E8 já pegou naquela mesma linha. **O experimento custa um reinício e nenhum risco**: religar com o SSD conectado, sem job armado e com o `grub.cfg` inerte. Parando no Windows, a NVRAM acompanhou; parando no menu do Clonezilla, não acompanhou. Ver [ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md) |
@@ -989,28 +989,108 @@ Não há `arca restore` a rodar. Boote pelo dispositivo com F12 e use o menu do 
 
 ## 7. Fluxo: preparar dispositivo
 
-### 7.1 — O ARCA não cria partições
+### 7.1 — O ARCA particiona o dispositivo, e nunca escolhe o disco
 
-> **Princípio P1.** O ARCA não executa a operação mais destrutiva do fluxo. O que se faz uma vez por dispositivo, e destrói tudo quando sai errado, fica com o usuário e com a ferramenta do sistema.
+> **Princípio P1 (revisado em 23/08/2026).** O ARCA destrói dados quando o
+> usuário nomeou o alvo e confirmou por escrito, e **nunca por dedução**. O que
+> ele não faz é agir sobre um disco que ele mesmo escolheu.
 
-Particionar um disco é exatamente isso: a operação mais destrutiva do fluxo, feita **uma vez por dispositivo**.
+> **A versão anterior deste princípio dizia que o ARCA não executa a operação
+> mais destrutiva do fluxo, e isso nunca foi verdade.** `arca restore` apaga
+> 465 GB do disco de sistema desta máquina, e é a razão de o projeto existir;
+> particionar um pen drive vazio não chega perto. O princípio classificava por
+> **categoria da operação** quando o que separa uma da outra é **o que se perde
+> quando dá errado** — e por esse critério a ordem era a inversa. Ver
+> [ADR-0014](../docs/adr/0014-o-arca-particiona-o-dispositivo.md).
 
-`arca prepare` **exige** uma partição FAT32 vazia de ≥ 1 GB. Não havendo, imprime as instruções para criá-la no Gerenciamento de Disco e para.
+`arca prepare` **cria as duas partições e as rotula**: uma FAT32 de ≥ 1 GB para
+o `ARCABOOT` e o resto do espaço em NTFS para o `ARCAVAULT`. Antes de escrever
+qualquer coisa, imprime o que vai acontecer com aquele disco e exige
+confirmação digitada (PR-4, PR-5, S-2).
+
+**A estrutura é transcrita, e não inventada.** Medida no dispositivo desta mesa
+em 23/08/2026 e preservada em
+`recursos/capturas/estrutura-de-particoes-do-dispositivo-2026-08-23.txt`:
+
+| | Valor medido |
+|---|---|
+| Estilo | **MBR** — e boota por UEFI assim mesmo |
+| Partição 1 | `MbrType 7` (IFS/NTFS), offset 1.048.576, o resto do disco → `ARCAVAULT` |
+| Partição 2 | `MbrType 12` (FAT32 LBA), 1.677.721.600 bytes, no fim → `ARCABOOT` |
+| `IsActive` | nenhuma das duas — o boot é UEFI puro, não BIOS |
+| Unidade de alocação | 4096 nas duas |
+
+O esquema canônico moderno seria GPT com uma ESP. **Este não é ele, e é o que
+está bootando aqui desde 19/08** — o `bcdedit` aponta `partition=R:` para
+`\EFI\boot\bootx64.efi`, e o `efi-nvram.dat` de dentro das imagens registra a
+máquina tendo bootado por ali. Trocar por GPT seria abandonar um esquema medido
+por um suposto, num lugar cujo modo de falha é um dispositivo que não boota —
+descoberto **depois** de o Windows já ter sido apagado, porque é aí que alguém
+precisa dele.
+
+**O que o ARCA não faz é escolher o disco.** O alvo vem por
+`--dispositivo <índice>`, no molde do `--destino <índice>` da E9, e mesmo
+havendo um só candidato ele é mostrado e confirmado, nunca assumido. Disco fixo,
+disco de sistema e disco de boot são **recusa dura**, sem opção de forçar: a
+identificação de disco é onde este código já errou uma vez (revisão da E9,
+R-8), e `arca prepare` roda antes de existirem os rótulos que B-1, S-3 e C-10
+usariam para se defender.
 
 ```
-> arca prepare
+> arca prepare --dispositivo 1
 
-Dispositivo: KGSSE100 256GB
-  sda1  NTFS   236,9 GB  ARCAVAULT   ok
-  sda2  FAT32    1,6 GB  ARCABOOT    ok
+Disco 1 ......................... KGSSE100 256 · USB · 238,5 GB
+Tipo de midia ................... External hard disk media · nao e disco fixo
+Sistema ......................... nao e o disco do Windows, nem o de boot
 
-  Baixando Clonezilla ............. ok  (checksum conferido)
+O QUE EXISTE NESTE DISCO HOJE, e vai ser APAGADO:
+  1  NTFS   236,9 GB  "Backups antigos"   E:
+  2  FAT32    1,6 GB  (sem rotulo)        (sem letra)
+
+O QUE VAI FICAR NO LUGAR:
+  MBR  1  NTFS   236,9 GB  ARCAVAULT   as imagens moram aqui
+       2  FAT32    1,6 GB  ARCABOOT    o Clonezilla e o ARCA moram aqui
+
+Digite o modelo do disco para confirmar: KGSSE100 256
+
+  Particionando ................... ok · MBR, 2 particoes
+  Formatando e rotulando .......... ok · ARCAVAULT (NTFS) · ARCABOOT (FAT32)
+  Conferido apos escrever ......... ok · relido do disco
+  Baixando Clonezilla ............. ok  (SHA256 conferido)
   Extraindo ....................... ok
   Instalando o ARCA em ARCABOOT ... ok
-  Entrada de firmware ............. migrada de "Clonezilla"
+  Copia do pacote em ARCAVAULT .... ok
+  Entrada de firmware ............. criada · {…} · partition=R:
 
 Dispositivo pronto.
 ```
+
+> **Esta tela é o desenho da E10, e nada dela rodou.** Ela está aqui para dizer
+> o que a etapa tem de construir — as três linhas do meio, o que existe e o que
+> vai ficar, são PR-4 na letra: quem vai perder dados precisa reconhecê-los
+> antes. A confirmação pede o **modelo do disco** e não um `s`, pelo mesmo
+> motivo que a restauração pede o nome da imagem por extenso (S-2, R-3).
+>
+> A última linha diz **criada**, e não *migrada*: num dispositivo novo não há
+> entrada `Clonezilla` a migrar, e criar entrada de firmware do zero é o código
+> sem original que a E7 recusou escrever e mandou para cá.
+
+> **A tela anterior desta seção mostrava as duas partições já prontas, com um
+> `ok` ao lado de cada uma — e escondia uma pergunta que ninguém tinha feito:
+> quem põe o rótulo `ARCAVAULT`?** As linhas de ação abaixo dela só falavam do
+> `ARCABOOT`, e a única coisa que o ARCA escrevia no `ARCAVAULT` era a cópia de
+> PR-3. A pergunta apareceu em 23/08/2026 e foi o que levou à revisão de P1: se
+> era o usuário quem rotulava, o modo de falha real — rotular a partição errada
+> e o ARCA aceitar sem discutir — continuava de pé, e a fricção não comprava
+> nada.
+>
+> **E uma consequência que só apareceu ao escrever isto:** `arca prepare` é **o
+> único comando que não consegue se localizar pelos rótulos** (B-1, S-3),
+> porque no disco que ele vai preparar eles ainda não existem. Ele roda num
+> mundo onde as defesas dos outros comandos não se aplicam — nem C-10, que não
+> tem o que recusar quando não há rótulo nenhum na mesa —, e é por isso que as
+> sete defesas de PR-5 são dele sozinho. Ver a seção E10 do
+> [plano de etapas](implementation_stages.md).
 
 ## 8. Comandos
 
@@ -1110,7 +1190,7 @@ Todos exigem privilégio administrativo.
 | R-4 | Sempre `-e1 auto -e2 -batch -j2 -k0 -iefi -p true`, **nesta ordem**, sempre **sem** `-g auto`. `-e1` e `-e2` acertam a geometria CHS da partição de boot NTFS: inócuos no mesmo disco, e é o que faz a restauração funcionar em outro (R-7). Estavam na restauração validada e o requisito não os listava. `-p true` em vez do `-p poweroff` que rodou, porque com a máquina desligando dentro do `ocs-sr` o desfecho de R-5 nunca seria escrito |
 | R-5 | Receita com `if/then/else`: escrever `ARCA_RESTORE=OK` ou `ARCA_RESTORE=FALHOU`. Era código novo — as três receitas preservadas encadeiam com `;`. **A forma rodou em 22/08/2026 no backup**, tomando o ramo do sucesso; para a restauração continua sem original, e o ramo de falha depende de P-6 |
 | R-6 | Ler esse arquivo na volta e **conferir o selo antes de acreditar nele** (C-11). O job fantasma que isto previne é **risco herdado**, e não corrente: §4.1 eliminou a causa ao tirar o ARCA do `C:`, e só imagens feitas antes disso carregam estado dentro de si. O selo cobre de qualquer forma, e é o mesmo mecanismo dos outros três casos (§4.3) |
-| R-7 | Destino diferente do disco de origem é **permitido**, e nomeado por `--destino <indice>` — o índice do **Windows**, que o ARCA traduz para o nome do Linux pelo `blkdev.list` (§4.5) e que nunca chega à receita. Recusar sempre que o destino for **menor** que a origem. *(Etapa E9: ~~`-k0` copia a tabela inteira e, num disco menor, corrompe em vez de falhar~~ — **a premissa estava errada, e P-17 é isso**. O help do `ocs-sr` desta versão diz que o Clonezilla **confere o tamanho do destino por padrão e desiste** se for menor; `-icds` é quem desligaria a conferência, e a receita não o usa. A recusa do ARCA fica, e a razão passa a ser **onde** ela acontece: a do Clonezilla custa um reinício de uma operação destrutiva, e a do ARCA custa zero. A comparação sai em **setores**, com o destino medido pelo `MSFT_Disk` e a origem lida do `<disco>-gpt.sgdisk` de dentro da imagem — as duas na mesma régua. Setor lógico diferente entre origem e destino é recusa, e não conversão. Ver [ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md).)* Em disco novo, `-iefi` não encontra entrada correspondente e o `bcdboot` volta a ser necessário — ao contrário do que §3.4 mediu no disco original |
+| R-7 | **O único destino válido é o disco de origem**, e a medição prova **identidade**, não capacidade: os setores que a GPT de dentro da imagem registra têm de bater **exatamente** com os que o `MSFT_Disk` responde para o disco na mesa. Não batendo — para mais ou para menos —, recusa. *(Revisado em 23/08/2026, [ADR-0015](../docs/adr/0015-a-restauracao-so-restaura-no-disco-de-origem.md): destino divergente deixou de existir por decisão de escopo, e com ele o `--destino <indice>`. Igualdade exata é mais difícil de satisfazer por acidente do que `≥`, então a defesa endureceu sem custar código. Havendo dois discos do mesmo modelo, o ARCA **recusa e para** em vez de pedir que alguém aponte: uma dúvida do ARCA não vira afirmação do usuário sobre a qual não há como conferir nada — é o mesmo raciocínio da E7 ao não pedir o nome do disco do Linux.)* **Texto anterior:** ~~destino diferente do disco de origem é permitido, e nomeado por `--destino <indice>` — o índice do Windows, que o ARCA traduz para o nome do Linux pelo `blkdev.list` (§4.5) e que nunca chega à receita. Recusar sempre que o destino for menor que a origem.~~ *(Etapa E9: ~~`-k0` copia a tabela inteira e, num disco menor, corrompe em vez de falhar~~ — **a premissa estava errada, e P-17 é isso**. O help do `ocs-sr` desta versão diz que o Clonezilla **confere o tamanho do destino por padrão e desiste** se for menor; `-icds` é quem desligaria a conferência, e a receita não o usa. A recusa do ARCA fica, e a razão passa a ser **onde** ela acontece: a do Clonezilla custa um reinício de uma operação destrutiva, e a do ARCA custa zero. A comparação sai em **setores**, com o destino medido pelo `MSFT_Disk` e a origem lida do `<disco>-gpt.sgdisk` de dentro da imagem — as duas na mesma régua. Setor lógico diferente entre origem e destino é recusa, e não conversão. Ver [ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md).)* Em disco novo, `-iefi` não encontra entrada correspondente e o `bcdboot` volta a ser necessário — ao contrário do que §3.4 mediu no disco original |
 | R-8 | **Recusar o próprio dispositivo ARCA como destino, sempre, e sem confirmação que libere.** Restaurar nele apagaria o Clonezilla que está executando a receita e as imagens que ela lê — inclusive a que está sendo restaurada. *(Etapa E9: não havia requisito escrito para isto, e ele é a recusa mais dura do comando. Verificado pelas letras dos volumes do dispositivo contra as letras do disco escolhido, e julgado **antes** de qualquer outra recusa: o disco do dispositivo desta mesa também é menor que a origem, e se a ordem mudasse a mensagem passaria a falar de tamanho — quem lesse acharia que um SSD maior resolveria.)* |
 
 ### 9.4 — Segurança
@@ -1140,6 +1220,8 @@ Todos exigem privilégio administrativo.
 | PR-1 | Versão do Clonezilla **fixada**, com o SHA256 esperado **compilado no binário do ARCA** — nunca baixado junto do arquivo, o que não verificaria nada. Não batendo, recusar e parar |
 | PR-2 | `arca prepare --iso <caminho>` instala de arquivo local. É o que salva quando a máquina que precisa preparar o dispositivo é justamente a que está sem Windows |
 | PR-3 | Guardar no `ARCAVAULT` uma cópia do pacote usado. Dispositivo autocontido inclui poder reconstruir o dispositivo |
+| PR-4 | **`arca prepare` imprime o plano inteiro antes de agir, pergunta se pode continuar, e só então escreve.** O plano nomeia o disco — índice, modelo, `MediaType`, tamanho — e **o que existe nele hoje**, com rótulo, sistema de arquivos e tamanho de cada partição: quem vai perder dados tem de poder reconhecê-los na tela antes. A escrita só começa depois da confirmação digitada de S-2. *(Pedido em 23/08/2026. O sujeito mudou junto com P1: as instruções eram "como particionar no Gerenciamento de Disco" e passaram a ser "o que vai acontecer com este disco".)* |
+| PR-5 | **`arca prepare` cria as duas partições e as rotula**, transcrevendo a estrutura medida em §7.1 — MBR, NTFS grande para o `ARCAVAULT`, FAT32 de ≥ 1 GB no fim para o `ARCABOOT`. **Sete defesas, e nenhuma opcional**: `MediaType` removível ou externo; não ser o disco do `%SystemDrive%`, nem `IsSystem`, nem `IsBoot`; disco escolhido por `--dispositivo <índice>` e **nunca deduzido**, mesmo havendo um só candidato; o plano na tela (PR-4); confirmação digitada (S-2); `--dry-run` de primeira classe; e releitura do disco depois de escrever, no espírito de C-3. **Disco fixo é recusa dura, sem opção de forçar** — o modo de falha apaga o Windows de alguém, e nenhuma confirmação compra isso. *(Ver [ADR-0014](../docs/adr/0014-o-arca-particiona-o-dispositivo.md). A objeção que ficou registrada e virou esta lista: o perigo não é particionar, é acertar em qual disco — e `arca prepare` roda antes de existirem os rótulos que B-1, S-3 e C-10 usariam.)* |
 
 ## 10. Implementação
 
@@ -1389,7 +1471,7 @@ Cada uma custou uma execução real para aparecer.
 | `-e1 auto -e2` sempre na restauração | Estavam na única restauração que deu certo. Inócuos no mesmo disco, e é o que faz a partição de boot bater com a geometria de outro (R-7) |
 | A receita escreve `ARCA_VEREDITO=` no `arca-check.log` | Tira o veredito da dependência de interpretar frases em inglês do `ocs-chkimg` ([ADR-0003](../docs/adr/0003-veredito-lido-do-arca-check-log.md)) |
 | A receita transcreve o que rodou, e o que não tem original é marcado como código novo | Duas vezes já se documentou como fundação validada o que veio do trabalho de validação em volta dela (ADR-0004) |
-| O ARCA não cria partições | Princípio P1 |
+| ~~O ARCA não cria partições~~ **O ARCA particiona o dispositivo, e nunca escolhe o disco** | P1, revisado em 23/08/2026 ([ADR-0014](../docs/adr/0014-o-arca-particiona-o-dispositivo.md)) |
 | `toram` mantido | Evita acoplar o live system ao dispositivo que ele remonta |
 | Job ligado ao desfecho por selo, nunca por data | Não há relógio comum entre Windows e Clonezilla (P-7) |
 | A receita continua sendo string no `grub.cfg`, não arquivo | É o mecanismo medido em hardware. Trocá-lo por um `custom-ocs` em arquivo exigiria remedir, e `toram` pode desmontar o medium |
@@ -1419,7 +1501,7 @@ Cada uma custou uma execução real para aparecer.
 | ~~P-15~~ | ~~A receita de backup publicada em §10.1 divergia da fundação §3.2 quanto ao `-batch`.~~ **Fechada em 22/08/2026, etapa E3.** `-batch` rodou, nas três receitas preservadas em `recursos/capturas/`. O help do `ocs-sr` diz por que é `-batch` e não `-b`: em parâmetro de boot, o `init` do sistema também honraria `-b` |
 | ~~P-16~~ | ~~O mecanismo de desfecho nunca rodou.~~ **Fechada em 22/08/2026, etapa E8.** `arca-fim.txt`, selo na receita, `ARCA_FIM` e `if/then/else` estrearam todos de uma vez, e o selo do desfecho bate com o do `estado.json`. Ver §3.5 |
 | ~~P-17~~ | ~~`-icds` contradiz R-7.~~ **Fechada em 23/08/2026, etapa E9.** O help está certo e a premissa de R-7 estava errada: o Clonezilla confere e **desiste**, não corrompe. R-7 foi reescrito — a recusa fica, e a razão passa a ser que a do Clonezilla acontece do outro lado do reinício. E resolver isso obrigou a descobrir a armadilha da régua: o `Win32_DiskDrive` e o `MSFT_Disk` dão dois tamanhos para o mesmo disco. Ver [ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md) |
-| P-21 | **O `ocs-sr` sai com código ≠ 0 quando desiste por destino menor?** — ver §3.5. É P-6 com outra roupa, e não é urgente: R-7 recusa antes, do lado Windows |
+| ~~P-21~~ | ~~O `ocs-sr` sai com código ≠ 0 quando desiste por destino menor?~~ **Fechada por escopo em 23/08/2026**: só o disco de origem é destino válido, e o caso não é alcançável ([ADR-0015](../docs/adr/0015-a-restauracao-so-restaura-no-disco-de-origem.md)) |
 | P-22 | **O `bcdedit /enum firmware` mostra a NVRAM, ou o BCD do disco?** — ver §3.5. Aberta no marco da E9, e importa porque a linha `Ordem de boot` do `arca status` é uma afirmação de segurança lida dali. **E C-13 aumentou o que ela vale**: se for o BCD, a releitura de C-3 do conserto confirma sobre o espelho, e a máquina continua bootando no dispositivo. Fecha com um reinício com o SSD conectado, sem job armado |
 | ~~P-20~~ | ~~O `arca resultado` deve devolver o `{bootmgr}` à frente do `displayorder`.~~ **Fechada em 23/08/2026, etapa E10.** Virou C-13, com os quatro comandos medidos à mão antes de virar código. Ver [ADR-0013](../docs/adr/0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md) |
 | P-23 | **Por que o `arca-restore.log` começa no meio?** — ver §3.5. Aberta no marco da E9. O §6.3 aponta esse arquivo a quem quer saber o que aconteceu, e ele não traz a operação inteira. Fecha na próxima restauração |

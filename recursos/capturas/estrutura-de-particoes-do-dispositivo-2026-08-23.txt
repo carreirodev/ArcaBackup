@@ -1,0 +1,70 @@
+# A estrutura de particoes do dispositivo ARCA desta mesa
+# Lida em 2026-08-23 com Get-Disk / Get-Partition / Get-Volume (MSFT_*), a
+# mesma regua do ADR-0010. E o original que rca prepare transcreve.
+
+## Get-Disk
+
+Number         : 1
+FriendlyName   : KGSSE100 256
+SerialNumber   : 0000000000000000
+BusType        : USB
+PartitionStyle : MBR
+Size           : 256060514304
+IsSystem       : False
+IsBoot         : False
+IsReadOnly     : False
+
+
+## Get-Partition
+
+PartitionNumber : 1
+DriveLetter     : E
+Type            : IFS
+GptType         : 
+MbrType         : 7
+Offset          : 1048576
+Size            : 254379294720
+IsActive        : False
+IsHidden        : False
+
+PartitionNumber : 2
+DriveLetter     : R
+Type            : FAT32 XINT13
+GptType         : 
+MbrType         : 12
+Offset          : 254380343296
+Size            : 1677721600
+IsActive        : False
+IsHidden        : False
+
+
+## Get-Volume
+
+DriveLetter        : E
+FileSystemLabel    : ARCAVAULT
+FileSystem         : NTFS
+AllocationUnitSize : 4096
+Size               : 254379290624
+
+DriveLetter        : R
+FileSystemLabel    : ARCABOOT
+FileSystem         : FAT32
+AllocationUnitSize : 4096
+Size               : 1673527296
+
+
+## Win32_DiskDrive — o MediaType, que separa removivel de fixo (C-6)
+
+Index         : 0
+Model         : KINGSTON SNV3S500G
+MediaType     : Fixed hard disk media
+InterfaceType : SCSI
+Size          : 500105249280
+
+Index         : 1
+Model         : KGSSE100 256 SCSI Disk Device
+MediaType     : External hard disk media
+InterfaceType : SCSI
+Size          : 256052966400
+
+

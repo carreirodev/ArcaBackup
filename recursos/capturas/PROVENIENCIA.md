@@ -484,6 +484,31 @@ morreu no reinício que ela mesma disparou. É o mesmo caso do `grub.cfg` armado
 que a E8 registrou: o código as reproduz de forma determinística, e
 **reprodução não é captura**, que é a razão de este diretório existir.
 
+## A estrutura de partições do dispositivo (etapa E10)
+
+| Arquivo | O que é | SHA256 | O que prova |
+|---|---|---|---|
+| `estrutura-de-particoes-do-dispositivo-2026-08-23.txt` | `Get-Disk`, `Get-Partition`, `Get-Volume` e `Win32_DiskDrive` do dispositivo, 1625 bytes | `a2b8ae68…00ee3504` | **PR-5.** O esquema que `arca prepare` transcreve, e o `MediaType` que o separa de um disco fixo |
+
+Lida com os cmdlets `MSFT_*` — a **mesma régua** que o ADR-0010 escolheu para
+R-7, e não o `Win32_DiskDrive`, que responde outro tamanho para o mesmo disco.
+
+**O achado é que o dispositivo é MBR, e boota por UEFI assim mesmo.**
+`MbrType 7` para o `ARCAVAULT` e `MbrType 12` (FAT32 LBA) para o `ARCABOOT`,
+este no **fim** do disco; nenhuma das duas é `IsActive`, o que confirma que o
+boot é UEFI puro e não BIOS. O esquema canônico moderno seria GPT com uma ESP —
+este não é ele, e é o que está bootando nesta máquina desde 19/08.
+
+Por isso ele está aqui: **`arca prepare` transcreve uma estrutura medida, em vez
+de inventar uma que deveria funcionar.** É o ADR-0004 aplicado a partições, e o
+que ele protege é o modo de falha pior deste projeto — um dispositivo que não
+boota, descoberto depois de o Windows já ter sido apagado, porque é aí que
+alguém precisa dele.
+
+**O que ele não é: prova de que só este esquema funciona.** É uma configuração
+que funciona, medida uma vez. Um GPT+ESP provavelmente também bootaria; o ponto
+é que ninguém mediu, e a E10 não é onde se descobre.
+
 ## O que nenhuma delas contém
 
 **Nenhum `bootsequence`.** As capturas de `bcdedit` deste diretório continuam

@@ -67,7 +67,7 @@ Três regras que decidem a ordem toda:
 | 2 | **A receita continua sendo uma string no `grub.cfg`**, como no mecanismo já validado em hardware. Não vira arquivo `custom-ocs` | Nada a remedir. `toram` fica como está. C-2 valida a string; sem pipes, só `>` e `>>` |
 | 3 | **Correlação por selo, nunca por data** | Fecha S-6, R-6 e o caso "não há `arca-fim.txt`" com um mecanismo só |
 | 4 | **`arca verify` confere `MD5SUMS` no Windows**; `--completo` arma boot para `ocs-chkimg` | Verificação rápida sem reinício. Não substitui B-9, que continua obrigatória no backup |
-| 5 | **Destino divergente é permitido**, com confirmação que nomeia o disco de destino. Recusa dura só se o destino for **menor** que a origem | ~~`-k0` num disco menor corrompe em vez de falhar.~~ **A premissa estava errada, e a E9 resolveu** (P-17, [ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)): o help do `ocs-sr` diz que o Clonezilla confere o tamanho do destino **por padrão** e **desiste** se for menor, e que `-icds` é quem desliga isso. A recusa do ARCA fica, e a razão passa a ser **onde** ela acontece: a do Clonezilla custa um reinício de uma operação destrutiva. E resolver isso obrigou a descobrir a armadilha da régua — o `MSFT_Disk` e o `Win32_DiskDrive` dão dois tamanhos para o mesmo disco, e com o segundo o disco não cabe em si mesmo. Destino divergente ganhou `--destino <indice>`; sem ele a metade permissiva de R-7 seria inalcançável. Em disco novo, `-iefi` não acha entrada correspondente e o `bcdboot` volta a ser necessário |
+| 5 | ~~**Destino divergente é permitido**~~ **REVOGADA em 23/08/2026 — só o disco de origem é destino válido** ([ADR-0015](../docs/adr/0015-a-restauracao-so-restaura-no-disco-de-origem.md)). Quem troca o disco reinstala o Windows, e o caso de uso não existe. R-7 troca de função: de `≥` (cabe?) para `=` (é ele mesmo?), o que é mais duro sem custar código. `--destino` sai. O texto original:, com confirmação que nomeia o disco de destino. Recusa dura só se o destino for **menor** que a origem | ~~`-k0` num disco menor corrompe em vez de falhar.~~ **A premissa estava errada, e a E9 resolveu** (P-17, [ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)): o help do `ocs-sr` diz que o Clonezilla confere o tamanho do destino **por padrão** e **desiste** se for menor, e que `-icds` é quem desliga isso. A recusa do ARCA fica, e a razão passa a ser **onde** ela acontece: a do Clonezilla custa um reinício de uma operação destrutiva. E resolver isso obrigou a descobrir a armadilha da régua — o `MSFT_Disk` e o `Win32_DiskDrive` dão dois tamanhos para o mesmo disco, e com o segundo o disco não cabe em si mesmo. Destino divergente ganhou `--destino <indice>`; sem ele a metade permissiva de R-7 seria inalcançável. Em disco novo, `-iefi` não acha entrada correspondente e o `bcdboot` volta a ser necessário |
 | 6 | **Clonezilla com versão fixada e SHA256 embutido no binário do ARCA**, nunca baixado | Cópia do pacote usado fica no `ARCAVAULT`. `--iso <caminho>` para instalação offline |
 | 7 | **`--dry-run` é flag de primeira classe** em todo comando que arma | A armadilha registrada no PRD (`--dry-run` virou execução real) é exatamente o que C-7 previne. Os dois andam juntos, na E0 |
 
@@ -1232,11 +1232,135 @@ ordem. É a lição da revisão da E4 aplicada antes do defeito, e não depois.
 
 ### E10 · `arca prepare`
 
-Exige a FAT32 vazia de ≥ 1 GB já criada — o ARCA não particiona (§7.1). Baixa o Clonezilla na versão fixada, confere contra o SHA256 embutido, extrai, instala o ARCA no `ARCABOOT`, migra a entrada de firmware. `--iso <caminho>` para offline, que é o que salva quando a máquina que precisa preparar o dispositivo é a que está sem Windows.
+**Particiona o dispositivo e rotula as duas partições** (§7.1, PR-5), baixa o Clonezilla na versão fixada, confere contra o SHA256 embutido, extrai, instala o ARCA no `ARCABOOT`, migra a entrada de firmware. `--iso <caminho>` para offline, que é o que salva quando a máquina que precisa preparar o dispositivo é a que está sem Windows.
+
+> **Esta primeira linha dizia o contrário até 23/08/2026** — *"exige a FAT32 vazia de ≥ 1 GB já criada, o ARCA não particiona"*. P1 foi revisado e o ARCA passa a particionar. Ver [ADR-0014](../docs/adr/0014-o-arca-particiona-o-dispositivo.md).
 
 Fica tarde de propósito: o dispositivo atual já existe, preparado à mão. Esta etapa serve ao **segundo** dispositivo.
 
-**Cobre**: §7.1 — e **P-20, que fechou antes do resto da etapa** e virou C-13.
+**Cobre**: §7.1, **PR-4**, **PR-5** — e **P-20, que fechou antes do resto da etapa** e
+virou C-13.
+
+#### O ARCA particiona e rotula, e P1 foi revisado (PR-5)
+
+Decidido em 23/08/2026, e a decisão vem com argumento:
+
+> *"Esse app é justamente uma automatização, então não entendo por que não
+> fazer isso sozinho."*
+
+P1 dizia que o ARCA não executa a operação mais destrutiva do fluxo, e **isso
+nunca foi verdade**: `arca restore` apaga 465 GB do disco de sistema desta
+máquina, e particionar um pen drive vazio não chega perto. O princípio
+classificava por *categoria da operação* quando o que separa uma da outra é *o
+que se perde quando dá errado*. Automatizar o backup e a restauração e parar na
+preparação era uma inconsistência que só o princípio explicava. Ver o
+[ADR-0014](../docs/adr/0014-o-arca-particiona-o-dispositivo.md), que registra a
+revisão e o que sobrou de P1.
+
+**E há original, o que muda a natureza do trabalho.** Medido no dispositivo
+desta mesa em 23/08 e preservado em
+`recursos/capturas/estrutura-de-particoes-do-dispositivo-2026-08-23.txt`: o
+dispositivo é **MBR** — `MbrType 7` para o `ARCAVAULT` e `MbrType 12` (FAT32
+LBA) para o `ARCABOOT`, este no fim do disco —, nenhuma partição é `IsActive`,
+e ele **boota por UEFI assim mesmo**. Não é o esquema canônico moderno, e é o
+que está bootando aqui desde 19/08.
+
+Então o `arca prepare` **transcreve**, e não inventa — o precedente é o
+ADR-0004. **A tentação a resistir é modernizar para GPT+ESP no caminho**: seria
+trocar um esquema medido por um suposto, num lugar cujo modo de falha é um
+dispositivo que não boota e que só se descobre **depois** de o Windows já ter
+sido apagado.
+
+#### As sete defesas, e a objeção que virou lista
+
+A objeção levantada e superada foi: **o perigo não é particionar, é acertar em
+qual disco.** Ela não some com a decisão — vira isto:
+
+1. **`MediaType` removível ou externo.** O WMI responde `External hard disk
+   media` para o dispositivo e `Fixed hard disk media` para o NVMe (medido na
+   E6). Disco fixo é **recusa dura, sem opção de forçar**.
+2. **Não é o disco do `%SystemDrive%`**, nem `IsSystem`, nem `IsBoot`.
+3. **O disco vem do usuário, nunca de dedução** — `--dispositivo <índice>`, no
+   molde do `--destino <índice>` da E9. Com um candidato só, ele ainda é
+   mostrado e confirmado.
+4. **O plano na tela antes de escrever** (PR-4), com o que existe hoje no
+   disco: rótulo, sistema de arquivos e tamanho de cada partição.
+5. **Confirmação digitada** (S-2), nunca `s`.
+6. **`--dry-run` de primeira classe** — aqui é a única forma de ver o plano de
+   partições sem executá-lo.
+7. **Releitura depois de escrever**, no espírito de C-3.
+
+O precedente que sustenta a lista é concreto: a revisão da E9 achou que R-8
+tinha um contorno por acidente de modelo, e a receita sairia `restoredisk
+<imagem> sda` — o `sda` era o dispositivo. **Identificar disco é onde este
+código já errou**, e `arca prepare` roda antes de existirem os rótulos que B-1,
+S-3 e C-10 usariam para se defender.
+
+#### O diálogo, em quatro tempos (PR-4)
+
+1. **O plano inteiro, antes de qualquer coisa**: o disco nomeado — índice,
+   modelo, `MediaType`, tamanho — e o que existe nele hoje, partição a
+   partição.
+2. **A pergunta**: *"Podemos continuar?"*
+3. **A conferência, que é do ARCA e não do usuário.**
+4. **A confirmação digitada, antes da primeira escrita** (S-2, e
+   `src/confirmacao.rs` existe desde a E9).
+
+**O terceiro tempo é o que faz os outros valerem alguma coisa.** A resposta do
+passo 2 diz que o usuário **quer** prosseguir; ela não é evidência sobre o
+disco. Um `arca prepare` que agisse sobre o "sim" estaria fazendo o que C-3
+existe para impedir em outro lugar: acreditar numa resposta em vez de olhar.
+
+#### O problema de descoberta que vem junto, e ele é da mesma raiz
+
+`dispositivo::encontrar` acha o dispositivo **pelos rótulos** `ARCABOOT` e
+`ARCAVAULT` (B-1, S-3). Num dispositivo em branco eles não existem — logo
+**`arca prepare` é o único comando do ARCA que não consegue se localizar pelo
+caminho que todos os outros usam.**
+
+O que já existe e serve: `discos_fisicos()`, o WMI da E6, que dá índice,
+modelo, tamanho, `MediaType` e as letras por disco. E o molde de escolha
+explícita já foi construído na E9, no `--destino <índice>` do `arca restore`.
+Um `--dispositivo <índice>` no mesmo formato é o candidato. Decidir na etapa, e
+dizer por quê.
+
+**E note a assimetria com C-10**, que recusa mais de um dispositivo ARCA
+conectado: durante o teste da E10 o dispositivo já preparado fica
+**desconectado**, e o novo está em branco. C-10 não tem o que recusar, porque
+não há rótulo nenhum na mesa — é mais um sintoma de que este comando roda num
+mundo onde as defesas dos outros ainda não se aplicam.
+
+#### O que mais vai doer, e está nomeado desde a E7
+
+- **Criar entrada de firmware do zero é código sem original.** A E7 recusou
+  fazer isso de propósito, dizendo que o lugar era aqui: nenhuma captura
+  mostra a criação — só a migração. C-6 (recusar mídia removível) e a
+  releitura de C-3 valem inteiros, e C-13 é novo desde 23/08.
+- **Qual versão do Clonezilla fixar.** O dispositivo da mesa roda `3.3.3-15`
+  (está no `hostname=` do `grub.cfg`). O SHA256 tem de vir do download
+  oficial: "baixado junto do arquivo" não verifica nada (PR-1).
+- **Um `arca prepare` interrompido no meio deixa o quê?** Nomear os estados
+  intermediários e dizer quais são reversíveis, como `src/armar.rs` fez com a
+  ordem das três gravações.
+- **O marco em hardware precisa de um segundo dispositivo** — um pen drive de
+  4 GB basta. Rodar no SSD atual reescreveria o `grub.cfg` inerte, que é o
+  oráculo dos testes da E4, e ainda assim **não testaria o caso que a etapa
+  existe para cobrir**, que é o dispositivo vazio.
+
+#### Três coisas medidas em 23/08/2026, e elas dispensam dependência nova
+
+As operações que a E10 e a E11 pareciam exigir em crate novo têm ferramenta
+nativa no `System32` desta máquina:
+
+| Ferramenta | Versão medida | Para quê |
+|---|---|---|
+| `curl.exe` | 8.21.0 | baixar o Clonezilla (PR-1) |
+| `tar.exe` | 10.0.26100 (bsdtar) | extrair o pacote |
+| `certutil.exe -hashfile <arquivo> MD5\|SHA256` | 10.0.26100 | o SHA256 de PR-1 e o MD5 de V-1 |
+
+As três dependências do projeto continuam três, e o padrão de falar com o
+sistema por processo filho atrás de porta existe desde a E6. **Confirmar antes
+de construir em cima**, e decidir se é porta nova ou se cabe nas que há.
 
 #### O `arca resultado` devolve o Windows à frente da ordem de boot (P-20)
 
@@ -1421,7 +1545,7 @@ Nenhum requisito do PRD fica sem etapa.
 | E7 | C-4, C-5, C-9, S-2 — e a segunda metade de C-6, que até aqui só era relatada por leitura |
 | E8 | S-4, S-5, D8 — e C-12, que ganhou o comando que o atende |
 | E9 | R-1, R-2, R-3, **R-7**, **R-8**, L-2 — e P-17. R-7 não tinha etapa nenhuma nesta tabela até aqui |
-| E10 | §7.1 — e **C-13**, que fechou P-20 e saiu na frente do `arca prepare` |
+| E10 | §7.1, **PR-4**, **PR-5** — e **C-13**, que fechou P-20 e saiu na frente do `arca prepare` |
 | E11 | D6 |
 
 ## Riscos que atravessam o plano
@@ -1482,4 +1606,10 @@ isso só podia falar do `ocs-sr`.
 
 ## Fora de escopo
 
-Incremental, agendamento, retenção, catálogo, interface gráfica, particionamento, BIOS legada, BitLocker, RAID, Storage Spaces — tudo conforme §2 do PRD. E `arca resultado` no logon (P-14) fica de fora até o uso pedir.
+Incremental, agendamento, retenção, catálogo, interface gráfica, BIOS legada, BitLocker, RAID, Storage Spaces — tudo conforme §2 do PRD. E `arca resultado` no logon (P-14) fica de fora até o uso pedir.
+
+**Particionamento saiu desta lista em 23/08/2026**, e é a única coisa que já
+esteve aqui e voltou. O `arca prepare` particiona **o dispositivo**, e só ele,
+com o disco nomeado pelo usuário e confirmado por escrito — disco fixo é recusa
+dura. O que continua fora é ser um gerenciador de discos de uso geral. Ver
+[ADR-0014](../docs/adr/0014-o-arca-particiona-o-dispositivo.md).
