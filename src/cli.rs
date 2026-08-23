@@ -1,8 +1,9 @@
 //! A superficie de linha de comando (secao 8 do PRD).
 //!
-//! Todos os comandos ja existem aqui. Os que ainda nao tem etapa construida
-//! respondem dizendo qual etapa os entrega — mais util do que nao existirem,
-//! e e o que faz a fundacao ser executavel de verdade.
+//! Todos os comandos existem aqui desde a E0, e **desde a E10 todos fazem o
+//! trabalho**. Ate aqui os que ainda nao tinham etapa construida respondiam
+//! dizendo qual etapa os entregava — mais util do que nao existirem, e e o que
+//! fez a fundacao ser executavel de verdade desde o primeiro dia.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -51,9 +52,30 @@ impl Cli {
 
 #[derive(Subcommand, Debug, PartialEq, Eq)]
 pub enum Comando {
-    /// Instala o Clonezilla e o ARCA num dispositivo ja particionado.
+    /// Particiona um disco, instala o Clonezilla e o ARCA, e cria a entrada
+    /// de boot.
     Prepare {
-        /// Instala de um arquivo local, sem baixar nada.
+        /// O disco a preparar, pelo **indice do Windows**. Obrigatorio.
+        ///
+        /// # Por que obrigatorio, mesmo havendo um candidato so
+        ///
+        /// P1 revisado: *o ARCA destroi dados quando o usuario nomeou o alvo e
+        /// confirmou por escrito, e nunca por deducao*. Deduzir o disco seria
+        /// o ARCA escolhendo o que apagar, e e exatamente isso que o principio
+        /// proibe — mesmo quando a deducao pareceria obvia.
+        ///
+        /// **E o indice nao e identidade**, o que torna a confirmacao de S-2
+        /// necessaria por cima dele: medido em 23/08/2026, o dispositivo desta
+        /// mesa era o disco 1 e virou o disco 2 quando um segundo SSD foi
+        /// conectado. Por isso a confirmacao pede o **modelo**, que a tela
+        /// acabou de imprimir, e nao o numero que se digitou aqui.
+        #[arg(long, value_name = "INDICE")]
+        dispositivo: u32,
+
+        /// Instala de um arquivo local, sem baixar nada (PR-2).
+        ///
+        /// E o que salva quando a maquina que precisa preparar o dispositivo e
+        /// justamente a que esta sem Windows — e sem rede.
         #[arg(long, value_name = "CAMINHO")]
         iso: Option<PathBuf>,
     },
@@ -72,23 +94,19 @@ pub enum Comando {
     List,
 
     /// Lista, confirma e reinicia para restaurar.
+    ///
+    /// **Nao ha flag de destino**, e a ausencia e decisao. O `--destino
+    /// <indice>` existiu da E9 ate 23/08/2026 e saiu com o
+    /// [ADR-0015](../docs/adr/0015-a-restauracao-so-restaura-no-disco-de-origem.md):
+    /// o unico destino valido e o disco de que a imagem veio, e sem destino
+    /// divergente a flag passa a ser um jeito de apontar um disco para apagar
+    /// — que e o que P1 revisado proibe.
     Restore {
         /// Nome da imagem. Omitido, o comando lista e pergunta o numero — que
         /// e a tela do §6.1. Dado, ele pula a lista; a confirmacao por extenso
         /// (R-3, S-2) continua obrigatoria nos dois caminhos.
         #[arg(value_name = "NOME")]
         nome: Option<String>,
-
-        /// Restaura em outro disco (R-7), pelo **indice do Windows**.
-        ///
-        /// O indice nomeia o disco de um jeito curto e conferivel do lado
-        /// Windows, e **nunca chega a receita**: o ARCA traduz indice → modelo
-        /// → nome do Linux pelo `blkdev.list` de dentro das imagens, que e o
-        /// oraculo de §4.5. Pedir o `nvme0n1` direto seria aceitar um nome do
-        /// Linux digitado no Windows, que e o que a E7 recusou por nao ter
-        /// contra o que conferi-lo — e aqui a receita apaga o disco.
-        #[arg(long, value_name = "INDICE")]
-        destino: Option<u32>,
     },
 
     /// Confere os MD5SUMS de uma imagem, sem reiniciar.
@@ -163,7 +181,12 @@ mod testes {
 
     #[test]
     fn todos_os_comandos_do_prd_existem() {
-        assert_eq!(analisar(&["arca", "prepare"]).comando.nome(), "prepare");
+        assert_eq!(
+            analisar(&["arca", "prepare", "--dispositivo", "1"])
+                .comando
+                .nome(),
+            "prepare"
+        );
         assert_eq!(analisar(&["arca", "backup", "n"]).comando.nome(), "backup");
         assert_eq!(analisar(&["arca", "resultado"]).comando.nome(), "resultado");
         assert_eq!(analisar(&["arca", "list"]).comando.nome(), "list");
@@ -177,41 +200,82 @@ mod testes {
     fn restore_sem_nome_e_o_caminho_da_lista_numerada() {
         assert_eq!(
             analisar(&["arca", "restore"]).comando,
-            Comando::Restore {
-                nome: None,
-                destino: None
-            }
+            Comando::Restore { nome: None }
         );
     }
 
     #[test]
-    fn restore_aceita_nome_e_destino() {
+    fn restore_aceita_o_nome_e_pula_a_lista() {
         assert_eq!(
-            analisar(&["arca", "restore", "2026-08-22_Apps", "--destino", "0"]).comando,
+            analisar(&["arca", "restore", "2026-08-22_Apps"]).comando,
             Comando::Restore {
                 nome: Some("2026-08-22_Apps".to_string()),
-                destino: Some(0)
             }
         );
     }
 
     #[test]
-    fn o_destino_e_indice_do_windows_e_nao_nome_de_disco() {
-        // §4.5: `nvme0n1` e um nome do **Linux**, e nao ha nada do lado
-        // Windows contra o que conferi-lo. Aceitar `--destino nvme0n1` seria
-        // pôr na receita destrutiva um valor sem oraculo.
-        assert!(Cli::try_parse_from(["arca", "restore", "--destino", "nvme0n1"]).is_err());
+    fn nao_ha_como_apontar_um_disco_de_destino() {
+        // ADR-0015: o unico destino valido e o disco de origem, e o ARCA o
+        // acha sozinho pelo modelo (§4.5). O `--destino <indice>` existiu da
+        // E9 ate 23/08/2026 e saiu junto com o destino divergente — sem ele,
+        // a flag seria um jeito de apontar um disco para apagar.
+        //
+        // O teste vale como recusa **da superficie**: um script antigo que a
+        // passasse recebe erro de uso, e nao um argumento ignorado em
+        // silencio.
+        for tentativa in [
+            vec!["arca", "restore", "--destino", "0"],
+            vec!["arca", "restore", "2026-08-22_Apps", "--destino", "1"],
+        ] {
+            assert!(
+                Cli::try_parse_from(&tentativa).is_err(),
+                "{tentativa:?} devia ser recusado"
+            );
+        }
     }
 
     #[test]
     fn prepare_aceita_iso_local() {
-        let cli = analisar(&["arca", "prepare", "--iso", r"D:\clonezilla.zip"]);
+        let cli = analisar(&[
+            "arca",
+            "prepare",
+            "--dispositivo",
+            "1",
+            "--iso",
+            r"D:\clonezilla.zip",
+        ]);
         assert_eq!(
             cli.comando,
             Comando::Prepare {
+                dispositivo: 1,
                 iso: Some(PathBuf::from(r"D:\clonezilla.zip"))
             }
         );
+    }
+
+    #[test]
+    fn prepare_exige_o_dispositivo() {
+        // P1 revisado: *o ARCA destroi dados quando o usuario nomeou o alvo, e
+        // nunca por deducao*. Um `arca prepare` sem alvo teria de escolher um
+        // disco sozinho, e e exatamente isso que o principio proibe — mesmo
+        // havendo um candidato so.
+        assert!(Cli::try_parse_from(["arca", "prepare"]).is_err());
+        assert!(Cli::try_parse_from(["arca", "prepare", "--iso", "x.zip"]).is_err());
+    }
+
+    #[test]
+    fn o_dispositivo_e_indice_e_nao_letra_nem_rotulo() {
+        // §7.1: `arca prepare` e o unico comando que **nao** se localiza pelos
+        // rotulos, porque no disco que ele vai preparar eles ainda nao
+        // existem. Aceitar `--dispositivo ARCAVAULT` seria pedir pelo caminho
+        // que este comando nao tem.
+        for tentativa in ["ARCAVAULT", "E:", "sda", "disco1"] {
+            assert!(
+                Cli::try_parse_from(["arca", "prepare", "--dispositivo", tentativa]).is_err(),
+                "`{tentativa}` devia ser recusado"
+            );
+        }
     }
 
     #[test]

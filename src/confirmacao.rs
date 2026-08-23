@@ -22,6 +22,27 @@ use crate::nome::Nome;
 /// `pergunta` e o texto que vai antes dos dois-pontos, sem eles — cada comando
 /// escreve o seu.
 pub fn pedir(contexto: &Contexto, pergunta: &str, nome: &Nome) -> Resultado<()> {
+    pedir_texto(contexto, pergunta, nome.como_texto())
+}
+
+/// A mesma regra, sobre um texto que não é um [`Nome`].
+///
+/// # Por que ela existe, e por que o julgamento é o mesmo
+///
+/// O `arca prepare` da E10 pede **o modelo do disco**, e modelo não passa por
+/// B-2: `KGSSE100 256` tem espaço, e `JMicron Generic SCSI Disk Device` tem
+/// quatro. Um `Nome` ali seria mentira de tipo.
+///
+/// O que **não** muda é o julgamento — comparação exata, sem ignorar caixa,
+/// sem aceitar prefixo, uma tentativa. Duas versões da mesma regra divergem na
+/// primeira mudança, e esta é a regra que separa "apagou o disco" de "não
+/// apagou" em três comandos.
+///
+/// E o modelo é o texto certo a pedir aqui pelo mesmo motivo que a restauração
+/// pede o nome da imagem: **é o que está na tela, e digitá-lo custa lê-lo**. Um
+/// índice — `1` — é curto demais para custar alguma coisa, e é justamente o
+/// número que muda de uma conexão para outra.
+pub fn pedir_texto(contexto: &Contexto, pergunta: &str, esperado: &str) -> Resultado<()> {
     use std::io::Write;
 
     print!("\n{pergunta}: ");
@@ -30,9 +51,9 @@ pub fn pedir(contexto: &Contexto, pergunta: &str, nome: &Nome) -> Resultado<()> 
     let digitado = contexto.console.ler_linha()?;
     println!();
 
-    if !bate(&digitado, nome) {
+    if digitado.trim() != esperado {
         return Err(Erro::ConfirmacaoNaoBate {
-            esperado: nome.to_string(),
+            esperado: esperado.to_string(),
             digitado: digitado.trim().to_string(),
         });
     }

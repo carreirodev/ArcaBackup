@@ -152,7 +152,7 @@ pub fn consultar() -> Resultado<String> {
 ///
 /// Escrito a mao pelo mesmo motivo do `estado.json` (ADR-0006): sao dezoito
 /// linhas e nenhuma arvore de dependencias.
-fn base64_de_utf16(texto: &str) -> String {
+pub(super) fn base64_de_utf16(texto: &str) -> String {
     const ALFABETO: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -257,7 +257,7 @@ pub fn ler(json: &str) -> Resultado<Vec<DiscoFisico>> {
 /// reconhece vira [`TipoDeMidia::Desconhecido`], e nunca `DiscoFixo` por
 /// padrao — supor que um disco desconhecido e interno e o erro que faria C-6
 /// passar batido.
-fn tipo_de_midia(bruto: Option<&str>) -> TipoDeMidia {
+pub(super) fn tipo_de_midia(bruto: Option<&str>) -> TipoDeMidia {
     let Some(bruto) = bruto else {
         return TipoDeMidia::Desconhecido;
     };
@@ -295,7 +295,7 @@ fn tipo_de_midia(bruto: Option<&str>) -> TipoDeMidia {
 /// ARCA, as duas recusas que dependem de saber em que disco cada letra mora —
 /// C-6 e C-10, em [`crate::prevoo::julgar`] — passariam sem dizer nada.
 /// Achado pela revisao da etapa E6.
-fn objetos(json: &str) -> Vec<String> {
+pub(super) fn objetos(json: &str) -> Vec<String> {
     let mut saida = Vec::new();
     let mut profundidade = 0usize;
     let mut inicio = 0usize;
@@ -340,7 +340,7 @@ fn objetos(json: &str) -> Vec<String> {
 /// barra — perder um caractere de um modelo e melhor do que recusar a
 /// enumeracao inteira, e o modelo so serve para casar com o `blkdev.list`, que
 /// compara sem pontuacao de qualquer forma.
-fn cadeia(objeto: &str, chave: &str) -> Option<String> {
+pub(super) fn cadeia(objeto: &str, chave: &str) -> Option<String> {
     let resto = depois_da_chave(objeto, chave)?;
     let mut caracteres = resto.strip_prefix('"')?.chars();
 
@@ -366,7 +366,7 @@ fn cadeia(objeto: &str, chave: &str) -> Option<String> {
 }
 
 /// O numero depois de `"chave":`.
-fn numero(objeto: &str, chave: &str) -> Option<u64> {
+pub(super) fn numero(objeto: &str, chave: &str) -> Option<u64> {
     let resto = depois_da_chave(objeto, chave)?;
     let fim = resto
         .find(|c: char| !c.is_ascii_digit())

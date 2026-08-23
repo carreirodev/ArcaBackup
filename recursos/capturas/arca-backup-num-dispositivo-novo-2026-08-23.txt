@@ -1,0 +1,62 @@
+# O `arca backup` num dispositivo recem-preparado, e por que ele recusa
+#
+# 23/08/2026, com o dispositivo da E10 sozinho na mesa — vazio, sem
+# imagem nenhuma. Rodado com --dry-run, entao nada foi tocado.
+#
+# E o original do que o §4.5 decidiu na E6/E7 e que a tela do
+# `arca prepare` nao dizia: o nome que o Linux da ao disco sai do
+# `blkdev.list` de DENTRO de uma imagem, e um dispositivo que acabou de
+# nascer nao tem nenhuma. Sem --dry-run, este comando recusa.
+
+> arca backup 2026-08-24_Primeiro --dry-run
+
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Origem: KINGSTON SNV3S500G · 465,8 GB · 109,2 GB em uso
+Imagem estimada: ~49,2 GB · espaco suficiente
+Imagem: 2026-08-24_Primeiro
+
+  Desarmando receita anterior ..... nao, e ensaio · F:\boot\grub\grub.cfg
+  Inicializacao rapida ............ desativada   ok
+  chkdsk /scan .................... limpo        ok
+  Nome disponivel ................. ok
+  Disco de origem ................. POR DETERMINAR
+
+  O NOME DO DISCO DE ORIGEM NAO FOI DETERMINADO.
+  nenhuma imagem do dispositivo traz um `blkdev.list` legivel, e e dele que sai o nome que o Linux da ao disco. O Windows nao conhece esse nome, e o ARCA nao o inventa
+  A receita nomeia o disco pelo nome que o **Linux** lhe da, e o Windows
+  nao conhece esse nome. O ARCA o lê do `blkdev.list` de uma imagem ja
+  existente; ele nao deriva o nome de indice nem de tipo de barramento,
+  porque o indice do Windows nao e o do Linux.
+
+Pre-voo concluido, e o dispositivo esta inerte. Nenhuma receita foi armada
+e nenhum boot unico foi marcado: e ensaio, e ensaio nao arma.
+
+Ensaio (--dry-run): nada e gravado, nada e armado.
+
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Imagem: 2026-08-24_Primeiro
+Disco de origem: nvme0n1 · DE EXEMPLO: o nome de verdade nao foi determinado, e esta receita nao serviria
+
+  Nome validado (B-2) ............. ok
+  Receita validada (C-2) .......... ok
+
+Receita de backup — e esta que o comando sem --dry-run armaria
+
+  O que o Clonezilla executa:
+
+    mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-24_Primeiro nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-24_Primeiro > /home/partimag/2026-08-24_Primeiro/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-24_Primeiro/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-24_Primeiro/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro/arca-fim.txt; sleep 20; poweroff
+
+  Como entra na linha do grub.cfg:
+
+    locales=en_US.UTF-8 keyboard-layouts=NONE ocs_repository="dev:///LABEL=ARCAVAULT" ocs_live_run="bash -c 'mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-24_Primeiro nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-24_Primeiro > /home/partimag/2026-08-24_Primeiro/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-24_Primeiro/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-24_Primeiro/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Primeiro/arca-fim.txt; sleep 20; poweroff'" ocs_live_batch="yes"
+
+O selo acima e de ensaio (so zeros), e por isso esta receita nao serviria: o
+de verdade nasce **ao armar**, de uma fonte de entropia do sistema. E ele que
+liga o job ao desfecho que voltar.
+
+Nada foi armado, e o dispositivo nao foi nem desarmado — no ensaio, C-1 nao
+acontece. O mesmo comando sem `--dry-run` desarma, pede a confirmacao por
+extenso, arma e reinicia.
+
+A receita de restauracao nao sai mais daqui: ela e montada com o disco de
+DESTINO, que este comando nao escolhe. Para ve-la:  arca restore --dry-run

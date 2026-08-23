@@ -177,7 +177,7 @@ fn montar_ensaio(dispositivo: &Dispositivo, caminho: &str) -> String {
 mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
-    use crate::duplos::{
+    use crate::duplos::{ParticionadorDeMentira, 
         ArquivosEmMemoria, DiscosDeMentira, ConsoleDeMentira, EntropiaDeMentira, FirmwareDeMentira, RelogioParado,
         SistemaDeMentira,
     };
@@ -213,6 +213,12 @@ mod testes {
         sistema: SistemaDeMentira,
         entropia: EntropiaDeMentira,
         console: ConsoleDeMentira,
+
+        /// A quinta porta. Este comando nao a usa — ela esta aqui porque o
+        /// `Contexto` e um so, e o duplo **registra** o que lhe mandaram
+        /// fazer: com ele na bancada, `particionou()` e uma pergunta que
+        /// qualquer teste pode fazer.
+        particionador: ParticionadorDeMentira,
         registro: Registro,
     }
 
@@ -234,6 +240,7 @@ mod testes {
                 sistema: SistemaDeMentira::novo(),
                 entropia: EntropiaDeMentira::com(&[0xa3, 0xf1, 0xc9, 0xe0, 0x7b, 0x2d, 0x48, 0x56]),
                 console: ConsoleDeMentira::mudo(),
+                particionador: ParticionadorDeMentira::desta_mesa(),
                 registro: Registro::em(
                     std::env::temp_dir().join(format!(
                         "arca-desarmar-{}-{:?}",
@@ -256,6 +263,7 @@ mod testes {
                 sistema: &self.sistema,
                 entropia: &self.entropia,
                 console: &self.console,
+                particionador: &self.particionador,
             }
         }
     }

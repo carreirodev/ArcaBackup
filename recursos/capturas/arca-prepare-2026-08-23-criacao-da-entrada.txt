@@ -1,0 +1,145 @@
+# Marco da E10, segunda metade: a criacao da entrada de firmware
+# 2026-08-23 18:42:47
+
+### ANTES — as entradas de firmware
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+timeout                 1
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {bootmgr}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             Windows Boot Manager
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}
+device                  partition=F:
+path                    \EFI\boot\bootx64.efi
+description             ARCA
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+### APAGAR a entrada ARCA, para que o prepare tenha de cria-la
+A operação foi concluída com êxito.
+(codigo de saida 0)
+
+### O firmware sem entrada nenhuma do ARCA
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+timeout                 1
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {bootmgr}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             Windows Boot Manager
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+### rca prepare --dispositivo 1 --iso <pacote local>"
+Registrar 
+(codigo de saida 0)
+
+### DEPOIS — as entradas de firmware
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+timeout                 1
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {bootmgr}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             Windows Boot Manager
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+device                  partition=F:
+path                    \EFI\boot\bootx64.efi
+description             ARCA
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+### DEPOIS — o gerenciador de firmware (a ordem permanente)
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+timeout                 1
+
+### O dispositivo, relido
+PartitionNumber : 1
+DriveLetter     : E
+Type            : IFS
+MbrType         : 7
+Offset          : 1048576
+Size            : 478423285760
+IsActive        : False
+
+PartitionNumber : 2
+DriveLetter     : F
+Type            : FAT32 XINT13
+MbrType         : 12
+Offset          : 478424334336
+Size            : 1677721600
+IsActive        : False
+DriveLetter        : F
+FileSystemLabel    : ARCABOOT
+FileSystem         : FAT32
+AllocationUnitSize : 4096
+Size               : 1673527296
+
+DriveLetter        : E
+FileSystemLabel    : ARCAVAULT
+FileSystem         : NTFS
+AllocationUnitSize : 4096
+Size               : 478423281664

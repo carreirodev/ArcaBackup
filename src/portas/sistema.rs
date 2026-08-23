@@ -116,6 +116,63 @@ pub trait Sistema {
     /// falta e deixar os outros trinta e oito sem resposta.
     fn resumir(&self, caminho: &Path, algoritmo: Algoritmo) -> Resultado<SaidaDeFerramenta>;
 
+    /// Baixa `url` para `destino` com o `curl` do `System32` (PR-1).
+    ///
+    /// # Por que aqui, e por que `curl` e nao um crate de HTTP
+    ///
+    /// Mesma categoria das outras: **ferramenta do console do Windows**, com o
+    /// contrato de sempre — codigo de saida e texto bruto, e quem julga e
+    /// codigo puro. O `curl.exe` 8.21.0 esta no `System32` desde o Windows 10
+    /// 1803, medido nesta maquina em 23/08/2026.
+    ///
+    /// Um crate de HTTP traria TLS, resolucao de nome e a arvore que vem com
+    /// os dois — dezenas de caixas — para **uma** transferencia que acontece
+    /// uma vez por dispositivo preparado. As tres dependencias continuam tres.
+    ///
+    /// # O que ele NAO faz e o ponto de PR-1
+    ///
+    /// Baixar nao verifica nada. Quem verifica e [`Sistema::resumir`] contra a
+    /// constante compilada em [`crate::pacote::SHA256`], e essa ordem —
+    /// baixar, conferir, so entao extrair — e o que separa este comando de um
+    /// que instala o que quer que tenha chegado pelo fio.
+    ///
+    /// # S-1 continua valendo
+    ///
+    /// Escrever um arquivo por caminho, pela API do proprio Windows. Nao ha
+    /// handle de dispositivo, caminho bruto nem deslocamento em setores.
+    fn baixar(&self, url: &str, destino: &Path) -> Resultado<SaidaDeFerramenta>;
+
+    /// Extrai `pacote` dentro de `destino` com o `bsdtar` do `System32`.
+    ///
+    /// # A armadilha do nome, e ela foi medida
+    ///
+    /// **`tar` no `PATH` pode nao ser o `bsdtar`.** Medido em 23/08/2026 nesta
+    /// maquina: com o Git para Windows instalado, `tar` resolve para o **GNU
+    /// tar 1.35** do `/usr/bin`, que **nao abre zip** — ele responde *"This
+    /// does not look like a tar archive"* e sai com erro.
+    ///
+    /// Quem abre zip e o `C:\Windows\System32\tar.exe`, que e o `bsdtar 3.8.8`
+    /// / libarchive 3.8.8. O campo que os separa sem ambiguidade e o
+    /// `OriginalFilename` do executavel: `bsdtar` num, `tar` no outro.
+    ///
+    /// Por isso o adaptador chama pelo **caminho absoluto**, e nunca pelo nome.
+    /// Confiar no `PATH` faria o `arca prepare` falhar na maquina de quem tem
+    /// Git instalado — e falhar **depois de o disco ja ter sido apagado**.
+    ///
+    /// E o mesmo padrao que o plano da E10 ja tinha registrado com outro nome:
+    /// a versao do `tar` estava medida no `ProductVersion` do Windows em vez do
+    /// `FileVersion` do bsdtar. Duas vezes a mesma ferramenta enganou por
+    /// homonimia.
+    fn extrair(&self, pacote: &Path, destino: &Path) -> Resultado<SaidaDeFerramenta>;
+
+    /// Lista o que ha dentro de um pacote, sem extrair.
+    ///
+    /// Existe para a conferencia de [`crate::pacote::o_que_falta`] poder
+    /// acontecer **antes** de escrever no dispositivo, e nao depois: um zip
+    /// sem o `bootx64.efi` produz um dispositivo que nao boota, e isso so se
+    /// descobriria depois de o Windows ter sido apagado.
+    fn listar_pacote(&self, pacote: &Path) -> Resultado<SaidaDeFerramenta>;
+
     /// Reinicia a maquina agora.
     ///
     /// # Por que atras de porta, e nao um `Command::new` no comando

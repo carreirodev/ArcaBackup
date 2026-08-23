@@ -1,0 +1,10 @@
+# O que o `arca status` diz com dois dispositivos ARCA na mesa
+#
+# 23/08/2026, logo depois do marco da E10. O disco 2 e o dispositivo
+# preparado a mao em agosto; o disco 1 e o que o `arca prepare` acabou
+# de fazer. C-10 recusa os dois, e a recusa e a mesma para todo comando
+# que se localiza pelos rotulos.
+
+> arca status
+
+erro: ha 2 volumes com o rotulo ARCAVAULT conectados (D:, E:), e o ARCA opera um dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele repetido nao ha o que escolher. Desconecte os demais e rode de novo. Se voce acabou de preparar um dispositivo, sao os dois — o novo e o de antes

@@ -105,17 +105,25 @@ pub fn encontrar(discos: &dyn Discos) -> Resultado<Dispositivo> {
     let vaults = com_rotulo(&volumes, ARCAVAULT);
     let boots = com_rotulo(&volumes, ARCABOOT);
 
-    if vaults.len() > 1 {
-        return Err(Erro::DispositivosDemais {
-            rotulo: ARCAVAULT,
-            quantos: vaults.len(),
-        });
-    }
-    if boots.len() > 1 {
-        return Err(Erro::DispositivosDemais {
-            rotulo: ARCABOOT,
-            quantos: boots.len(),
-        });
+    // A recusa **nomeia as letras**, e isso mudou na E10.
+    //
+    // Ela nasceu na E1, quando ter dois dispositivos ARCA na mesa exigia
+    // comprar dois — e `Desconecte os demais` bastava, porque *"os demais"*
+    // era um caso raro sobre coisas que alguém tinha posto ali de propósito.
+    //
+    // Desde a E10 **o ARCA faz o segundo**: um `arca prepare` bem-sucedido
+    // deixa dois dispositivos conectados por definição, e a partir daí todo
+    // comando cai aqui — inclusive o `arca status`, que é o que alguém rodaria
+    // para entender o que está acontecendo. O caso deixou de ser raro, e a
+    // mensagem passou a precisar dizer **quais**.
+    for (rotulo, achados) in [(ARCAVAULT, &vaults), (ARCABOOT, &boots)] {
+        if achados.len() > 1 {
+            return Err(Erro::DispositivosDemais {
+                rotulo,
+                quantos: achados.len(),
+                onde: letras_de(achados),
+            });
+        }
     }
 
     let Some(vault) = vaults.into_iter().next() else {
@@ -132,6 +140,23 @@ pub fn encontrar(discos: &dyn Discos) -> Resultado<Dispositivo> {
 ///
 /// Sem diferenciar porque quem grava o rotulo e a ferramenta de formatacao do
 /// usuario, e um `Arcavault` teimoso nao pode fazer o dispositivo desaparecer.
+/// As letras de uma lista de volumes, como `D:, E:` — para a recusa poder
+/// dizer **quais** desconectar.
+///
+/// Um volume sem letra aparece como `sem letra`, e não some da lista: ele
+/// conta para a ambiguidade do mesmo jeito, e omiti-lo faria a mensagem dizer
+/// "há 2" e mostrar um.
+fn letras_de(volumes: &[Volume]) -> String {
+    volumes
+        .iter()
+        .map(|volume| match volume.letra {
+            Some(letra) => format!("{letra}:"),
+            None => "sem letra".to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn com_rotulo(volumes: &[Volume], rotulo: &str) -> Vec<Volume> {
     volumes
         .iter()
@@ -216,13 +241,45 @@ mod testes {
             volume(ARCAVAULT, 'F', 1000, 500),
         ]);
 
-        match encontrar(&discos).unwrap_err() {
-            Erro::DispositivosDemais { rotulo, quantos } => {
-                assert_eq!(rotulo, ARCAVAULT);
-                assert_eq!(quantos, 2);
+        let erro = encontrar(&discos).unwrap_err();
+        match &erro {
+            Erro::DispositivosDemais {
+                rotulo,
+                quantos,
+                onde,
+            } => {
+                assert_eq!(*rotulo, ARCAVAULT);
+                assert_eq!(*quantos, 2);
+
+                // **As letras estao na mensagem desde a E10.** `Desconecte os
+                // demais` sem dizer quais empurra a pergunta de volta para
+                // quem nao tem como responde-la — e o caso deixou de ser raro
+                // quando o `arca prepare` passou a criar o segundo
+                // dispositivo.
+                assert_eq!(onde, "E:, F:");
             }
             outro => panic!("esperava recusa por ambiguidade, veio {outro}"),
         }
+
+        assert!(erro.to_string().contains("E:, F:"), "{erro}");
+        assert!(
+            erro.to_string().contains("acabou de preparar"),
+            "a mensagem tem de nomear a causa mais provavel: {erro}"
+        );
+    }
+
+    #[test]
+    fn um_volume_sem_letra_nao_some_da_recusa() {
+        // Ele conta para a ambiguidade do mesmo jeito, e omiti-lo faria a
+        // mensagem dizer "ha 2" e mostrar um.
+        let mut sem_letra = volume(ARCAVAULT, 'F', 1000, 500);
+        sem_letra.letra = None;
+
+        let discos =
+            DiscosDeMentira::com_volumes(vec![volume(ARCAVAULT, 'E', 1000, 500), sem_letra]);
+
+        let erro = encontrar(&discos).unwrap_err();
+        assert!(erro.to_string().contains("E:, sem letra"), "{erro}");
     }
 
     #[test]

@@ -65,10 +65,30 @@ fn o_que_a_listagem_chama_de_imagem_tem_md5sums_de_verdade() {
     let raiz = dispositivo.raiz_do_vault().unwrap();
     let pastas = imagens::enumerar(&ArquivosDoSistema, &raiz).expect("o vault e legivel");
 
-    assert!(
-        !pastas.is_empty(),
-        "o dispositivo tem imagens; a enumeracao nao achou nenhuma"
-    );
+    // **Um `ARCAVAULT` vazio deixou de ser impossível na E10.** Este teste
+    // nasceu na E1, quando todo dispositivo desta mesa tinha imagens porque
+    // fora preparado à mão com elas dentro — e `o dispositivo tem imagens` era
+    // uma afirmação sobre o mundo, não sobre o código.
+    //
+    // Desde que o `arca prepare` cria dispositivos, um recém-nascido é vazio
+    // por construção: ele nem consegue fazer a primeira imagem, porque o nome
+    // do disco no Linux sai do `blkdev.list` de dentro de uma imagem (§4.5) e o
+    // primeiro backup é pelo menu do Clonezilla (§6.4).
+    //
+    // O teste sai cedo **dizendo isso**. Um teste de hardware que sai calado é
+    // indistinguível de um que passou, e o que ele prova — que o `MD5SUMS`
+    // separa imagem de resíduo (B-3) — continua provado assim que houver o que
+    // enumerar.
+    if pastas.is_empty() {
+        eprintln!(
+            "  (o {} em {} esta VAZIO — nada a enumerar.\n   \
+             E um estado legitimo desde a E10, e nao uma falha: `arca prepare` cria\n   \
+             dispositivos sem imagem. Este teste nao conferiu nada.)",
+            arca::dispositivo::ARCAVAULT,
+            raiz.display()
+        );
+        return;
+    }
 
     for pasta in &pastas {
         let caminho = raiz.join(&pasta.nome);

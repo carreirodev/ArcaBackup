@@ -7,8 +7,12 @@ Automatizador de Clonezilla para backup e restauração de imagem de disco, de u
 ### O dispositivo
 
 **Dispositivo**:
-O SSD externo que carrega o Clonezilla e as imagens juntos, com as partições `ARCABOOT` e `ARCAVAULT`.
+O SSD externo que carrega o Clonezilla e as imagens juntos, com as partições `ARCABOOT` e `ARCAVAULT`. **Desde a E10 o ARCA faz um**: `arca prepare` particiona um disco qualquer, rotula as duas partições, instala o Clonezilla e cria a entrada de boot. O que separa um disco de um dispositivo é isso — e não haver sido comprado como tal.
 _Evitar_: pendrive, mídia, unidade, drive
+
+**Preparar**:
+Transformar um disco num dispositivo: apagar a tabela de partição, criar as duas, rotulá-las, instalar o Clonezilla e criar a entrada de boot. É a **única** operação do ARCA que destrói dados sem reiniciar a máquina, e a única que roda antes de existirem os rótulos pelos quais todas as outras se localizam.
+_Evitar_: formatar, instalar, inicializar
 
 **ARCABOOT**:
 A partição FAT32 do dispositivo, de onde a máquina boota. Guarda o Clonezilla, o `grub.cfg` e o estado do job. Está sempre fora da imagem.
@@ -59,11 +63,13 @@ _Evitar_: BootNext, boot temporário, agendamento de boot
 **Ordem permanente**:
 O `displayorder` do `{fwbootmgr}`: por onde a máquina boota quando ninguém pediu nada. Ela tem **três donos**, e nenhum deles é quem se supunha: o ciclo de boot pelo dispositivo põe a entrada dele na frente ([ADR-0009](docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md)); o Windows a espelha do BCD ao subir; e uma **restauração a devolve ao que está dentro da imagem**, porque o BCD mora na partição EFI e ela é restaurada junto ([ADR-0012](docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)).
 
-**O ARCA a toca em um lugar só, e nunca para acrescentar caminho**: ao colher, ele põe o `{bootmgr}` no topo (C-13, [ADR-0013](docs/adr/0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md)) — sem remover nada, e conferindo com uma releitura. Armar e desarmar continuam proibidos de mexer nela (C-5), e releem para provar que não mexeram. `arca status` só lê e avisa.
+**O ARCA a toca em dois lugares, e nunca para acrescentar caminho**: ao colher, ele põe o `{bootmgr}` no topo (C-13, [ADR-0013](docs/adr/0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md)) — sem remover nada; e ao **preparar**, tira dela a entrada de firmware que acabou de criar, porque o `bcdedit /copy` a acrescenta sozinho ([ADR-0017](docs/adr/0017-a-entrada-de-firmware-nasce-de-uma-copia-do-bootmgr.md)). As duas conferem com uma releitura, e nenhuma acrescenta caminho para o dispositivo. Armar e desarmar continuam proibidos de mexer nela (C-5), e releem para provar que não mexeram. `arca status` só lê e avisa.
 _Evitar_: BootOrder, ordem de boot, boot padrão
 
 **Estado inerte**:
 O `grub.cfg` sem nenhum `menuentry --id arca-backup` e com `set default="live-default"`, e o `{fwbootmgr}` sem `bootsequence`. Um dispositivo inerte boota no menu do Clonezilla e espera alguém. Não é uma cópia guardada: é o que sai de aplicar a regra ao `grub.cfg` que está no dispositivo.
+
+**E não é o estado em que o Clonezilla o entrega.** O pacote traz `set default="0"`, que aponta por **posição** — e a posição muda quando o bloco do ARCA entra antes do `live-default`. Um dispositivo assim está armado no instante em que alguém insere o bloco, sem que ninguém toque no `set default`: é um estado que *parece* inerte. Por isso `arca prepare` desarma o que acaba de instalar ([ADR-0018](docs/adr/0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md)).
 _Evitar_: estado limpo, estado original, estado padrão
 
 **`set default`**:

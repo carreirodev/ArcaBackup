@@ -116,6 +116,7 @@ fn executar(brutos: &[String]) -> Desfecho {
     let sistema = sistema();
     let entropia = entropia();
     let console = ConsoleDoUsuario;
+    let particionador = particionador();
 
     let contexto = Contexto {
         dry_run: cli.dry_run,
@@ -127,6 +128,7 @@ fn executar(brutos: &[String]) -> Desfecho {
         sistema: sistema.as_ref(),
         entropia: entropia.as_ref(),
         console: &console,
+        particionador: particionador.as_ref(),
     };
 
     let saida = match app::executar(&cli, &contexto) {
@@ -157,6 +159,20 @@ fn sistema() -> Box<dyn arca::portas::Sistema> {
 #[cfg(not(windows))]
 fn sistema() -> Box<dyn arca::portas::Sistema> {
     Box::new(arca::duplos::SistemaDeMentira::novo())
+}
+
+/// Quem particiona o dispositivo (PR-5). A quinta porta, e a unica cuja
+/// operacao apaga um disco.
+#[cfg(windows)]
+fn particionador() -> Box<dyn arca::portas::Particionador> {
+    Box::new(arca::adaptadores::windows::particionador::ParticionadorDoWindows)
+}
+
+/// Fora do Windows nao ha `Get-Disk`. O duplo responde os tres discos desta
+/// mesa e **registra** o que lhe mandaram fazer, sem tocar em nada.
+#[cfg(not(windows))]
+fn particionador() -> Box<dyn arca::portas::Particionador> {
+    Box::new(arca::duplos::ParticionadorDeMentira::desta_mesa())
 }
 
 /// De onde sai o selo (C-11).

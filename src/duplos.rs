@@ -615,6 +615,28 @@ impl Arquivos for ArquivosEmMemoria {
         Ok(())
     }
 
+    fn copiar(&self, origem: &Path, destino: &Path) -> Resultado<()> {
+        // A copia registra a origem em `consultados` porque ela **lê** —
+        // C-1 pergunta o que foi consultado, e uma copia que nao aparecesse
+        // ali seria uma leitura escondida do teste.
+        self.anotar_consulta(origem);
+
+        // Um arquivo que nao existe e erro, como no sistema de arquivos de
+        // verdade. Copiar o nada em silencio deixaria o `arca prepare`
+        // declarando um dispositivo pronto sem o binario do ARCA dentro.
+        let conteudo = self.conteudo.borrow().get(origem).cloned().ok_or_else(|| {
+            erro_de_arquivo("copia", origem)(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "nao existe neste sistema de arquivos de mentira",
+            ))
+        })?;
+
+        self.conteudo
+            .borrow_mut()
+            .insert(destino.to_path_buf(), conteudo);
+        Ok(())
+    }
+
     fn listar(&self, caminho: &Path) -> Resultado<Vec<Entrada>> {
         // Como o `read_dir` de verdade: caminho que nao existe e erro, nao
         // diretorio vazio. Sem isto, um `arca list` apontado para a raiz
@@ -702,6 +724,27 @@ pub struct SistemaDeMentira {
     /// Os caminhos resumidos, na ordem. E o que permite a um teste afirmar
     /// **quais** arquivos foram lidos, e nao so quantos.
     pub resumidos: RefCell<Vec<PathBuf>>,
+
+    /// O que o `curl` responde, e o **conteudo** que ele deixa no destino.
+    ///
+    /// O conteudo importa porque o passo seguinte de PR-1 e resumir o arquivo
+    /// baixado: um duplo que baixasse o nada faria a conferencia de SHA256 cair
+    /// no caminho de "arquivo ausente" em vez de exercitar o que ela existe
+    /// para exercitar.
+    pub download: Resultado<SaidaDeFerramenta>,
+    pub conteudo_baixado: String,
+
+    /// As URLs pedidas, na ordem. `arca prepare --iso` **nao** pode baixar
+    /// nada, e este vetor e o que torna isso afirmavel.
+    pub baixados: RefCell<Vec<String>>,
+
+    /// O que o `bsdtar -x` responde, e os caminhos que ele "extrai".
+    pub extracao: Resultado<SaidaDeFerramenta>,
+    pub extraidos: RefCell<Vec<(PathBuf, PathBuf)>>,
+
+    /// O que o `bsdtar -t` lista. O padrao e o pacote de verdade, abreviado —
+    /// ver [`SistemaDeMentira::listando`].
+    pub listagem: Resultado<SaidaDeFerramenta>,
 }
 
 impl Default for SistemaDeMentira {
@@ -726,13 +769,73 @@ impl Default for SistemaDeMentira {
                 .to_string(),
             },
             resumidos: RefCell::new(Vec::new()),
+            download: Ok(SaidaDeFerramenta {
+                codigo: 0,
+                texto: String::new(),
+            }),
+            conteudo_baixado: "o pacote do Clonezilla, de mentira".to_string(),
+            baixados: RefCell::new(Vec::new()),
+            extracao: Ok(SaidaDeFerramenta {
+                codigo: 0,
+                texto: String::new(),
+            }),
+            extraidos: RefCell::new(Vec::new()),
+            listagem: Ok(SaidaDeFerramenta {
+                codigo: 0,
+                texto: LISTAGEM_DO_PACOTE.to_string(),
+            }),
         }
     }
 }
 
+/// A listagem do pacote de verdade, abreviada — extraída com o `bsdtar` do
+/// `System32` em 23/08/2026. São 356 entradas no total; estas dez cobrem os
+/// quatro caminhos obrigatórios de [`crate::pacote::CAMINHOS_OBRIGATORIOS`] e
+/// a forma das outras.
+const LISTAGEM_DO_PACOTE: &str = "\
+.disk/info
+Clonezilla-Live-Version
+EFI/boot/bootx64.efi
+boot/grub/grub.cfg
+home/partimag/
+live/filesystem.squashfs
+live/initrd.img
+live/vmlinuz
+syslinux/isolinux.cfg
+utils/
+";
+
 impl SistemaDeMentira {
     pub fn novo() -> SistemaDeMentira {
         SistemaDeMentira::default()
+    }
+
+    /// O que o `curl` responde e o que ele deixa no destino.
+    pub fn baixando(mut self, codigo: i32, texto: &str, conteudo: &str) -> SistemaDeMentira {
+        self.download = Ok(SaidaDeFerramenta {
+            codigo,
+            texto: texto.to_string(),
+        });
+        self.conteudo_baixado = conteudo.to_string();
+        self
+    }
+
+    /// O que o `bsdtar -x` responde.
+    pub fn extraindo(mut self, codigo: i32, texto: &str) -> SistemaDeMentira {
+        self.extracao = Ok(SaidaDeFerramenta {
+            codigo,
+            texto: texto.to_string(),
+        });
+        self
+    }
+
+    /// O que o `bsdtar -t` lista dentro do pacote.
+    pub fn listando(mut self, codigo: i32, texto: &str) -> SistemaDeMentira {
+        self.listagem = Ok(SaidaDeFerramenta {
+            codigo,
+            texto: texto.to_string(),
+        });
+        self
     }
 
     /// O valor bruto do registro. `None` reproduz o valor ausente, que **nao**
@@ -844,6 +947,34 @@ impl Sistema for SistemaDeMentira {
         })
     }
 
+    fn baixar(&self, url: &str, _destino: &Path) -> Resultado<SaidaDeFerramenta> {
+        // Registra **antes** de decidir se recusa, pelo mesmo motivo do
+        // `reiniciar`: um download que falhou tambem foi tentado, e `arca
+        // prepare --iso` nao pode ter tentado nenhum.
+        self.baixados.borrow_mut().push(url.to_string());
+        match &self.download {
+            Ok(saida) => Ok(saida.clone()),
+            Err(erro) => Err(clonar_a_recusa(erro)),
+        }
+    }
+
+    fn extrair(&self, pacote: &Path, destino: &Path) -> Resultado<SaidaDeFerramenta> {
+        self.extraidos
+            .borrow_mut()
+            .push((pacote.to_path_buf(), destino.to_path_buf()));
+        match &self.extracao {
+            Ok(saida) => Ok(saida.clone()),
+            Err(erro) => Err(clonar_a_recusa(erro)),
+        }
+    }
+
+    fn listar_pacote(&self, _pacote: &Path) -> Resultado<SaidaDeFerramenta> {
+        match &self.listagem {
+            Ok(saida) => Ok(saida.clone()),
+            Err(erro) => Err(clonar_a_recusa(erro)),
+        }
+    }
+
     fn reiniciar(&self) -> Resultado<()> {
         // Conta antes de decidir se recusa: um `shutdown` que falhou tambem
         // **foi chamado**, e um teste que confunde "nao chamou" com "chamou e
@@ -853,6 +984,209 @@ impl Sistema for SistemaDeMentira {
             Some(erro) => Err(clonar_a_recusa(erro)),
             None => Ok(()),
         }
+    }
+}
+
+// ─────────────────────── o particionador de mentira ───────────────────────
+
+/// Um particionador que responde o que lhe ensinaram e **registra o que lhe
+/// mandaram fazer**.
+///
+/// O registro é o ponto: este é o único duplo do projeto cuja operação de
+/// verdade apaga um disco, e o que a maioria dos testes precisa afirmar é que
+/// ela **não** foi chamada. Um duplo que só respondesse não distinguiria
+/// "recusou antes de escrever" de "escreveu e deu certo".
+pub struct ParticionadorDeMentira {
+    pub discos: Vec<crate::portas::particionador::DiscoParaPreparar>,
+
+    /// Os planos executados, na ordem. Vazio é o que a maioria dos testes
+    /// desta etapa espera.
+    pub particionados: RefCell<Vec<crate::portas::particionador::PlanoDeParticoes>>,
+
+    /// O que a releitura responde depois de particionar.
+    pub saida: Resultado<crate::portas::particionador::ParticoesFeitas>,
+
+    /// Quantas vezes descreveram um disco. É o que permite provar que o
+    /// terceiro tempo de PR-4 releu antes de agir, em vez de reusar a leitura
+    /// que imprimiu o plano.
+    pub descricoes: Cell<usize>,
+}
+
+impl ParticionadorDeMentira {
+    /// Os três discos desta mesa em 23/08/2026, com o segundo dispositivo
+    /// ainda intacto.
+    pub fn desta_mesa() -> ParticionadorDeMentira {
+        ParticionadorDeMentira {
+            discos: discos_para_preparar_desta_mesa(),
+            particionados: RefCell::new(Vec::new()),
+            saida: Ok(o_que_o_particionamento_deixou()),
+            descricoes: Cell::new(0),
+        }
+    }
+
+    pub fn com_discos(
+        discos: Vec<crate::portas::particionador::DiscoParaPreparar>,
+    ) -> ParticionadorDeMentira {
+        ParticionadorDeMentira {
+            discos,
+            particionados: RefCell::new(Vec::new()),
+            saida: Ok(o_que_o_particionamento_deixou()),
+            descricoes: Cell::new(0),
+        }
+    }
+
+    /// O que a releitura responde. Serve para exercitar a conferência de
+    /// [`crate::preparacao::conferir_o_que_saiu`] pelo caminho da divergência.
+    pub fn devolvendo(
+        mut self,
+        saida: Resultado<crate::portas::particionador::ParticoesFeitas>,
+    ) -> ParticionadorDeMentira {
+        self.saida = saida;
+        self
+    }
+
+    /// Se o disco foi apagado. A pergunta que a maioria dos testes faz.
+    pub fn particionou(&self) -> bool {
+        !self.particionados.borrow().is_empty()
+    }
+}
+
+impl crate::portas::Particionador for ParticionadorDeMentira {
+    fn descrever(
+        &self,
+        indice: u32,
+    ) -> Resultado<Option<crate::portas::particionador::DiscoParaPreparar>> {
+        self.descricoes.set(self.descricoes.get() + 1);
+        Ok(self
+            .discos
+            .iter()
+            .find(|disco| disco.indice == indice)
+            .cloned())
+    }
+
+    fn enumerar(&self) -> Resultado<Vec<crate::portas::particionador::DiscoParaPreparar>> {
+        Ok(self.discos.clone())
+    }
+
+    fn particionar(
+        &self,
+        plano: &crate::portas::particionador::PlanoDeParticoes,
+    ) -> Resultado<crate::portas::particionador::ParticoesFeitas> {
+        self.particionados.borrow_mut().push(plano.clone());
+        match &self.saida {
+            Ok(saida) => Ok(saida.clone()),
+            Err(erro) => Err(clonar_a_recusa(erro)),
+        }
+    }
+}
+
+/// Os três discos desta mesa em 23/08/2026, como o `arca prepare` os vê.
+///
+/// Números de verdade: o `JMicron Generic` de 447 GB que a E10 destrói de
+/// propósito, o dispositivo já preparado, e o `KINGSTON` do Windows. E os dois
+/// modelos de cada disco são **diferentes de propósito** onde eles diferem de
+/// verdade — o `MSFT_Disk` diz `JMicron Generic` e o WMI diz `JMicron Generic
+/// SCSI Disk Device`.
+pub fn discos_para_preparar_desta_mesa() -> Vec<crate::portas::particionador::DiscoParaPreparar> {
+    use crate::portas::particionador::{DiscoParaPreparar, ParticaoExistente};
+
+    vec![
+        DiscoParaPreparar {
+            indice: 0,
+            modelo: "KINGSTON SNV3S500G".to_string(),
+            modelo_no_wmi: Some("KINGSTON SNV3S500G".to_string()),
+            tamanho_bytes: 500_107_862_016,
+            barramento: "NVMe".to_string(),
+            tipo_de_midia: TipoDeMidia::DiscoFixo,
+            estilo_de_particao: "GPT".to_string(),
+            e_do_sistema: true,
+            e_de_boot: true,
+            somente_leitura: false,
+            particoes: vec![ParticaoExistente {
+                numero: 3,
+                letra: Some('C'),
+                rotulo: Some("Windows".to_string()),
+                sistema_de_arquivos: Some("NTFS".to_string()),
+                tamanho_bytes: 498_701_697_024,
+            }],
+        },
+        DiscoParaPreparar {
+            indice: 1,
+            modelo: "JMicron Generic".to_string(),
+            modelo_no_wmi: Some("JMicron Generic SCSI Disk Device".to_string()),
+            tamanho_bytes: 480_103_981_056,
+            barramento: "USB".to_string(),
+            tipo_de_midia: TipoDeMidia::DiscoExterno,
+            estilo_de_particao: "MBR".to_string(),
+            e_do_sistema: false,
+            e_de_boot: false,
+            somente_leitura: false,
+            particoes: vec![ParticaoExistente {
+                numero: 1,
+                letra: Some('E'),
+                rotulo: Some("Dell Beta Apps NO IA WSL".to_string()),
+                sistema_de_arquivos: Some("NTFS".to_string()),
+                tamanho_bytes: 480_099_958_784,
+            }],
+        },
+        DiscoParaPreparar {
+            indice: 2,
+            modelo: "KGSSE100 256".to_string(),
+            modelo_no_wmi: Some("KGSSE100 256 SCSI Disk Device".to_string()),
+            tamanho_bytes: 256_060_514_304,
+            barramento: "USB".to_string(),
+            tipo_de_midia: TipoDeMidia::DiscoExterno,
+            estilo_de_particao: "MBR".to_string(),
+            e_do_sistema: false,
+            e_de_boot: false,
+            somente_leitura: false,
+            particoes: vec![
+                ParticaoExistente {
+                    numero: 1,
+                    letra: Some('D'),
+                    rotulo: Some("ARCAVAULT".to_string()),
+                    sistema_de_arquivos: Some("NTFS".to_string()),
+                    tamanho_bytes: 254_379_294_720,
+                },
+                ParticaoExistente {
+                    numero: 2,
+                    letra: Some('R'),
+                    rotulo: Some("ARCABOOT".to_string()),
+                    sistema_de_arquivos: Some("FAT32".to_string()),
+                    tamanho_bytes: 1_677_721_600,
+                },
+            ],
+        },
+    ]
+}
+
+/// O que o Windows respondeu depois do particionamento à mão de 23/08/2026.
+pub fn o_que_o_particionamento_deixou() -> crate::portas::particionador::ParticoesFeitas {
+    use crate::portas::particionador::{ParticaoFeita, ParticoesFeitas};
+
+    ParticoesFeitas {
+        vault: ParticaoFeita {
+            numero: 1,
+            letra: 'E',
+            rotulo: "ARCAVAULT".to_string(),
+            sistema_de_arquivos: "NTFS".to_string(),
+            tipo_mbr: 7,
+            tamanho_bytes: 478_423_285_760,
+            offset_bytes: 1_048_576,
+            unidade_de_alocacao: 4096,
+            ativa: false,
+        },
+        boot: ParticaoFeita {
+            numero: 2,
+            letra: 'F',
+            rotulo: "ARCABOOT".to_string(),
+            sistema_de_arquivos: "FAT32".to_string(),
+            tipo_mbr: 12,
+            tamanho_bytes: 1_677_721_600,
+            offset_bytes: 478_424_334_336,
+            unidade_de_alocacao: 4096,
+            ativa: false,
+        },
     }
 }
 
@@ -967,6 +1301,14 @@ impl Arquivos for ArquivosQueRecusam {
 
     fn listar(&self, caminho: &Path) -> Resultado<Vec<Entrada>> {
         self.dentro.listar(caminho)
+    }
+
+    /// A recusa vale para a **origem**, que e o lado que se lê.
+    fn copiar(&self, origem: &Path, destino: &Path) -> Resultado<()> {
+        match self.recusa(origem) {
+            Some(erro) => Err(erro),
+            None => self.dentro.copiar(origem, destino),
+        }
     }
 
     fn espaco_livre(&self, caminho: &Path) -> Resultado<u64> {

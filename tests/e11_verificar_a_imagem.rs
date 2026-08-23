@@ -62,20 +62,59 @@ fn raiz_do_vault() -> Option<PathBuf> {
 }
 
 /// As imagens de verdade do dispositivo, sem os residuos.
+/// As imagens do dispositivo desta mesa, ou `None` quando não há o que
+/// conferir.
+///
+/// # Dois casos diferentes chegam aqui como `None`, e desde a E10 o segundo é
+/// normal
+///
+/// **Não há dispositivo conectado** era o único caso quando estes testes
+/// nasceram: sem `ARCAVAULT`, não há imagem, e o teste sai sem falar.
+///
+/// **Há dispositivo e ele está vazio** passou a existir na E10, quando o `arca
+/// prepare` começou a criar dispositivos — e um dispositivo recém-nascido não
+/// tem imagem nenhuma, por construção. Ele nem consegue fazer a primeira: o
+/// nome do disco no Linux sai do `blkdev.list` de dentro de uma imagem (§4.5), e
+/// o primeiro backup precisa ser feito pelo menu do Clonezilla (§6.4).
+///
+/// Os dois saem cedo, e **os dois dizem por quê** — um teste de hardware que
+/// sai calado é indistinguível de um que passou, e a diferença entre "não testei"
+/// e "testei e passou" é a mesma que este projeto persegue em toda parte.
+///
+/// O que **não** se perde saindo cedo: `src/md5sums.rs` fixa os catorze
+/// `nvme0n1p*` da captura e roda sem hardware nenhum. O que estes testes
+/// acrescentam é a confirmação contra as imagens **deste** dispositivo, e ela
+/// só existe quando há imagens.
 fn imagens_do_dispositivo() -> Option<Vec<(String, PathBuf)>> {
-    let raiz = raiz_do_vault()?;
-    let pastas = imagens::enumerar(&ArquivosDoSistema, &raiz).ok()?;
+    let Some(raiz) = raiz_do_vault() else {
+        eprintln!(
+            "  (sem dispositivo ARCA conectado — este teste nao conferiu nada, e nao e falha)"
+        );
+        return None;
+    };
 
-    Some(
-        pastas
-            .into_iter()
-            .filter(|pasta| matches!(pasta.especie, Especie::Imagem { .. }))
-            .map(|pasta| {
-                let caminho = raiz.join(&pasta.nome);
-                (pasta.nome, caminho)
-            })
-            .collect(),
-    )
+    let pastas = imagens::enumerar(&ArquivosDoSistema, &raiz).ok()?;
+    let imagens: Vec<(String, PathBuf)> = pastas
+        .into_iter()
+        .filter(|pasta| matches!(pasta.especie, Especie::Imagem { .. }))
+        .map(|pasta| {
+            let caminho = raiz.join(&pasta.nome);
+            (pasta.nome, caminho)
+        })
+        .collect();
+
+    if imagens.is_empty() {
+        eprintln!(
+            "  (o dispositivo em {} esta VAZIO — nenhuma imagem a conferir.\n   \
+             E um estado legitimo desde a E10: `arca prepare` cria dispositivos sem\n   \
+             imagem, e o primeiro backup deles e pelo menu do Clonezilla (§4.5, §6.4).\n   \
+             Este teste nao conferiu nada, e nao e falha.)",
+            raiz.display()
+        );
+        return None;
+    }
+
+    Some(imagens)
 }
 
 #[test]
@@ -87,7 +126,10 @@ fn todo_md5sums_deste_dispositivo_e_lido_pelo_parser() {
     let Some(imagens) = imagens_do_dispositivo() else {
         return;
     };
-    assert!(!imagens.is_empty(), "nao ha imagem no ARCAVAULT");
+    // A lista nunca chega vazia aqui — `imagens_do_dispositivo` já sai cedo
+    // nesse caso, e diz por quê. O `debug_assert` guarda a invariante sem
+    // transformar um dispositivo recém-preparado em suíte vermelha.
+    debug_assert!(!imagens.is_empty(), "a lista devia ter saido cedo");
 
     for (nome, caminho) in imagens {
         let arquivo = caminho.join(md5sums::ARQUIVO);

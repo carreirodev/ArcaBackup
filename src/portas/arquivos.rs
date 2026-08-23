@@ -63,6 +63,28 @@ pub trait Arquivos {
     fn criar_diretorio(&self, caminho: &Path) -> Resultado<()>;
     fn listar(&self, caminho: &Path) -> Resultado<Vec<Entrada>>;
 
+    /// Copia um arquivo, sobrescrevendo o destino se ele existir.
+    ///
+    /// # Por que isto nao fura B-10
+    ///
+    /// B-10 diz que o ARCA nunca **apaga** nada, e sobrescrever nao e apagar —
+    /// e a mesma distincao que o [ADR-0008] usou para o `estado.json` de um job
+    /// colhido: *"ele fica no dispositivo ate o proximo `arca backup` gravar
+    /// por cima, que e substituicao e nao exclusao"*.
+    ///
+    /// Os dois usos sao do `arca prepare` e os dois escrevem onde nada havia:
+    /// o binario do ARCA no `ARCABOOT` e a copia do pacote no `ARCAVAULT`
+    /// (PR-3), num disco que o proprio comando acabou de particionar.
+    ///
+    /// # Por que uma copia, e nao lê e escrever
+    ///
+    /// Porque [`Arquivos::escrever_atomico`] recebe `&str`, e um `.exe` e um
+    /// `.zip` nao sao texto. Passar meio giga por uma `String` seria pior de
+    /// todas as formas.
+    ///
+    /// [ADR-0008]: ../../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md
+    fn copiar(&self, origem: &Path, destino: &Path) -> Resultado<()>;
+
     /// Espaco livre no volume que contem `caminho`.
     fn espaco_livre(&self, caminho: &Path) -> Resultado<u64>;
 }

@@ -12,6 +12,8 @@ pub mod entropia;
 #[cfg(windows)]
 pub mod firmware;
 #[cfg(windows)]
+pub mod particionador;
+#[cfg(windows)]
 pub mod privilegios;
 #[cfg(windows)]
 pub mod sistema;

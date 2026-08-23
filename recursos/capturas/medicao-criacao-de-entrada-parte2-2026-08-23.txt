@@ -1,0 +1,138 @@
+# A criacao de uma entrada de firmware do zero — parte 2
+
+### A entrada crua, como `/copy` a deixou
+> bcdedit /enum {f4057bd1-65a4-11f1-b0f1-aa4ed9bd2b34}
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {f4057bd1-65a4-11f1-b0f1-aa4ed9bd2b34}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             ARCA-MEDICAO-E10
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+(codigo de saida 0)
+
+### APONTAR device
+> bcdedit /set {f4057bd1-65a4-11f1-b0f1-aa4ed9bd2b34} device partition=R:
+A operação foi concluída com êxito.
+(codigo de saida 0)
+
+### APONTAR path
+> bcdedit /set {f4057bd1-65a4-11f1-b0f1-aa4ed9bd2b34} path \EFI\boot\bootx64.efi
+A operação foi concluída com êxito.
+(codigo de saida 0)
+
+### RELEITURA (C-3) — a entrada pronta
+> bcdedit /enum {f4057bd1-65a4-11f1-b0f1-aa4ed9bd2b34}
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {f4057bd1-65a4-11f1-b0f1-aa4ed9bd2b34}
+device                  partition=R:
+path                    \EFI\boot\bootx64.efi
+description             ARCA-MEDICAO-E10
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+(codigo de saida 0)
+
+### A entrada ARCA que ja existia, para comparar
+> bcdedit /enum {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}
+device                  partition=R:
+path                    \EFI\boot\bootx64.efi
+description             ARCA
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+(codigo de saida 0)
+
+### DEPOIS DE APONTAR — o gerenciador de firmware
+> bcdedit /enum {fwbootmgr}
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+                        {f4057bd1-65a4-11f1-b0f1-aa4ed9bd2b34}
+timeout                 1
+(codigo de saida 0)
+
+### APAGAR a entrada de medicao
+> bcdedit /delete {f4057bd1-65a4-11f1-b0f1-aa4ed9bd2b34} /f
+A operação foi concluída com êxito.
+(codigo de saida 0)
+
+### DEPOIS DE APAGAR — as entradas de firmware
+> bcdedit /enum firmware
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+timeout                 1
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {bootmgr}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             Windows Boot Manager
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}
+device                  partition=R:
+path                    \EFI\boot\bootx64.efi
+description             ARCA
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+(codigo de saida 0)
+
+### DEPOIS DE APAGAR — o gerenciador de firmware
+> bcdedit /enum {fwbootmgr}
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+timeout                 1
+(codigo de saida 0)
+
+### O firmware voltou ao que era antes da medicao?
+a entrada de medicao sumiu: True
+o displayorder tem so o {bootmgr}: True

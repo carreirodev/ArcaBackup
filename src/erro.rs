@@ -64,6 +64,67 @@ pub enum Erro {
     )]
     ImagemReprovada { nome: String, quantos: usize },
 
+    /// `arca prepare` recusou o disco **antes** de escrever qualquer coisa
+    /// (PR-4, PR-5).
+    ///
+    /// Como a de C-2 e a do pre-voo, esta recusa nunca chega depois de algo ter
+    /// sido tocado — e aqui isso vale mais do que em qualquer outro comando,
+    /// porque o que vem depois apaga um disco inteiro.
+    #[error("o `arca prepare` recusou o disco: {0}")]
+    PreparacaoRecusada(crate::preparacao::RecusaDaPreparacao),
+
+    /// O terceiro tempo de PR-4: o disco relido **não é** o do plano.
+    ///
+    /// O índice do Windows não é identidade — medido em 23/08/2026, quando o
+    /// dispositivo desta mesa passou de disco 1 a disco 2 com um segundo SSD
+    /// conectado. Entre imprimir o plano e escrever a tabela há uma pessoa
+    /// lendo e digitando, e nesse intervalo cabe trocar um cabo.
+    #[error(
+        "o disco {indice} NAO e mais o que estava no plano (`{modelo}`), ou sumiu da enumeracao. Nada foi apagado. O indice do Windows muda quando se conecta ou desconecta um disco — rode `arca prepare --dispositivo <indice>` de novo e confira o modelo e o tamanho na tela antes de responder"
+    )]
+    DiscoMudouEntreOPlanoEOSim { indice: u32, modelo: String },
+
+    /// O disco foi particionado e a releitura não mostra a estrutura pedida
+    /// (PR-5, defesa 7).
+    #[error("{0}")]
+    ParticionamentoDivergiu(crate::preparacao::Divergencia),
+
+    /// PR-1: o pacote do Clonezilla não passou.
+    #[error("o pacote do Clonezilla foi recusado: {0}")]
+    PacoteRecusado(crate::pacote::RecusaDoPacote),
+
+    /// O `bcdedit /copy` respondeu e a resposta não trouxe **um**
+    /// identificador.
+    ///
+    /// Zero é o `bcdedit` tendo recusado sem dizer; mais de um não diz qual
+    /// vale, e escolher o errado apontaria o boot da máquina para outro lugar.
+    #[error(
+        "o `bcdedit /copy` respondeu com {quantos} identificadores, e o ARCA precisa de exatamente um para saber que entrada de boot acabou de criar. O ARCA acha o identificador pela FORMA — 36 caracteres entre chaves —, e nunca pelo texto, que vem traduzido. A resposta foi: {resposta}"
+    )]
+    EntradaNaoFoiCriada { quantos: usize, resposta: String },
+
+    /// C-3 sobre o `path` da entrada nova.
+    #[error(
+        "a entrada de firmware {identificador} devia carregar `{esperado}` e a releitura mostra `{tem}`. O dispositivo esta particionado e com o Clonezilla dentro; o que falta e a entrada de boot apontar para o `.efi` certo"
+    )]
+    CaminhoDoEfiRecusado {
+        identificador: String,
+        esperado: String,
+        tem: String,
+    },
+
+    /// A entrada continua na ordem permanente depois de mandada sair.
+    ///
+    /// `bcdedit /copy` a põe lá sozinho, e deixá-la é acrescentar um caminho
+    /// permanente para bootar no dispositivo — o perigo que C-5 nomeia.
+    #[error(
+        "a entrada {identificador} devia ter saido da ordem permanente de boot e a releitura mostra [{ordem}]. Deixa-la ali acrescenta um caminho permanente para a maquina bootar no dispositivo, que e o que C-5 existe para impedir — e ligar a maquina com ele conectado passaria a abrir o menu do Clonezilla"
+    )]
+    EntradaContinuaNaOrdem {
+        identificador: String,
+        ordem: String,
+    },
+
     /// A enumeracao de discos nao achou o disco onde o Windows mora, ou achou
     /// so o proprio dispositivo.
     ///
@@ -283,12 +344,23 @@ pub enum Erro {
 
     /// C-10. Dois rotulos iguais tornam o destino ambiguo, e e por rotulo que
     /// a receita resolve o destino (S-3).
+    ///
+    /// **A mensagem nomeia as letras desde a E10**, e a razao e que o caso
+    /// deixou de ser raro: `arca prepare` cria um dispositivo, e um comando
+    /// bem-sucedido deixa dois conectados por definicao. A partir dai todo
+    /// comando cai aqui — inclusive o `arca status`, que e o que alguem
+    /// rodaria para entender o que esta acontecendo.
     #[error(
-        "ha {quantos} volumes com o rotulo {rotulo} conectados, e o ARCA opera um dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele repetido nao ha o que escolher. Desconecte os demais"
+        "ha {quantos} volumes com o rotulo {rotulo} conectados ({onde}), e o ARCA opera um dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele repetido nao ha o que escolher. Desconecte os demais e rode de novo. Se voce acabou de preparar um dispositivo, sao os dois — o novo e o de antes"
     )]
     DispositivosDemais {
         rotulo: &'static str,
         quantos: usize,
+
+        /// As letras dos volumes achados, para quem lê saber **quais**
+        /// desconectar. `Desconecte os demais` sem dizer quais empurra a
+        /// pergunta de volta para quem não tem como respondê-la.
+        onde: String,
     },
 
     #[error(

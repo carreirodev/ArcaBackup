@@ -90,6 +90,21 @@ impl Arquivos for ArquivosDoSistema {
         Ok(entradas)
     }
 
+    fn copiar(&self, origem: &Path, destino: &Path) -> Resultado<()> {
+        // `fs::copy` usa o `CopyFileExW` do Windows, que copia sem passar o
+        // conteudo pela memoria deste processo — o que importa quando o
+        // arquivo tem meio giga (a copia do pacote de PR-3).
+        //
+        // Nao e atomica, e nao precisa ser: os dois usos do `arca prepare`
+        // escrevem onde nada havia, num disco que o proprio comando acabou de
+        // particionar. Uma copia interrompida deixa um arquivo pela metade
+        // num dispositivo que ainda nao esta pronto, e rodar o comando de novo
+        // resolve — ele comeca apagando.
+        fs::copy(origem, destino)
+            .map(|_| ())
+            .map_err(erro_de_arquivo("copia", destino))
+    }
+
     fn espaco_livre(&self, caminho: &Path) -> Resultado<u64> {
         espaco_livre_do_volume(caminho)
     }

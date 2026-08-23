@@ -1,0 +1,76 @@
+  Disco 1 ......................... JMicron Generic · USB · 447,1 GB
+  Tipo de midia ................... External hard disk media · nao e disco fixo (PR-5)
+  Sistema ......................... IsSystem false · IsBoot false · nao carrega o C:
+  Tabela de particao hoje ......... MBR · vai ser reescrita como MBR
+
+O QUE EXISTE NESTE DISCO HOJE, e vai ser APAGADO:
+  1  NTFS    445,6 GB  "ARCAVAULT"                E:
+  2  FAT32     1,6 GB  "ARCABOOT"                 F:
+
+  ESTE DISCO JA E UM DISPOSITIVO ARCA. Os rotulos acima sao os dele, e o
+  que esta no ARCAVAULT sao AS IMAGENS — todas. Preparar por cima apaga
+  cada uma, e o ARCA nunca apaga imagem em nenhum outro caminho (B-10).
+  Se o que voce quer e reinstalar o Clonezilla sem perder as imagens,
+  este comando NAO faz isso: ele comeca reescrevendo a tabela de particao.
+
+O QUE VAI FICAR NO LUGAR:
+  MBR  1  NTFS   445,6 GB  ARCAVAULT   as imagens moram aqui
+       2  FAT32    1,6 GB  ARCABOOT    o Clonezilla e o ARCA moram aqui
+
+  A estrutura e MBR, e nao GPT: e a que esta bootando neste projeto desde
+ 19/08, e trocar por GPT+ESP seria abandonar um esquema medido por um
+ suposto — num lugar cujo modo de falha e um dispositivo que NAO BOOTA, e
+ que so se descobre depois de o Windows ja ter sido apagado (ADR-0014).
+
+E O QUE MAIS VAI ACONTECER:
+  Clonezilla 3.3.3-15 · baixado (535,5 MB), com o SHA256 conferido contra
+     o valor compilado neste ARCA — e nao contra um baixado junto (PR-1)
+  Uma copia do pacote fica no ARCAVAULT, para o dispositivo se reconstruir
+     sozinho (PR-3)
+  Uma entrada de boot chamada `ARCA` e criada no firmware, apontando para o
+     ARCABOOT — e **tirada da ordem permanente** logo em seguida, para que
+     ligar a maquina continue subindo o Windows (C-5)
+  O proprio `arca.exe` e instalado no ARCABOOT, porque o que julga uma
+     restauracao nao pode morar no disco que ela substitui (§4.1)
+
+  O `grub.cfg` fica INERTE: nada roda sozinho ate um `arca backup` (§4.4)
+
+Podemos continuar? (s/N): 
+  Conferido antes de escrever ..... ok · o disco 1 continua sendo `JMicron Generic` de 447,1 GB
+
+Digite o modelo do disco para confirmar: 
+  Particionando ................... ok · MBR, 2 particoes · MbrType 7 e 12
+  Formatando e rotulando .......... ok · ARCAVAULT (NTFS) em E: · ARCABOOT (FAT32) em F:
+  Conferido apos escrever ......... ok · relido do disco · nenhuma particao ativa, unidade 4096 (C-3)
+  Baixando Clonezilla ............. 3.3.3-15 · 535,5 MB · pode levar minutos
+  SHA256 conferido ................ ok · 00cee7700433 · de https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_stable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip
+  Copia do pacote em ARCAVAULT .... ok · E:\clonezilla-live-3.3.3-15-amd64.zip (PR-3)
+  Extraindo ....................... ok · F:\
+  Estado inerte ................... ok · o `set default` do pacote era "0", e voltou para `live-default`
+  Instalando o ARCA em ARCABOOT ... ok · F:\arca\arca.exe (§4.1)
+  Entrada de firmware ............. reusada e reapontada · ARCA · {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34} · partition=F:
+
+  A entrada de firmware ja existia e passou a apontar para ESTE dispositivo.
+  O ARCA mantem UMA entrada, e nao uma por dispositivo (C-4): duas seriam
+  duas formas de bootar no Clonezilla, uma delas sem ninguem olhando.
+  Se voce voltar a usar outro dispositivo ARCA, o `arca backup` reaponta a
+  entrada para ele ao armar, e confere que reapontou (C-6). Nao ha nada a
+  fazer a mao.
+  Ordem de boot ................... ok · a entrada ja estava fora da ordem permanente
+
+Dispositivo pronto.
+
+  O `grub.cfg` esta INERTE: bootar neste dispositivo abre o menu do
+  Clonezilla e espera alguem (§4.4). Nada roda sozinho ate um `arca backup`.
+  A entrada de firmware existe e esta FORA da ordem permanente — ligar a
+  maquina continua subindo o Windows, com ou sem este dispositivo conectado.
+
+  O ARCAVAULT esta em E: e o ARCABOOT em F:. As letras mudam de uma
+  conexao para outra; os rotulos, nao — e e por rotulo que o ARCA acha o
+  dispositivo (B-1, S-3).
+
+  SE VOCE TEM OUTRO DISPOSITIVO ARCA CONECTADO, desconecte um dos dois: o
+  ARCA opera um por vez, e com dois `arca backup` e `arca restore` recusam
+  por rotulo repetido (C-10).
+
+  Primeiro backup:  arca backup <nome>

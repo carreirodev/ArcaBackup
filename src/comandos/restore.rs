@@ -21,7 +21,7 @@
 //! | Armar, e a releitura de C-3 | Rodou em hardware em 22/08/2026 (E7) |
 //! | A lista numerada e a escolha (R-1) | **Codigo novo** |
 //! | A conferencia da imagem (R-2) | **Codigo novo** |
-//! | A recusa por destino menor (R-7) | **Codigo novo** — ADR-0010 |
+//! | A recusa por identidade do disco (R-7) | **Codigo novo** — ADR-0010, ADR-0015 |
 //!
 //! # A ordem, e o que cada posicao impede
 //!
@@ -119,15 +119,21 @@ pub enum RecusaDaRestauracao {
     /// Nao deu para medir o disco de origem dentro da imagem (R-7).
     SemMedidaDaOrigem(SemMedida),
 
-    /// Nao ha disco no Windows com o modelo do disco de origem, e ninguem
-    /// nomeou outro destino.
+    /// Nao ha disco no Windows com o modelo do disco de origem.
+    ///
+    /// Desde o ADR-0015 isto e o fim do caminho, e nao um convite a nomear
+    /// outro disco: o unico destino valido e o disco de onde a imagem veio, e
+    /// ele nao esta aqui.
     SemDestinoObvio { modelo: String },
 
-    /// Mais de um disco casa com o modelo da origem.
+    /// Mais de um disco casa com o modelo da origem, e o ARCA **para**.
+    ///
+    /// Ate o ADR-0015 esta recusa mandava nomear o destino com
+    /// `--destino <indice>`. Pedir que alguem aponte transformaria uma duvida
+    /// do ARCA numa afirmacao do usuario sobre a qual nao ha como conferir
+    /// nada — o mesmo raciocinio da E7 ao nao pedir o nome do disco do Linux
+    /// (§4.5).
     DestinoAmbiguo { modelo: String, quantos: usize },
-
-    /// O indice pedido em `--destino` nao existe.
-    DestinoDesconhecido { indice: u32, quantos: usize },
 
     /// O destino escolhido e o **proprio dispositivo ARCA**, pelas letras que
     /// ele carrega no Windows.
@@ -150,8 +156,15 @@ pub enum RecusaDaRestauracao {
         destino: u64,
     },
 
-    /// R-7: o destino e menor que a origem.
-    DestinoMenor {
+    /// R-7: o disco na mesa **nao e** o disco de que a imagem veio.
+    ///
+    /// A comparacao e de **identidade**, e nao de capacidade, desde o
+    /// [ADR-0015]: nao batendo os setores — para mais ou para menos —, este e
+    /// outro disco. Sobrar espaco nao e permissao para nada, porque o unico
+    /// destino valido e a origem.
+    ///
+    /// [ADR-0015]: ../../docs/adr/0015-a-restauracao-so-restaura-no-disco-de-origem.md
+    NaoEODiscoDeOrigem {
         origem_setores: u64,
         destino_setores: u64,
         bytes_por_setor: u64,
@@ -214,15 +227,11 @@ impl fmt::Display for RecusaDaRestauracao {
             RecusaDaRestauracao::SemMedidaDaOrigem(porque) => write!(f, "{porque}"),
             RecusaDaRestauracao::SemDestinoObvio { modelo } => write!(
                 f,
-                "nenhum disco desta maquina tem o modelo `{modelo}`, que e o do disco de onde a imagem veio. O disco de origem nao esta aqui — nomeie o destino com `--destino <indice>`, e leia a lista de discos que o `arca status` imprime"
+                "nenhum disco desta maquina tem o modelo `{modelo}`, que e o do disco de onde a imagem veio. **O unico destino valido e o disco de origem** (R-7, ADR-0015), e ele nao esta aqui: nao ha outro disco a oferecer, e o ARCA nao aceita que se aponte um. Trocado o disco, o caminho e reinstalar o Windows"
             ),
             RecusaDaRestauracao::DestinoAmbiguo { modelo, quantos } => write!(
                 f,
-                "{quantos} discos desta maquina tem o modelo `{modelo}`, e nao ha como saber qual e o certo. Nomeie o destino com `--destino <indice>` — o ARCA nao escolhe um disco para apagar no chute"
-            ),
-            RecusaDaRestauracao::DestinoDesconhecido { indice, quantos } => write!(
-                f,
-                "nao ha disco de indice {indice} nesta maquina; o Windows enumera {quantos}"
+                "{quantos} discos desta maquina tem o modelo `{modelo}`, que e o do disco de onde a imagem veio, e o ARCA **nao sabe qual dos dois e**. O modelo e a unica coisa que liga a imagem a um disco desta mesa (§4.5), e ela nao os distingue. Pedir que voce apontasse transformaria esta duvida numa afirmacao sobre a qual nao ha nada contra o que conferir — e a operacao apaga o disco. Desconecte o que nao for a origem e rode de novo"
             ),
             RecusaDaRestauracao::DestinoEODispositivo { modelo, letras } => write!(
                 f,
@@ -234,21 +243,26 @@ impl fmt::Display for RecusaDaRestauracao {
             ),
             RecusaDaRestauracao::SemMedidaDoDestino { modelo } => write!(
                 f,
-                "o Windows nao respondeu o tamanho do disco `{modelo}` pelo `MSFT_Disk`, e e essa a unica regua que casa com a que a imagem registra. Sem medir o destino nao da para responder se ele cabe (R-7), e \"nao consegui medir\" nao vira \"cabe\""
+                "o Windows nao respondeu o tamanho do disco `{modelo}` pelo `MSFT_Disk`, e e essa a unica regua que casa com a que a imagem registra. Sem medir o destino nao da para responder se ele **e** o disco de origem (R-7), e \"nao consegui medir\" nao vira \"e ele\""
             ),
             RecusaDaRestauracao::SetorDivergente { origem, destino } => write!(
                 f,
                 "o disco de origem tem setor logico de {origem} bytes e o de destino tem {destino}. A tabela de particao da imagem e escrita em setores da origem, e `-k0` a copia inteira: num disco de outro setor ela enderecaria outro lugar. Isto nao esta medido neste projeto, e o ARCA nao adivinha"
             ),
-            RecusaDaRestauracao::DestinoMenor {
+            RecusaDaRestauracao::NaoEODiscoDeOrigem {
                 origem_setores,
                 destino_setores,
                 bytes_por_setor,
             } => write!(
                 f,
-                "R-7: o destino e MENOR que a origem — {destino_setores} setores contra {origem_setores}, de {bytes_por_setor} bytes cada ({} contra {}). O proprio Clonezilla recusaria: o help desta versao diz que ele confere o tamanho do destino por padrao e desiste se for menor, e `-icds`, que desligaria a conferencia, nao esta na receita. A recusa acontece aqui porque a dele custa um reinicio",
+                "R-7: este NAO e o disco de que a imagem veio — {destino_setores} setores contra {origem_setores}, de {bytes_por_setor} bytes cada ({} contra {}). O modelo casou e o tamanho nao, entao e outro disco. **O unico destino valido e o de origem** (ADR-0015), e por isso a comparacao e de igualdade: {}. Trocado o disco, o caminho e reinstalar o Windows",
                 tamanho(destino_setores.saturating_mul(*bytes_por_setor)),
-                tamanho(origem_setores.saturating_mul(*bytes_por_setor))
+                tamanho(origem_setores.saturating_mul(*bytes_por_setor)),
+                if destino_setores > origem_setores {
+                    "sobrar espaco nao e permissao para restaurar aqui"
+                } else {
+                    "faltar espaco tambem faria o proprio Clonezilla desistir, do outro lado do reinicio"
+                }
             ),
             RecusaDaRestauracao::SemNomeDoDestino(porque) => write!(
                 f,
@@ -530,11 +544,11 @@ fn conferir_a_imagem(
 
 // ─────────────────────────── o destino (R-7) ───────────────────────────
 
-/// O disco que vai ser apagado.
+/// O disco que vai ser apagado, e ele so pode ser o de origem.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Destino {
-    /// O indice do Windows. Serve para nomear na tela e em `--destino`, e
-    /// **nunca** chega a receita: o indice do Windows nao e o do Linux.
+    /// O indice do Windows. Serve para nomear na tela, e **nunca** chega a
+    /// receita: o indice do Windows nao e o do Linux.
     pub indice: u32,
     pub modelo: String,
 
@@ -543,10 +557,6 @@ pub struct Destino {
 
     pub setores: u64,
     pub bytes_por_setor: u64,
-
-    /// Se este e o mesmo disco de que a imagem veio. Falso e o caso de R-7 —
-    /// permitido, e com aviso proprio.
-    pub e_o_da_origem: bool,
 }
 
 impl Destino {
@@ -555,7 +565,14 @@ impl Destino {
     }
 }
 
-/// Escolhe o disco de destino e julga se ele serve (R-7).
+/// Acha o disco de origem nesta mesa e julga se e mesmo ele (R-7).
+///
+/// # Nao ha o que escolher, e e isso que o ADR-0015 mudou
+///
+/// Ate a E9 esta funcao aceitava um `pedido: Option<u32>` vindo de
+/// `--destino <indice>`, porque destino divergente era permitido. Nao e mais:
+/// **o unico destino valido e o disco de que a imagem veio**. O que sobrou e
+/// achar esse disco e provar que e ele — e nao havendo prova, parar.
 ///
 /// # A ordem das recusas, e ela nao e estetica
 ///
@@ -564,7 +581,7 @@ impl Destino {
 /// 2. **A medida**, porque sem ela nada abaixo se responde.
 /// 3. **O setor logico**, porque um destino de outro setor torna a comparacao
 ///    de tamanho sem sentido antes de ela acontecer.
-/// 4. **O tamanho** (R-7).
+/// 4. **A identidade** (R-7): os setores batem exatamente, ou e outro disco.
 /// 5. **O nome Linux**, por ultimo, porque e a unica que depende de haver
 ///    imagem no dispositivo de onde lê-lo — e a mais barata de resolver.
 fn escolher_o_destino(
@@ -572,7 +589,6 @@ fn escolher_o_destino(
     dispositivo: &Dispositivo,
     retrato: &Retrato,
     listas: &[(String, String)],
-    pedido: Option<u32>,
 ) -> Result<Destino, RecusaDaRestauracao> {
     let do_dispositivo: Vec<char> = dispositivo
         .vault
@@ -583,17 +599,16 @@ fn escolher_o_destino(
     let e_o_dispositivo =
         |disco: &DiscoFisico| do_dispositivo.iter().any(|letra| disco.tem_a_letra(*letra));
 
-    // Sem `--destino`, o destino e o disco de que a imagem veio, achado pelo
-    // **modelo** — que e o que liga a imagem a um disco desta mesa. Nao e o
-    // `%SystemDrive%`: numa maquina com dois Windows, o disco onde o `C:` mora
-    // nao e necessariamente o que a imagem retratou, e a imagem sabe qual e.
+    // O destino e o disco de que a imagem veio, achado pelo **modelo** — que e
+    // o que liga a imagem a um disco desta mesa. Nao e o `%SystemDrive%`: numa
+    // maquina com dois Windows, o disco onde o `C:` mora nao e necessariamente
+    // o que a imagem retratou, e a imagem sabe qual e.
     //
     // O disco do dispositivo fica **fora** desta busca, e nao por economia. Se
     // ele tiver o mesmo modelo do disco de origem — dois SSDs iguais, um
     // interno e um na mesa —, sem o filtro haveria dois candidatos e o comando
     // recusaria por `DestinoAmbiguo`, quando um dos dois nunca poderia ser
-    // destino. E, pior, o `e_o_da_origem` abaixo sairia falso e a tela mandaria
-    // rodar `bcdboot` numa restauracao de volta ao disco de que a imagem veio.
+    // destino.
     let casam: Vec<&DiscoFisico> = discos
         .iter()
         .filter(|disco| {
@@ -601,42 +616,60 @@ fn escolher_o_destino(
         })
         .collect();
 
-    let escolhido = match pedido {
-        Some(indice) => discos
-            .iter()
-            .find(|disco| disco.indice == indice)
-            .ok_or(RecusaDaRestauracao::DestinoDesconhecido {
-                indice,
-                quantos: discos.len(),
-            })?,
-        None => match casam.len() {
-            0 => {
-                return Err(RecusaDaRestauracao::SemDestinoObvio {
-                    modelo: retrato.origem.modelo.clone(),
-                });
-            }
-            1 => casam[0],
-            quantos => {
-                return Err(RecusaDaRestauracao::DestinoAmbiguo {
-                    modelo: retrato.origem.modelo.clone(),
-                    quantos,
-                });
-            }
-        },
+    let escolhido = match casam.len() {
+        0 => {
+            return Err(RecusaDaRestauracao::SemDestinoObvio {
+                modelo: retrato.origem.modelo.clone(),
+            });
+        }
+        1 => casam[0],
+
+        // Dois discos do mesmo modelo, e o ARCA para aqui. Nao ha `--destino`
+        // a oferecer desde o ADR-0015: o modelo e a unica ligacao que existe
+        // entre a imagem e um disco desta mesa, e ele nao os distingue. Pedir
+        // que alguem apontasse seria transformar esta duvida numa afirmacao
+        // sem oraculo, num comando que apaga o disco.
+        quantos => {
+            return Err(RecusaDaRestauracao::DestinoAmbiguo {
+                modelo: retrato.origem.modelo.clone(),
+                quantos,
+            });
+        }
     };
 
-    // # "E o mesmo disco de que a imagem veio" exige **um** disco daquele
-    // modelo
-    //
-    // O campo decide se a tela avisa que `-iefi` nao vai achar entrada de
-    // firmware e que o `bcdboot` volta a ser necessario (R-7). Com dois discos
-    // do mesmo modelo na maquina, o modelo casar **nao** prova que este e o
-    // disco de origem — pode ser o gemeo —, e nesse caso o aviso e o lado
-    // seguro. O ARCA nao sabe qual dos dois e, e "nao sei" nao vira "e o
-    // mesmo": e o mesmo raciocinio do `ModeloAmbiguo` de [`crate::blkdev`],
-    // aplicado ao destino em vez de ao nome.
-    let e_o_da_origem =
-        casam.len() == 1 && blkdev::mesmo_modelo(&escolhido.modelo, &retrato.origem.modelo);
+    julgar_o_destino(escolhido, discos, &do_dispositivo, retrato, listas)
+}
+
+/// Julga o disco candidato: e ele mesmo, e nao e o dispositivo?
+///
+/// # Por que isto e uma funcao separada, e nao o resto de [`escolher_o_destino`]
+///
+/// Porque **as duas recusas de R-8 deixaram de ser alcancaveis pelo caminho
+/// normal**, e continuam valendo. A busca acima filtra o dispositivo fora dos
+/// candidatos — precisa filtrar, senao um dispositivo do mesmo modelo da
+/// origem produziria uma ambiguidade falsa —, e com isso nenhum `escolhido`
+/// que chegue aqui pode ser o dispositivo.
+///
+/// O [ADR-0015] previu exatamente isso ao decidir que R-8 fica: *"com o
+/// destino amarrado ao disco de origem ela vira redundante no caminho normal,
+/// e e por isso que fica: a revisao da E9 mostrou que a recusa por letra tinha
+/// um contorno por acidente de modelo, e uma segunda barreira custa nada"*.
+///
+/// Uma barreira redundante sem teste e uma barreira que ninguem sabe se
+/// funciona. Separando o julgamento da escolha, ela continua **exercitada** —
+/// os testes a alcancam por aqui — sem que a escolha precise deixar o
+/// dispositivo entrar na lista de candidatos para isso.
+///
+/// [ADR-0015]: ../../docs/adr/0015-a-restauracao-so-restaura-no-disco-de-origem.md
+fn julgar_o_destino(
+    escolhido: &DiscoFisico,
+    discos: &[DiscoFisico],
+    do_dispositivo: &[char],
+    retrato: &Retrato,
+    listas: &[(String, String)],
+) -> Result<Destino, RecusaDaRestauracao> {
+    let e_o_dispositivo =
+        |disco: &DiscoFisico| do_dispositivo.iter().any(|letra| disco.tem_a_letra(*letra));
 
     // 1. O dispositivo ARCA nunca e destino. Ele carrega o Clonezilla que esta
     //    executando a receita e as imagens que ela lê: apaga-lo seria serrar o
@@ -670,10 +703,14 @@ fn escolher_o_destino(
         });
     }
 
-    // 4. R-7, em setores, com as duas pontas na mesma regua.
+    // 4. R-7, em setores, com as duas pontas na mesma regua — e por
+    //    **igualdade**. O modelo casar diz que e o mesmo tipo de disco; o
+    //    tamanho bater exatamente e o que diz que e o mesmo disco. Um `>=`
+    //    aqui aceitaria um gemeo maior, e o unico destino valido e a origem
+    //    (ADR-0015).
     let setores = medida.setores();
-    if setores < retrato.origem.setores {
-        return Err(RecusaDaRestauracao::DestinoMenor {
+    if setores != retrato.origem.setores {
+        return Err(RecusaDaRestauracao::NaoEODiscoDeOrigem {
             origem_setores: retrato.origem.setores,
             destino_setores: setores,
             bytes_por_setor: medida.bytes_por_setor,
@@ -721,7 +758,6 @@ fn escolher_o_destino(
         disco: achado.disco,
         setores,
         bytes_por_setor: medida.bytes_por_setor,
-        e_o_da_origem,
     })
 }
 
@@ -819,20 +855,15 @@ pub fn montar(plano: &Plano) -> String {
             tamanho(plano.destino.bytes())
         ),
     ));
+
+    // A linha de **identidade**, e nao mais a de capacidade. Ate o ADR-0015
+    // ela dizia `Cabe (R-7)` e podia sair com uma sobra; agora o unico destino
+    // valido e a origem, e o que ela afirma e que os dois numeros acima sao o
+    // mesmo numero. Ela so e alcancavel quando bateram — nao batendo, a
+    // recusa aconteceu antes de a tela chegar aqui.
     saida.push_str(&linha(
-        "Cabe (R-7)",
-        &if plano.destino.setores == plano.retrato.origem.setores {
-            "ok · o destino tem exatamente o tamanho da origem".to_string()
-        } else {
-            format!(
-                "ok · sobram {} setores ({})",
-                plano.destino.setores - plano.retrato.origem.setores,
-                tamanho(
-                    (plano.destino.setores - plano.retrato.origem.setores)
-                        * plano.destino.bytes_por_setor
-                )
-            )
-        },
+        "E o disco de origem (R-7)",
+        "ok · mesmos setores, na mesma regua — o destino e o disco de que a imagem veio",
     ));
     saida.push_str(&linha(
         "Conferido contra a imagem",
@@ -890,19 +921,6 @@ fn avisos_da_imagem(plano: &Plano) -> String {
             "  apresenta como aprovada. `arca verify` confere os MD5SUMS sem reiniciar.\n"
         )),
         _ => {}
-    }
-
-    if !plano.destino.e_o_da_origem {
-        saida.push_str(&format!(
-            "\n  O DESTINO NAO E O DISCO DE ORIGEM (R-7). A imagem veio de um\n\
-             \x20 `{}` e vai para um `{}`.\n\
-             \x20 `-e1 auto -e2` estao na receita e acertam a geometria CHS da particao\n\
-             \x20 de boot NTFS, que e o que faz isso funcionar. O que **nao** funciona\n\
-             \x20 igual: `-iefi` nao acha entrada de firmware correspondente num disco\n\
-             \x20 novo, e o `bcdboot` volta a ser necessario — ao contrario do que o\n\
-             \x20 §3.4 mediu no disco original.\n",
-            plano.retrato.origem.modelo, plano.destino.modelo
-        ));
     }
 
     saida
@@ -986,7 +1004,7 @@ pub fn montar_o_armado(armado: &armar::Armado, ordem: OrdemDeBoot) -> String {
 
 // ─────────────────────────── o comando ───────────────────────────
 
-pub fn executar(contexto: &Contexto, nome_pedido: Option<&str>, destino: Option<u32>) -> Resultado<()> {
+pub fn executar(contexto: &Contexto, nome_pedido: Option<&str>) -> Resultado<()> {
     let dispositivo = dispositivo::encontrar(contexto.discos)?;
     let raiz_do_vault = dispositivo.raiz_do_vault()?;
     let caminho_do_grub = dispositivo.caminho_do_grub()?;
@@ -1033,23 +1051,18 @@ pub fn executar(contexto: &Contexto, nome_pedido: Option<&str>, destino: Option<
         .map_err(Erro::RestauracaoRecusada)?;
 
     let listas = blkdev_das_imagens(contexto.arquivos, &raiz_do_vault, &pastas);
-    let destino = escolher_o_destino(&discos, &dispositivo, &retrato, &listas, destino)
+    let destino = escolher_o_destino(&discos, &dispositivo, &retrato, &listas)
         .map_err(Erro::RestauracaoRecusada)?;
 
     let nome = Nome::novo(&imagem.nome).map_err(Erro::NomeRecusado)?;
 
     contexto.registro.info(format!(
-        "restauracao de `{nome}` · origem {} ({} setores) · destino {} disco {} ({} setores) · {}",
+        "restauracao de `{nome}` · origem {} ({} setores) · destino {} disco {} ({} setores) · e o disco de origem (R-7)",
         retrato.origem.modelo,
         retrato.origem.setores,
         destino.disco,
         destino.indice,
         destino.setores,
-        if destino.e_o_da_origem {
-            "mesmo disco"
-        } else {
-            "OUTRO DISCO (R-7)"
-        }
     ));
 
     print!(
@@ -1365,31 +1378,25 @@ Sector size (logical/physical): 512/512 bytes
         dispositivo::encontrar(&DiscosDeMentira::com_dispositivo()).unwrap()
     }
 
-    fn escolher(discos: &[DiscoFisico], pedido: Option<u32>) -> Result<Destino, RecusaDaRestauracao> {
-        escolher_o_destino(
-            discos,
-            &dispositivo_conectado(),
-            &retrato(),
-            &listas(),
-            pedido,
-        )
+    fn escolher(discos: &[DiscoFisico]) -> Result<Destino, RecusaDaRestauracao> {
+        escolher_o_destino(discos, &dispositivo_conectado(), &retrato(), &listas())
     }
 
     // ─────────────────── R-7 e as duas reguas ───────────────────
 
     #[test]
-    fn o_disco_desta_maquina_cabe_em_si_mesmo() {
-        // O teste que a etapa inteira existe para escrever. Com o destino
-        // medido pelo `Win32_DiskDrive` (500.105.249.280) e a origem pela GPT
-        // (500.107.862.016), este disco nao caberia nele proprio — 5.103
-        // setores a menos, que e menos de um cilindro CHS.
-        let destino = escolher(&crate::duplos::discos_desta_mesa(), None)
-            .expect("o disco de origem tem de servir de destino para ele mesmo");
+    fn o_disco_desta_maquina_e_reconhecido_como_o_de_origem() {
+        // O teste que a E9 existiu para escrever, e que o ADR-0015 endureceu.
+        // Com o destino medido pelo `Win32_DiskDrive` (500.105.249.280) e a
+        // origem pela GPT (500.107.862.016), este disco nao seria reconhecido
+        // como ele proprio — 5.103 setores de diferenca, que e menos de um
+        // cilindro CHS.
+        let destino = escolher(&crate::duplos::discos_desta_mesa())
+            .expect("o disco de origem tem de ser reconhecido como destino");
 
         assert_eq!(destino.disco.como_texto(), "nvme0n1");
         assert_eq!(destino.setores, 976_773_168);
         assert_eq!(destino.setores, retrato().origem.setores);
-        assert!(destino.e_o_da_origem);
     }
 
     #[test]
@@ -1397,6 +1404,8 @@ Sector size (logical/physical): 512/512 bytes
         // O mesmo disco, com a medida do `Win32_DiskDrive` no lugar da do
         // `MSFT_Disk`. E o defeito que o ADR-0010 nomeia, e ele **falha** —
         // que e a prova de que a fonte importa, e nao uma questao de gosto.
+        // Com o `==` do ADR-0015 ele falha ainda mais cedo: a diferenca de
+        // 5.103 setores agora e "nao e este disco", e nao "nao cabe".
         let mut discos = crate::duplos::discos_desta_mesa();
         discos[0].medida = Some(Medida {
             bytes: discos[0].tamanho_bytes,
@@ -1404,8 +1413,8 @@ Sector size (logical/physical): 512/512 bytes
         });
 
         assert_eq!(
-            escolher(&discos, None),
-            Err(RecusaDaRestauracao::DestinoMenor {
+            escolher(&discos),
+            Err(RecusaDaRestauracao::NaoEODiscoDeOrigem {
                 origem_setores: 976_773_168,
                 destino_setores: 976_768_065,
                 bytes_por_setor: 512,
@@ -1414,7 +1423,7 @@ Sector size (logical/physical): 512/512 bytes
     }
 
     #[test]
-    fn um_destino_de_verdade_menor_e_recusado() {
+    fn um_disco_menor_com_o_modelo_da_origem_e_recusado() {
         let mut discos = crate::duplos::discos_desta_mesa();
         discos[0].medida = Some(Medida {
             bytes: 256_060_514_304,
@@ -1422,21 +1431,44 @@ Sector size (logical/physical): 512/512 bytes
         });
 
         assert!(matches!(
-            escolher(&discos, None),
-            Err(RecusaDaRestauracao::DestinoMenor { .. })
+            escolher(&discos),
+            Err(RecusaDaRestauracao::NaoEODiscoDeOrigem { .. })
         ));
     }
 
     #[test]
-    fn um_destino_maior_passa_e_a_sobra_aparece() {
+    fn um_disco_maior_com_o_modelo_da_origem_tambem_e_recusado() {
+        // **Este teste mudou de sentido no ADR-0015**, e a mudanca e o ponto
+        // da decisao. Ate a E9 ele se chamava
+        // `um_destino_maior_passa_e_a_sobra_aparece` e cobrava que a
+        // restauracao seguisse, porque R-7 perguntava *"cabe?"*. Agora ela
+        // pergunta *"e ele mesmo?"*, e um disco de 1 TB com o modelo do de
+        // 500 GB e **outro disco** — provavelmente um gemeo maior da mesma
+        // linha, que e exatamente o caso que a igualdade pega e o `>=` deixava
+        // passar.
+        //
+        // Sobrar espaco nao e permissao para nada: o unico destino valido e a
+        // origem.
         let mut discos = crate::duplos::discos_desta_mesa();
         discos[0].medida = Some(Medida {
             bytes: 1_000_204_886_016,
             bytes_por_setor: 512,
         });
 
-        let destino = escolher(&discos, None).expect("um disco maior serve");
-        assert!(destino.setores > retrato().origem.setores);
+        let recusa = escolher(&discos).expect_err("um disco maior nao e o de origem");
+        assert!(matches!(
+            recusa,
+            RecusaDaRestauracao::NaoEODiscoDeOrigem { .. }
+        ));
+
+        // E a mensagem diz **por que** sobrar espaco nao resolve, em vez de
+        // deixar quem lê achar que trocou por um SSD maior e ficou melhor.
+        assert!(
+            recusa
+                .to_string()
+                .contains("sobrar espaco nao e permissao para restaurar aqui"),
+            "a mensagem nao trata o caso do disco maior: {recusa}"
+        );
     }
 
     #[test]
@@ -1445,7 +1477,7 @@ Sector size (logical/physical): 512/512 bytes
         discos[0].medida = None;
 
         assert_eq!(
-            escolher(&discos, None),
+            escolher(&discos),
             Err(RecusaDaRestauracao::SemMedidaDoDestino {
                 modelo: "KINGSTON SNV3S500G".to_string()
             })
@@ -1461,7 +1493,7 @@ Sector size (logical/physical): 512/512 bytes
         });
 
         assert_eq!(
-            escolher(&discos, None),
+            escolher(&discos),
             Err(RecusaDaRestauracao::SetorDivergente {
                 origem: 512,
                 destino: 4096
@@ -1522,13 +1554,63 @@ Sector size (logical/physical): 512/512 bytes
 
     // ─────────────────── o dispositivo nunca e destino ───────────────────
 
+    /// As letras do dispositivo desta mesa, como [`escolher_o_destino`] as
+    /// monta antes de julgar.
+    fn letras_do_dispositivo() -> Vec<char> {
+        let dispositivo = dispositivo_conectado();
+        dispositivo
+            .vault
+            .letra
+            .into_iter()
+            .chain(dispositivo.boot.as_ref().and_then(|boot| boot.letra))
+            .collect()
+    }
+
+    /// Julga um disco **ja escolhido**, que e o que a busca por modelo nunca
+    /// entrega quando esse disco e o dispositivo. Ver [`julgar_o_destino`].
+    fn julgar(
+        escolhido: &DiscoFisico,
+        discos: &[DiscoFisico],
+    ) -> Result<Destino, RecusaDaRestauracao> {
+        julgar_o_destino(
+            escolhido,
+            discos,
+            &letras_do_dispositivo(),
+            &retrato(),
+            &listas(),
+        )
+    }
+
+    #[test]
+    fn a_busca_por_modelo_nunca_entrega_o_dispositivo() {
+        // A primeira barreira de R-8, e a que roda no caminho normal: o
+        // dispositivo esta **fora** dos candidatos. Nao ha entrada por onde
+        // ele chegue ao julgamento — e por isso a segunda barreira precisa de
+        // teste proprio, logo abaixo.
+        let discos = crate::duplos::discos_desta_mesa();
+        let destino = escolher(&discos).expect("o disco de origem serve");
+
+        assert_eq!(destino.indice, 0, "o escolhido tem de ser o disco interno");
+        assert!(
+            !destino.disco.como_texto().eq("sda"),
+            "o dispositivo virou destino"
+        );
+    }
+
     #[test]
     fn o_proprio_dispositivo_nunca_e_destino() {
-        // O disco 1 desta mesa e o SSD externo, com o ARCAVAULT e o ARCABOOT.
-        // Restaurar nele apagaria o Clonezilla que esta executando a receita e
-        // a imagem que ela esta lendo.
+        // A segunda barreira, alcancada por [`julgar_o_destino`]. O disco 1
+        // desta mesa e o SSD externo, com o ARCAVAULT e o ARCABOOT: restaurar
+        // nele apagaria o Clonezilla que esta executando a receita e a imagem
+        // que ela esta lendo.
+        //
+        // Ela e redundante desde o ADR-0015 e fica de proposito — a revisao da
+        // E9 mostrou que uma recusa dura pode ter contorno por acidente de
+        // modelo, e uma segunda barreira custa nada.
+        let discos = crate::duplos::discos_desta_mesa();
+
         assert_eq!(
-            escolher(&crate::duplos::discos_desta_mesa(), Some(1)),
+            julgar(&discos[1], &discos),
             Err(RecusaDaRestauracao::DestinoEODispositivo {
                 modelo: "KGSSE100 256 SCSI Disk Device".to_string(),
                 letras: "E: e R:".to_string(),
@@ -1538,15 +1620,15 @@ Sector size (logical/physical): 512/512 bytes
 
     #[test]
     fn a_recusa_do_dispositivo_vem_antes_de_qualquer_outra() {
-        // O disco do dispositivo tambem e **menor** que a origem, e tambem nao
-        // tem nome Linux util aqui. Se a ordem das recusas mudasse, a mensagem
-        // passaria a falar de tamanho — e quem lesse acharia que um disco
-        // maior resolveria.
+        // O disco do dispositivo tambem tem tamanho diferente do da origem, e
+        // tambem nao tem nome Linux util aqui. Se a ordem das recusas mudasse,
+        // a mensagem passaria a falar de tamanho — e quem lesse acharia que
+        // outro disco resolveria.
         let mut discos = crate::duplos::discos_desta_mesa();
         discos[1].medida = None;
 
         assert!(matches!(
-            escolher(&discos, Some(1)),
+            julgar(&discos[1].clone(), &discos),
             Err(RecusaDaRestauracao::DestinoEODispositivo { .. })
         ));
     }
@@ -1561,27 +1643,31 @@ Sector size (logical/physical): 512/512 bytes
         // entre eles apagava o dispositivo.
         //
         // O caso: um segundo disco, interno, do **mesmo modelo** do
-        // dispositivo. `--destino 2` passa pela recusa por letra (as letras
-        // sao outras), passa pela medida e pelo tamanho — e o passo 5 resolve
-        // o modelo no `blkdev.list`, onde o unico disco daquele modelo e o
-        // dispositivo, que ali se chama `sda`. A receita sairia
-        // `restoredisk <imagem> sda`.
+        // dispositivo. Ele passa pela recusa por letra (as letras sao outras),
+        // passa pela medida e pelo tamanho — e o passo 5 resolve o modelo no
+        // `blkdev.list`, onde o unico disco daquele modelo e o dispositivo,
+        // que ali se chama `sda`. A receita sairia `restoredisk <imagem> sda`.
+        //
+        // Na E9 o caminho ate aqui era `--destino 2`. Sem a flag, o teste
+        // julga o candidato direto — o furo continua sendo o mesmo, e a
+        // barreira que o fecha continua no mesmo lugar.
         let mut discos = crate::duplos::discos_desta_mesa();
-        discos.push(DiscoFisico {
+        let gemeo = DiscoFisico {
             indice: 2,
             modelo: "KGSSE100 256 SCSI Disk Device".to_string(),
-            tamanho_bytes: 1_000_204_886_016,
+            tamanho_bytes: 500_105_249_280,
             medida: Some(Medida {
-                bytes: 1_000_204_886_016,
+                bytes: 500_107_862_016,
                 bytes_por_setor: 512,
             }),
             em_uso_bytes: 0,
             tipo_de_midia: TipoDeMidia::DiscoFixo,
             letras: vec!['D'],
-        });
+        };
+        discos.push(gemeo.clone());
 
         assert_eq!(
-            escolher(&discos, Some(2)),
+            julgar(&gemeo, &discos),
             Err(RecusaDaRestauracao::DestinoResolveNoDispositivo {
                 disco: "sda".to_string(),
                 modelo: "KGSSE100 256 SCSI Disk Device".to_string(),
@@ -1594,9 +1680,8 @@ Sector size (logical/physical): 512/512 bytes
     fn o_dispositivo_com_o_modelo_da_origem_nao_vira_destino_ambiguo() {
         // O outro lado do mesmo furo. Com o dispositivo tendo o modelo do
         // disco de origem, sem o filtro do `casam` haveria **dois** candidatos
-        // e o comando recusaria por `DestinoAmbiguo` — cuja mensagem manda
-        // "nomeie o destino com `--destino`", que e um caminho que aqui
-        // tambem nao leva a lugar nenhum.
+        // e o comando recusaria por `DestinoAmbiguo` — que hoje e recusa
+        // terminal, e mandaria desconectar um disco que ja e o certo.
         //
         // Com o filtro, a recusa passa a ser a que diz o problema de verdade:
         // os dois discos resolvem no **mesmo nome do Linux**, porque o
@@ -1605,7 +1690,7 @@ Sector size (logical/physical): 512/512 bytes
         discos[1].modelo = "KINGSTON SNV3S500G".to_string();
 
         assert_eq!(
-            escolher(&discos, None),
+            escolher(&discos),
             Err(RecusaDaRestauracao::DestinoResolveNoDispositivo {
                 disco: "nvme0n1".to_string(),
                 modelo: "KINGSTON SNV3S500G".to_string(),
@@ -1618,25 +1703,14 @@ Sector size (logical/physical): 512/512 bytes
     fn o_caminho_normal_desta_mesa_diz_que_e_o_disco_de_origem() {
         // A rede embaixo dos dois testes acima: nesta mesa, com o dispositivo
         // sendo um `KGSSE100` e a origem um `KINGSTON`, o destino sai como o
-        // disco de origem e a tela **nao** manda rodar `bcdboot`. Sem este
-        // teste, os dois acima passariam com um `escolher` que recusasse tudo.
-        let destino = escolher(&crate::duplos::discos_desta_mesa(), None)
-            .expect("o caminho normal tem de passar");
+        // disco de origem. Sem este teste, os dois acima passariam com um
+        // `escolher` que recusasse tudo.
+        let destino =
+            escolher(&crate::duplos::discos_desta_mesa()).expect("o caminho normal tem de passar");
 
         assert_eq!(destino.indice, 0);
         assert_eq!(destino.disco.como_texto(), "nvme0n1");
-        assert!(destino.e_o_da_origem);
-    }
-
-    #[test]
-    fn destino_de_indice_que_nao_existe_e_recusa() {
-        assert_eq!(
-            escolher(&crate::duplos::discos_desta_mesa(), Some(9)),
-            Err(RecusaDaRestauracao::DestinoDesconhecido {
-                indice: 9,
-                quantos: 2
-            })
-        );
+        assert_eq!(destino.setores, retrato().origem.setores);
     }
 
     #[test]
@@ -1655,7 +1729,7 @@ Sector size (logical/physical): 512/512 bytes
         }];
 
         assert_eq!(
-            escolher(&discos, None),
+            escolher(&discos),
             Err(RecusaDaRestauracao::SemDestinoObvio {
                 modelo: "KINGSTON SNV3S500G".to_string()
             })
@@ -1673,7 +1747,7 @@ Sector size (logical/physical): 512/512 bytes
         };
 
         assert_eq!(
-            escolher(&discos, None),
+            escolher(&discos),
             Err(RecusaDaRestauracao::DestinoAmbiguo {
                 modelo: "KINGSTON SNV3S500G".to_string(),
                 quantos: 2
@@ -1685,11 +1759,23 @@ Sector size (logical/physical): 512/512 bytes
     fn um_destino_sem_nome_no_blkdev_nao_entra_na_receita() {
         // §4.5: o nome do Linux sai de uma medicao, e nunca de derivacao. Um
         // disco que nenhuma imagem viu nao tem nome, e a receita nao o nomeia.
+        //
+        // O cenario: um disco na mesa com o modelo que a **imagem** registra
+        // como origem, que nenhum `blkdev.list` viu. Acontece quando a imagem
+        // veio de outro dispositivo, com outra colecao de listas.
         let mut discos = crate::duplos::discos_desta_mesa();
         discos[0].modelo = "DISCO NOVO EM FOLHA".to_string();
 
+        let mut retrato_de_outro_dispositivo = retrato();
+        retrato_de_outro_dispositivo.origem.modelo = "DISCO NOVO EM FOLHA".to_string();
+
         assert!(matches!(
-            escolher(&discos, Some(0)),
+            escolher_o_destino(
+                &discos,
+                &dispositivo_conectado(),
+                &retrato_de_outro_dispositivo,
+                &listas(),
+            ),
             Err(RecusaDaRestauracao::SemNomeDoDestino(_))
         ));
     }
@@ -1766,10 +1852,16 @@ Sector size (logical/physical): 512/512 bytes
     }
 
     #[test]
-    fn dois_discos_do_mesmo_modelo_com_destino_nomeado_nao_dizem_que_e_o_da_origem() {
-        // O `e_o_da_origem` decide se a tela avisa sobre `-iefi` e `bcdboot`
-        // (R-7). Com um gemeo na maquina, o modelo casar nao prova que este e
-        // o disco de origem — e o ARCA nao sabe qual dos dois e.
+    fn um_gemeo_do_mesmo_tamanho_nao_e_desempatado_pelo_tamanho() {
+        // Ate a E9 este teste guardava o campo `e_o_da_origem`, que decidia se
+        // a tela avisava sobre `-iefi` e `bcdboot`. O campo saiu com o
+        // ADR-0015, e o que ele protegia continua de pe e ficou mais duro:
+        // **com um gemeo na maquina, o ARCA nao escolhe nenhum dos dois.**
+        //
+        // A igualdade de setores nao desempata — o gemeo aqui tem exatamente a
+        // mesma medida —, e e por isso que a ambiguidade e recusa terminal e
+        // nao uma pergunta ao usuario: nao ha nada nesta mesa contra o que
+        // conferir a resposta.
         let mut discos = crate::duplos::discos_desta_mesa();
         discos[1] = DiscoFisico {
             indice: 2,
@@ -1778,18 +1870,16 @@ Sector size (logical/physical): 512/512 bytes
             ..discos[0].clone()
         };
 
-        let destino = escolher(&discos, Some(2)).expect("o gemeo serve de destino");
-        assert!(
-            !destino.e_o_da_origem,
-            "com dois discos do mesmo modelo, `nao sei` nao vira `e o mesmo`"
+        assert_eq!(
+            escolher(&discos),
+            Err(RecusaDaRestauracao::DestinoAmbiguo {
+                modelo: "KINGSTON SNV3S500G".to_string(),
+                quantos: 2
+            })
         );
 
-        // E com um disco so daquele modelo, continua dizendo que e.
-        assert!(
-            escolher(&crate::duplos::discos_desta_mesa(), Some(0))
-                .unwrap()
-                .e_o_da_origem
-        );
+        // E com um disco so daquele modelo, o caminho normal segue.
+        assert!(escolher(&crate::duplos::discos_desta_mesa()).is_ok());
     }
 
     #[test]
@@ -1954,7 +2044,7 @@ Sector size (logical/physical): 512/512 bytes
     #[test]
     fn a_tela_traz_os_dois_discos_com_a_mesma_regua() {
         let pasta = imagem("2026-08-22_Apps", Some(Veredito::Aprovada));
-        let destino = escolher(&crate::duplos::discos_desta_mesa(), None).unwrap();
+        let destino = escolher(&crate::duplos::discos_desta_mesa()).unwrap();
         let retrato = retrato();
         let saida = montar(&plano_com(&pasta, &destino, &retrato));
 
@@ -1979,7 +2069,7 @@ Sector size (logical/physical): 512/512 bytes
         // que a E6 corrigiu no §5.2, sobrevivendo aqui. Esta e a sexta vez do
         // padrao, e ela tem teste.
         let pasta = imagem("2026-08-22_Apps", None);
-        let destino = escolher(&crate::duplos::discos_desta_mesa(), None).unwrap();
+        let destino = escolher(&crate::duplos::discos_desta_mesa()).unwrap();
         let retrato = retrato();
         let saida = montar(&plano_com(&pasta, &destino, &retrato));
 
@@ -1988,21 +2078,32 @@ Sector size (logical/physical): 512/512 bytes
     }
 
     #[test]
-    fn a_tela_avisa_quando_o_destino_nao_e_o_disco_de_origem() {
+    fn a_tela_afirma_identidade_e_nao_capacidade() {
+        // **Este teste mudou de sentido no ADR-0015.** Ele se chamava
+        // `a_tela_avisa_quando_o_destino_nao_e_o_disco_de_origem` e cobrava o
+        // paragrafo sobre `-iefi` e `bcdboot` num destino divergente. Nao ha
+        // destino divergente: a tela so e alcancada quando o destino **e** a
+        // origem, e o que ela tem de dizer e isso.
         let pasta = imagem("2026-08-22_Apps", Some(Veredito::Aprovada));
-        let mut destino = escolher(&crate::duplos::discos_desta_mesa(), None).unwrap();
-        destino.e_o_da_origem = false;
-        destino.modelo = "OUTRO DISCO".to_string();
+        let destino = escolher(&crate::duplos::discos_desta_mesa()).unwrap();
         let retrato = retrato();
 
         let saida = montar(&plano_com(&pasta, &destino, &retrato));
-        assert!(saida.contains("O DESTINO NAO E O DISCO DE ORIGEM (R-7)"), "{saida}");
-        assert!(saida.contains("bcdboot"), "{saida}");
+
+        assert!(saida.contains("E o disco de origem (R-7)"), "{saida}");
+        assert!(
+            !saida.contains("bcdboot"),
+            "o aviso de disco novo sobreviveu ao ADR-0015:\n{saida}"
+        );
+        assert!(
+            !saida.contains("sobram"),
+            "a tela continua falando de sobra de espaco:\n{saida}"
+        );
     }
 
     #[test]
     fn a_tela_avisa_sobre_imagem_reprovada_e_sem_veredito() {
-        let destino = escolher(&crate::duplos::discos_desta_mesa(), None).unwrap();
+        let destino = escolher(&crate::duplos::discos_desta_mesa()).unwrap();
         let retrato = retrato();
 
         let reprovada = imagem("x", Some(Veredito::Reprovada));
@@ -2024,7 +2125,7 @@ Sector size (logical/physical): 512/512 bytes
     #[test]
     fn no_ensaio_a_tela_nao_diz_que_vai_apagar_agora() {
         let pasta = imagem("2026-08-22_Apps", Some(Veredito::Aprovada));
-        let destino = escolher(&crate::duplos::discos_desta_mesa(), None).unwrap();
+        let destino = escolher(&crate::duplos::discos_desta_mesa()).unwrap();
         let retrato = retrato();
         let mut plano = plano_com(&pasta, &destino, &retrato);
         plano.arma_em_seguida = false;

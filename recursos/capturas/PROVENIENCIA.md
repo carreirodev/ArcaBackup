@@ -602,6 +602,108 @@ substituído. A receita tinha `>>` — o `--dry-run` a imprimiu assim minutos
 antes de armar —, e o ensaio em bash prova que `>>` acrescenta. O que aconteceu
 entre o redirecionamento e o disco não está medido.
 
+## A etapa E10 — `arca prepare` (23/08/2026)
+
+Sete arquivos, e eles se dividem em três grupos: **o que foi medido à mão antes
+de o código existir**, **o pacote que o ARCA instala**, e **o marco**.
+
+### O que foi medido à mão, antes de escrever código
+
+Como a E7 fez com o `bootsequence` e o C-13 com o `displayorder`. Os quatro
+arquivos são a saída dos comandos, com o código de saída de cada um.
+
+| Arquivo | O que é |
+|---|---|
+| `medicao-criacao-de-entrada-2026-08-23.txt` | `bcdedit /copy {bootmgr}` numa máquina de verdade, com o `{fwbootmgr}` lido antes e depois |
+| `medicao-criacao-de-entrada-parte2-2026-08-23.txt` | os dois `/set`, a releitura de C-3, a comparação com a entrada `ARCA` que já existia, e o `/delete` |
+| `medicao-particionamento-2026-08-23.txt` | `Clear-Disk`, `Initialize-Disk`, `New-Partition` ×2, `Format-Volume` ×2 e a releitura, no segundo dispositivo desta mesa |
+| `medicao-letras-e-ordem-2026-08-23.txt` | como se atribui letra a uma partição, e o `/remove` sobre uma entrada recém-criada |
+
+**A medição da entrada de firmware criou uma entrada de boot nesta máquina e a
+apagou.** O último bloco de cada arquivo é a prova disso: `a entrada de medicao
+sumiu: True` e `o displayorder tem so o {bootmgr}: True`. É o mesmo cuidado que
+o ADR-0013 teve ao medir `/addfirst` e conferir a NVRAM no fim.
+
+**A medição do particionamento destruiu um disco de 447 GB de propósito** — o
+segundo dispositivo, que existe para isso. O arquivo registra o que havia nele
+antes, que é o que a tela de PR-4 mostra a quem vai perder dados.
+
+Três coisas dessas medições não eram óbvias e mudaram o desenho:
+
+- **`New-Partition` cria com `MbrType 6`**, e quem acerta para 7 e 12 é o
+  `Format-Volume`. Não há `Set-Partition -MbrType` no caminho: o tipo é efeito
+  colateral de outra operação, e é por isso que a releitura de PR-5 importa.
+- **As duas partições nascem sem letra**, e o ARCA exige letra. Quem atribui é
+  o `Add-PartitionAccessPath -AssignDriveLetter`, que **não é idempotente**: a
+  segunda passada recusa e não muda nada — o caso do `bcdedit /deletevalue` do
+  ADR-0005.
+- **`bcdedit /copy` põe a entrada nova no `displayorder` sozinho**, que é o
+  perigo que C-5 nomeia. Ver o [ADR-0017](../../docs/adr/0017-a-entrada-de-firmware-nasce-de-uma-copia-do-bootmgr.md).
+
+> **Um detalhe de codificação, e ele não é do ARCA.** Os quatro arquivos foram
+> escritos por scripts `.ps1` sem BOM, e o PowerShell 5.1 lê `.ps1` sem BOM
+> como **ANSI**: os travessões saíram como três bytes de mojibake e foram
+> corrigidos na gravação aqui. Nada mais foi tocado. O ARCA não passa por isso
+> porque fala com o PowerShell por `-EncodedCommand` em UTF-16 — o que
+> `src/adaptadores/windows/wmi.rs` já registrava por outro motivo.
+
+### O pacote que o ARCA instala
+
+| Arquivo | O que é |
+|---|---|
+| `clonezilla-checksums-2026-08-23.txt` | o `CHECKSUMS.TXT` de `free.nchc.org.tw/clonezilla-live/stable/`, o mirror do próprio projeto |
+| `grub-clonezilla-do-pacote-3.3.3-15.cfg` | o `boot/grub/grub.cfg` de dentro do `clonezilla-live-3.3.3-15-amd64.zip` |
+
+**O SHA256 tem duas fontes, e é isso que o torna verificação.** O
+`CHECKSUMS.TXT` veio do mirror do projeto; o arquivo veio do **SourceForge** e
+foi medido com `certutil -hashfile … SHA256`. Servidores diferentes, o mesmo
+número — `00cee7700433e63017e2ea9eb40519108829710132364a8028a6c039a6046304`,
+561.478.648 bytes.
+
+**E o `grub.cfg` do pacote responde de onde veio o dispositivo desta mesa.**
+Comparado com o `grub-clonezilla-original.cfg`, ele difere em duas coisas: o
+`noeject` em treze `menuentry`, e **seis segundos** no carimbo do rodapé
+(`04:11:28` contra `04:11:22`). Seis segundos é o `ocs-live-dev` gerando o ISO
+e o zip na mesma execução — é a mesma build, e o dispositivo veio do ISO. Ver o
+[ADR-0018](../../docs/adr/0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md).
+
+### O marco, em duas execuções
+
+| Arquivo | O que é |
+|---|---|
+| `arca-prepare-2026-08-23-marco.txt` | a tela do primeiro `arca prepare --dispositivo 1`, inteira |
+| `arca-prepare-2026-08-23-com-iso.txt` | a segunda execução, com `--iso` (PR-2) e a entrada de firmware **criada** |
+| `arca-prepare-2026-08-23-criacao-da-entrada.txt` | o `bcdedit` lido antes e depois da segunda, com o disco relido no fim |
+| `arca-status-dois-dispositivos-2026-08-23.txt` | o que o `arca status` responde com os **dois** dispositivos na mesa |
+
+**Foram duas execuções, e a segunda não é redundância.** A primeira **reusou** a
+entrada de firmware que esta máquina já tinha, que é C-4 na letra — e com isso o
+caminho da **criação** não foi exercitado pelo código, só pela medição à mão.
+Por isso a entrada `ARCA` foi apagada e o comando rodou de novo: ele criou a
+`{f4057bd3-…}`, apontou-a para `partition=F:` e a tirou da ordem permanente.
+
+É a diferença entre *"o comando funcionou"* e *"o caminho que a etapa existe
+para escrever funcionou"*, e um marco que só exercita o ramo fácil é o caso
+construído mais fácil do que o real que o §11 nomeia.
+
+**O que a primeira tela tem e a segunda não:** o aviso `ESTE DISCO JA E UM
+DISPOSITIVO ARCA`. O disco que o marco destruiu tinha os dois rótulos — sobra da
+medição à mão —, e essa é a única captura desse aviso.
+
+**O que a segunda tem e a primeira não:** o `--iso`, o `criada` no lugar do
+`reusada e reapontada`, e o `a entrada saiu da ordem permanente` no lugar do
+`ja estava fora`.
+
+**E a captura do `arca status` é de um defeito que o marco criou.** Com o
+dispositivo novo pronto, a mesa passou a ter **dois** `ARCAVAULT` — e C-10
+recusa, corretamente, todo comando que se localiza pelos rótulos. Inclusive o
+de diagnóstico, que é o que se roda quando a situação ficou confusa.
+
+A recusa está certa e não mudou. O que mudou foi a **mensagem**: ela nasceu na
+E1, quando ter dois dispositivos ARCA exigia comprá-los, e dizia *"Desconecte os
+demais"* sem dizer quais. Desde a E10 o ARCA faz o segundo, e o arquivo guarda a
+forma nova — com as letras e com a causa provável nomeada.
+
 ## O que nenhuma delas contém
 
 **Nenhum `bootsequence`.** As capturas de `bcdedit` deste diretório continuam

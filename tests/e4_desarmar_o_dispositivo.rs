@@ -63,12 +63,35 @@ fn caminho_do_grub() -> Option<PathBuf> {
     }
 }
 
+/// O `grub.cfg` de dentro do **zip** do Clonezilla 3.3.3-15, já desarmado.
+///
+/// É o que o `arca prepare` instala desde a E10, e é um segundo inerte
+/// legítimo — ver [`o_grub_cfg_do_dispositivo_e_um_inerte_conhecido`].
+const DO_PACOTE: &str = include_str!("../recursos/capturas/grub-clonezilla-do-pacote-3.3.3-15.cfg");
+
 #[test]
-fn o_grub_cfg_do_dispositivo_e_o_inerte_que_esta_no_repositorio() {
+fn o_grub_cfg_do_dispositivo_e_um_inerte_conhecido() {
     // A copia em `recursos/capturas/` e evidencia, e evidencia que divergiu do
     // que ela documenta deixou de ser evidencia. Este teste e o que impede a
     // etapa inteira de estar provando alguma coisa sobre um arquivo que nao
     // existe mais.
+    //
+    // # Ha DOIS inertes legitimos desde a E10, e o teste aceita os dois
+    //
+    // Ate aqui havia um dispositivo, e ele fora preparado a mao a partir do
+    // **ISO**. Agora o `arca prepare` prepara dispositivos a partir do **zip**,
+    // e os dois `grub.cfg` diferem — medido: o `noeject` em treze `menuentry`,
+    // e seis segundos no carimbo do rodape. Mesma build, artefatos diferentes
+    // (ADR-0018).
+    //
+    // Cobrar so o primeiro faria este teste reprovar um dispositivo que o
+    // proprio ARCA acabou de fazer, o que e o contrario do que ele existe para
+    // dizer. Cobrar "qualquer coisa" nao provaria nada. Entao ele cobra **os
+    // dois alvos conhecidos**, e diz qual encontrou.
+    //
+    // O que garante que os dois sao equivalentes nao esta aqui: esta em
+    // `tests/e10_preparar_o_dispositivo.rs`, que compara os dois linha a linha
+    // e prova que a unica diferenca de conteudo e o `noeject`.
     let Some(caminho) = caminho_do_grub() else {
         return;
     };
@@ -77,15 +100,30 @@ fn o_grub_cfg_do_dispositivo_e_o_inerte_que_esta_no_repositorio() {
         .ler_texto(&caminho)
         .expect("o grub.cfg do dispositivo e legivel");
 
-    assert_eq!(
-        corrente,
-        INERTE,
-        "o {} divergiu de recursos/capturas/grub-inerte-arcaboot.cfg. \
-         Ou o dispositivo foi armado, ou o Clonezilla foi trocado — e nos dois \
-         casos a captura precisa ser refeita antes de os testes da E4 valerem \
-         alguma coisa",
-        caminho.display()
-    );
+    // O do pacote precisa passar pelo desarmar: ele vem com `set default="0"`,
+    // que **nao** e o estado inerte (§4.4, ADR-0005).
+    let do_pacote_inerte = grub::desarmar(DO_PACOTE)
+        .expect("o grub.cfg do pacote se desarma")
+        .texto;
+
+    let alvos = [
+        ("o do ISO, preparado a mao (E4)", INERTE),
+        (
+            "o do zip, instalado pelo `arca prepare` (E10)",
+            &do_pacote_inerte[..],
+        ),
+    ];
+
+    match alvos.iter().find(|(_, alvo)| corrente == *alvo) {
+        Some((qual, _)) => eprintln!("  (o {} e {qual})", caminho.display()),
+        None => panic!(
+            "o {} nao e nenhum dos dois inertes conhecidos. Ou o dispositivo foi \
+             armado, ou o Clonezilla foi trocado, ou ele foi preparado por outra \
+             coisa — e nos tres casos a captura precisa ser refeita antes de os \
+             testes da E4 valerem alguma coisa",
+            caminho.display()
+        ),
+    }
 }
 
 #[test]
@@ -162,10 +200,25 @@ fn as_copias_armadas_do_dispositivo_desarmam_para_o_inerte_corrente() {
         conferidas += 1;
     }
 
-    assert!(
-        conferidas > 0,
-        "nenhuma copia armada foi conferida contra o dispositivo"
-    );
+    // **Zero cópias é um estado legítimo desde a E10, e não era antes.**
+    //
+    // Estas três são cópias que alguém deixou ao lado do `grub.cfg` durante o
+    // trabalho manual de agosto, no dispositivo preparado à mão. Um dispositivo
+    // que o `arca prepare` faz **não tem nenhuma** — ele extrai o zip e desarma,
+    // e nada mais.
+    //
+    // O teste sai cedo dizendo isso, em vez de reprovar um dispositivo que o
+    // próprio ARCA acabou de produzir. O que ele prova quando há cópias
+    // continua provado; e o mesmo par armar/desarmar tem oráculo sem hardware
+    // nenhum em `src/grub.rs`, contra as capturas do repositório.
+    if conferidas == 0 {
+        eprintln!(
+            "  (nenhuma das tres copias armadas esta neste dispositivo — elas sao do\n   \
+             que foi preparado a mao em agosto. Um dispositivo feito pelo `arca prepare`\n   \
+             nao as tem, e isso nao e falha. Este teste nao conferiu nada; o par\n   \
+             armar/desarmar continua coberto em `src/grub.rs`.)"
+        );
+    }
 }
 
 #[test]

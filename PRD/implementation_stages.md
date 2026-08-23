@@ -18,10 +18,37 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E7 | Armar e disparar | III | ✅ | 2026-08-22 21:06 · marco cumprido |
 | E8 | Colher o desfecho | III | ✅ | 2026-08-22 21:14 · marco cumprido |
 | E9 | Restauração | IV | ✅ | 2026-08-23 11:50 · marco cumprido |
-| E10 | `arca prepare` | IV | ⬜ | — · **C-13 entregue em 2026-08-23**, ver P-20 |
+| E10 | `arca prepare` | IV | ✅ | 2026-08-23 18:44 · marco cumprido · **sem reinício** · abriu P-26 |
 | E11 | `arca verify` | IV | ✅ | 2026-08-23 17:00 · marco cumprido · abriu P-25 |
+| E12 | `arca sondar` | IV | ⬜ | — · fecha P-26 |
 
-Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi escrito. As três etapas com marco em hardware (E7, E8 e E9) exigem a execução real para fechar.
+**As doze primeiras fecharam. A E12 nasceu depois delas**, de uma pergunta na
+mesa em 23/08/2026 e não do plano original — e é a única do documento que ainda
+não foi escrita. Uma etapa só é marcada ✅ quando o **Pronto quando**
+ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi
+escrito.
+
+> **E isso não é o mesmo que o app estar fechado.** As etapas respondem *"foi
+> construído?"*; o que continua sem resposta é *"está provado?"* — seis
+> pendências, das quais **duas** sustentam telas que o ARCA já imprime. Ver
+> [o-que-falta-para-fechar.md](o-que-falta-para-fechar.md).
+>
+> Deixar as duas perguntas juntas seria a sexta vez do padrão que o §3.5 do PRD
+> nomeia: chamar de fundação validada o que veio do trabalho em volta dela. As cinco etapas com marco em hardware (E7, E8, E9, E10 e E11) exigem a
+execução real para fechar.
+
+> **A E10 é a única cujo marco não custou um reinício**, e isso não é detalhe do
+> cronograma: `arca backup`, `arca restore` e `arca verify --completo` armam,
+> reiniciam e só dizem o que aconteceu na volta — e as três sessões que os
+> mediram morreram no reinício que elas mesmas dispararam. O `arca prepare` faz
+> tudo do lado Windows, com a tela na frente, e é por isso que a tela dele pode
+> perguntar duas vezes.
+>
+> **E é a única cujo marco precisou de duas execuções.** A primeira **reusou** a
+> entrada de firmware que esta máquina já tinha, o que é C-4 na letra — e com
+> isso o caminho da **criação** ficou sem rodar. A segunda apagou aquela entrada
+> e rodou de novo: é a diferença entre *"o comando funcionou"* e *"o caminho que
+> a etapa existe para escrever funcionou"*.
 
 **🟨 era escrita, revisada e commitada, com o marco em hardware devendo.** O
 estado nasceu na E7, e ele existia porque ✅ seria mentira e ⬜ seria pior: quem
@@ -37,7 +64,7 @@ pasta montada de propósito, e **V-2 rodou em hardware às 16:53** — armada,
 bootada, `ocs-chkimg` executado sozinho, máquina desligada, colheita
 `concluida` com veredito `APROVADA`.
 
-**As quatro etapas com marco em hardware fecharam, e as quatro em sessões à
+**As cinco etapas com marco em hardware fecharam, e as cinco em sessões à
 parte:**
 
 - **E7 e E8, em 22/08/2026.** O backup `2026-08-22_Apps` foi armado às
@@ -48,15 +75,25 @@ parte:**
   restauração daquela mesma imagem foi armada às 11:10:50, o `ocs-sr` encerrou
   às 11:31:55 do relógio do live, a máquina desligou, e a colheita foi às
   11:50:53. O Windows que colheu veio de dentro da imagem.
-- **E11, em 23/08/2026**, e é a mais barata das quatro: a verificação armada da
-  `2026-08-22_Apps` foi armada às 16:53:30, o `ocs-chkimg` rodou sozinho e a
-  máquina desligou; a colheita saiu `concluida` com veredito `APROVADA`, selo
-  `aefa48f71fc66a46`. **Ela precisou de duas tentativas**, e a primeira ensinou
-  mais do que a segunda — ver *"o terceiro defeito"* na seção da E11.
+- **E11, em 23/08/2026**, e é a mais barata das que reiniciam: a verificação
+  armada da `2026-08-22_Apps` foi armada às 16:53:30, o `ocs-chkimg` rodou
+  sozinho e a máquina desligou; a colheita saiu `concluida` com veredito
+  `APROVADA`, selo `aefa48f71fc66a46`. **Ela precisou de duas tentativas**, e a
+  primeira ensinou mais do que a segunda — ver *"o terceiro defeito"* na seção
+  da E11.
+- **E10, em 23/08/2026 às 18:38 e às 18:44** — a única **sem reinício**, e a
+  única cuja operação destrói um disco de propósito. O `arca prepare` apagou o
+  SSD de 447 GB da mesa, escreveu MBR com `MbrType 7` e `12`, formatou e
+  rotulou as duas partições, baixou 535,5 MB do Clonezilla, conferiu o SHA256
+  contra o valor compilado no binário, extraiu, **desarmou o `grub.cfg` que o
+  pacote entrega**, instalou o `arca.exe` no `ARCABOOT` e criou a entrada de
+  boot — tirando-a da ordem permanente em seguida. **Duas execuções**, e a
+  segunda porque a primeira reusou a entrada de firmware que já existia. Abriu
+  **P-26**: um dispositivo preparado pelo ARCA ainda não bootou.
 
-Os blocos **"o que faltava para o marco, e como cada coisa fechou"** das três
-seções continuam lá, reescritos contra o que aconteceu — apagá-los perderia o
-registro de o que estava em aberto e de como cada coisa fechou.
+Os blocos **"o que faltava para o marco, e como cada coisa fechou"** das seções
+continuam lá, reescritos contra o que aconteceu — apagá-los perderia o registro
+de o que estava em aberto e de como cada coisa fechou.
 
 ---
 
@@ -1243,14 +1280,23 @@ ordem. É a lição da revisão da E4 aplicada antes do defeito, e não depois.
 
 ### E10 · `arca prepare`
 
-**Particiona o dispositivo e rotula as duas partições** (§7.1, PR-5), baixa o Clonezilla na versão fixada, confere contra o SHA256 embutido, extrai, instala o ARCA no `ARCABOOT`, migra a entrada de firmware. `--iso <caminho>` para offline, que é o que salva quando a máquina que precisa preparar o dispositivo é a que está sem Windows.
+**Particiona o disco e rotula as duas partições** (§7.1, PR-5), baixa o Clonezilla na versão fixada, confere contra o SHA256 embutido, extrai, **desarma o `grub.cfg` que o pacote entrega**, instala o ARCA no `ARCABOOT` e **cria** a entrada de firmware — tirando-a da ordem permanente em seguida. `--iso <caminho>` para offline, que é o que salva quando a máquina que precisa preparar o dispositivo é a que está sem Windows.
 
 > **Esta primeira linha dizia o contrário até 23/08/2026** — *"exige a FAT32 vazia de ≥ 1 GB já criada, o ARCA não particiona"*. P1 foi revisado e o ARCA passa a particionar. Ver [ADR-0014](../docs/adr/0014-o-arca-particiona-o-dispositivo.md).
+>
+> **E ela dizia "migra a entrada de firmware".** O `arca prepare` migra quando há
+> o que migrar — é C-4 — e **cria** quando não há, que era justamente o código
+> que a E7 recusou escrever. Duas coisas a mais entraram na linha depois de a
+> etapa acontecer: o desarmar do `grub.cfg` do pacote, porque ele não vem
+> inerte, e tirar a entrada nova da ordem permanente, porque o `bcdedit /copy` a
+> põe lá sozinho.
 
-Fica tarde de propósito: o dispositivo atual já existe, preparado à mão. Esta etapa serve ao **segundo** dispositivo.
+Fica tarde de propósito: o dispositivo atual já existe, preparado à mão. Esta etapa serve ao **segundo** dispositivo — e o destrói, que é o teste.
 
-**Cobre**: §7.1, **PR-4**, **PR-5** — e **P-20, que fechou antes do resto da etapa** e
-virou C-13.
+**Cobre**: §7.1, §7.2, **PR-1**, **PR-2**, **PR-3**, **PR-4**, **PR-5** — e
+**P-20, que fechou antes do resto da etapa** e virou C-13. Cobre também as duas
+metades que faltavam a C-4 e a C-5, e **paga a dívida do ADR-0015**, que ficou
+de duas etapas atrás.
 
 #### O ARCA particiona e rotula, e P1 foi revisado (PR-5)
 
@@ -1341,22 +1387,40 @@ conectado: durante o teste da E10 o dispositivo já preparado fica
 não há rótulo nenhum na mesa — é mais um sintoma de que este comando roda num
 mundo onde as defesas dos outros ainda não se aplicam.
 
-#### O que mais vai doer, e está nomeado desde a E7
+#### O que mais ia doer, e está nomeado desde a E7
+
+Escrito antes da etapa. As quatro resolveram-se, e a coluna diz como.
 
 - **Criar entrada de firmware do zero é código sem original.** A E7 recusou
   fazer isso de propósito, dizendo que o lugar era aqui: nenhuma captura
   mostra a criação — só a migração. C-6 (recusar mídia removível) e a
   releitura de C-3 valem inteiros, e C-13 é novo desde 23/08.
+  → **O original estava na própria entrada desta máquina**, e ninguém tinha
+  olhado para ela desse jeito: ela é uma cópia do `{bootmgr}` com três campos
+  trocados. Medido, com a entrada de medição apagada no fim
+  ([ADR-0017](../docs/adr/0017-a-entrada-de-firmware-nasce-de-uma-copia-do-bootmgr.md)).
 - **Qual versão do Clonezilla fixar.** O dispositivo da mesa roda `3.3.3-15`
   (está no `hostname=` do `grub.cfg`). O SHA256 tem de vir do download
   oficial: "baixado junto do arquivo" não verifica nada (PR-1).
+  → **`3.3.3-15`, e ela não foi escolhida**: é a que roda aqui, e sobre a qual
+  rodaram os cinco marcos. O SHA256 veio de **duas fontes** — o `CHECKSUMS.TXT`
+  do mirror do projeto e o `certutil` sobre o arquivo do SourceForge.
 - **Um `arca prepare` interrompido no meio deixa o quê?** Nomear os estados
   intermediários e dizer quais são reversíveis, como `src/armar.rs` fez com a
   ordem das três gravações.
+  → **Onze passos, e o ponto sem volta é o quinto.** Tudo antes do `Clear-Disk`
+  é leitura e conversa; tudo depois é construção sobre um disco já apagado.
+  **Nenhum estado intermediário é pior do que o anterior, e todos se resolvem
+  rodando o comando de novo** — ele começa apagando. Do passo 8 em diante o
+  dispositivo já boota pelo menu (§6.4), sem o ARCA dentro. A tabela está em
+  `src/comandos/prepare.rs`.
 - **O marco em hardware precisa de um segundo dispositivo** — um pen drive de
   4 GB basta. Rodar no SSD atual reescreveria o `grub.cfg` inerte, que é o
   oráculo dos testes da E4, e ainda assim **não testaria o caso que a etapa
   existe para cobrir**, que é o dispositivo vazio.
+  → **Veio um SSD de 447 GB**, e ele foi destruído três vezes: uma pela medição
+  à mão e duas pelo comando. O `grub.cfg` inerte do dispositivo antigo continua
+  intocado, e é contra ele que a E10 conferiu o que instala.
 
 #### Três coisas medidas em 23/08/2026, e elas dispensam dependência nova
 
@@ -1372,6 +1436,30 @@ nativa no `System32` desta máquina:
 As três dependências do projeto continuam três, e o padrão de falar com o
 sistema por processo filho atrás de porta existe desde a E6. **Confirmar antes
 de construir em cima**, e decidir se é porta nova ou se cabe nas que há.
+
+> ### E a terceira vez que o `tar` enganou, e desta vez não era o número
+>
+> **`tar` no `PATH` não é o `bsdtar`.** Medido em 23/08/2026, ao chamar a
+> ferramenta pela primeira vez: com o Git para Windows instalado, `tar` resolve
+> para o **GNU tar 1.35** do `/usr/bin`, e ele **não abre zip** — responde
+> *"This does not look like a tar archive"* e sai com erro. O `curl` tem o mesmo
+> problema, por um em `/mingw64/bin`; o `certutil` não tem homônimo.
+>
+> A tabela acima diz `System32`, e ela está certa. O que faltava era **o ARCA
+> dizer isso ao chamar**: `Command::new("tar")` pega o do `PATH`.
+>
+> O campo que separa os dois sem ambiguidade não é a versão — é o
+> `OriginalFilename` do executável: `bsdtar` num, `tar` no outro.
+>
+> **O modo de falha é caro e silencioso até o fim**: o `arca prepare` extrai o
+> pacote *depois* de ter apagado o disco. Numa máquina com Git instalado, ele
+> falharia com o dispositivo já destruído e nada dentro. A E10 chama `curl` e
+> `bsdtar` por **caminho absoluto**, e há teste rodando `--version` contra o
+> binário de verdade.
+>
+> Os outros três que este adaptador roda — `chkdsk`, `certutil`, `shutdown` —
+> continuam pelo nome: nenhum tem homônimo conhecido, e mudá-los agora seria
+> alteração sem medição em caminho já exercitado em hardware.
 
 > **A versão do `tar` estava medida na coisa errada, e a E11 corrigiu.** O
 > `10.0.26100` é o **`ProductVersion`** — a versão do Windows que empacota a
@@ -1402,6 +1490,265 @@ console do Windows, cujo contrato entrega código de saída e texto bruto, e que
 julga é código puro. **Não é porta nova**, e o argumento que faltava era de
 desempenho: medido, os 39 processos `certutil` não custam nada perto da leitura
 do USB, então um crate de hash não compraria velocidade nenhuma.
+
+#### O que a etapa mediu antes de escrever, e três coisas mudaram o desenho
+
+Quatro medições à mão em 23/08/2026, todas **antes** de o código existir — como
+a E7 fez com o `bootsequence` e o C-13 com o `displayorder`. Os originais estão
+em `recursos/capturas/`.
+
+**1. A criação de uma entrada de firmware.** `bcdedit /copy {bootmgr} /d
+<nome>`, os dois `/set`, a releitura, o `/delete`, e o firmware conferido byte
+a byte contra o estado inicial no fim. **A entrada criada saiu idêntica à
+`ARCA` que já existia**, campo a campo — que é o que transforma o "código sem
+original" que a E7 recusou escrever numa transcrição.
+
+**2. O que o `/copy` faz com a ordem permanente**, e ninguém tinha previsto:
+ele põe a entrada nova no `displayorder` **sozinho**. É literalmente o perigo
+que C-5 nomeia.
+
+**3. O particionamento**, no segundo dispositivo — que a medição destruiu, que
+é o que ele existe para fazer. `Clear-Disk`, `Initialize-Disk`,
+`New-Partition` ×2, `Format-Volume` ×2, e a releitura.
+
+**4. A atribuição de letra**, que só apareceu porque a medição 3 relia o disco.
+
+As três que mudaram o desenho:
+
+- **`New-Partition` cria as duas com `MbrType 6`**, e quem acerta para 7 e 12 é
+  o `Format-Volume`. Não há `Set-Partition -MbrType` no caminho. O tipo é
+  **efeito colateral de outra operação**, e nada no script o pede diretamente —
+  é por isso que a releitura de PR-5 vale o que vale.
+- **As duas partições nascem sem letra**, e o ARCA exige letra
+  (`Erro::VolumeSemLetra`). Quem atribui é o `Add-PartitionAccessPath
+  -AssignDriveLetter`, e ele **não é idempotente**: a segunda passada responde
+  *"Cannot assign multiple drive letters to a partition"* e **não muda nada** —
+  o caso do `bcdedit /deletevalue` do ADR-0005, em que a saída é não acreditar
+  na ferramenta em nenhum dos dois sentidos.
+- **A letra não se escolhe.** `Set-Partition -NewDriveLetter C` responde *"The
+  requested access path is already in use"*: escolher é supor que ela está
+  livre, e S-3 diz que a letra não importa — o rótulo importa.
+
+#### As decisões, e nenhuma era óbvia
+
+**A entrada de firmware nasce de uma cópia do `{bootmgr}`, e sai da ordem
+permanente** ([ADR-0017](../docs/adr/0017-a-entrada-de-firmware-nasce-de-uma-copia-do-bootmgr.md)).
+O original estava na própria entrada desta máquina desde sempre: `locale`,
+`inherit`, `flightsigning`, `resumeobject`, `toolsdisplayorder {memdiag}` — isso
+é o gerenciador de boot do Windows, e `src/firmware.rs` já tinha notado que *"a
+do ARCA nasceu de um `bcdedit /copy`"*, usando isso para outra coisa.
+
+E tirar da ordem **não é o `/remove` que o ADR-0013 descartou**: lá o problema
+era acertar *quais* entradas tirar, e aqui o alvo é a entrada que o próprio
+comando acabou de criar, com o identificador em mãos, sem dedução nenhuma.
+
+**O pacote é o zip, e o `arca prepare` desarma o que instala**
+([ADR-0018](../docs/adr/0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md)).
+O zip vem com `set default="0"` — *"um estado que parece inerte"*, no vocabulário
+do ADR-0005 —, e um dispositivo entregue assim ficaria armado no primeiro `arca
+backup` sem que ninguém tocasse no `set default`.
+
+**A quinta porta.** `Particionador` entra em `src/portas/` porque a operação
+**escreve**, e pendurá-la em `Discos` — que sete comandos usam e que só lê —
+seria um convite a alguém chamar o que não devia. `DiscoParaPreparar` traz o
+`IsSystem` e o `IsBoot` do `MSFT_Disk`, que o `Win32_DiskDrive` não responde, e
+o `MediaType` do WMI, que o `MSFT_Disk` não responde: **nenhuma das duas fontes
+responde tudo**, que é a armadilha do ADR-0010 aparecendo por outro lado.
+
+#### O que a execução real pegou, e os testes não pegavam
+
+O padrão de sempre, pela sexta vez — a E6, a E7, a E9, a E10 e a E11 já tinham
+pagado. Aqui foram três, e as três saíram do **`--dry-run` rodado de verdade**,
+antes do marco:
+
+- **A linha `Sistema` afirmava sem mostrar.** Ela dizia *"nao e o disco do
+  Windows, nem o de boot"* — o ARCA falando de si. Passou a dizer `IsSystem
+  false · IsBoot false · nao carrega o C:`, que é o que ele **leu**, e é a mesma
+  razão pela qual a tela do §6.1 imprime os dois discos em setores em vez do
+  veredito de R-7 resumido.
+- **O plano parava no disco.** Ele não dizia que uma entrada de boot seria
+  criada no firmware, nem que o `arca.exe` iria para o `ARCABOOT`. Quem lê um
+  plano antes de apagar um disco tem o direito de saber que o plano não para no
+  disco — a NVRAM de boot é onde um erro deixa a máquina sem bootar.
+- **O aviso que faltava, e ele é PR-4 na letra.** O disco da mesa tinha os dois
+  rótulos ARCA — sobra da medição à mão —, e a lista de partições os mostrava.
+  Mostrar rótulo é dizer a quem sabe ler rótulo. Nasceu daí o `ESTE DISCO JA E
+  UM DISPOSITIVO ARCA`, que nomeia o que se perde: **as imagens, todas**.
+
+E o marco pegou um quarto, que nenhum ensaio pegaria: **a entrada de firmware
+foi reusada, e a tela dizia só `reusada`.** C-4 manda reusar — duas entradas
+seriam duas formas de bootar no Clonezilla —, e a consequência é que a entrada
+**deixa de apontar** para o dispositivo anterior. Quem tem dois na gaveta merece
+ler isso na tela em vez de descobrir num F12.
+
+E um quinto, **depois** do marco, ao rodar o `arca status` para ver como a mesa
+tinha ficado: **ele recusou.** C-10 nasceu na E1, quando ter dois dispositivos
+ARCA exigia comprar dois, e a mensagem dizia *"Desconecte os demais"* — o que
+bastava para um caso raro sobre coisas que alguém tinha posto ali de propósito.
+
+Desde a E10 **o ARCA faz o segundo**. Um `arca prepare` bem-sucedido deixa dois
+conectados por definição, e a partir dali todo comando cai na recusa —
+inclusive o comando de diagnóstico, que é justamente o que se roda quando a
+situação ficou confusa. A recusa está certa; o que faltava era ela dizer
+**quais**, e por quê:
+
+```text
+erro: ha 2 volumes com o rotulo ARCAVAULT conectados (D:, E:), e o ARCA opera
+um dispositivo por vez … Desconecte os demais e rode de novo. Se voce acabou de
+preparar um dispositivo, sao os dois — o novo e o de antes
+```
+
+É o padrão de sempre, pego pelo método de sempre: **peça nova encaixada em peça
+antiga que ninguém releu ao encaixar**, achada rodando o comando de verdade.
+
+E um sexto, achado **por uma pergunta** depois de a etapa estar escrita e
+documentada — *"e quando o outro SSD não estiver lá?"*. A resposta sobre o
+Clonezilla é tranquila (ele vem do zip baixado, com SHA256 de duas fontes, e o
+`arca prepare` não sabe que o dispositivo antigo existe). Mas a pergunta puxou
+uma dependência que **estava lá e ninguém tinha ligado a esta etapa**:
+
+**O primeiro backup de um dispositivo novo não pode ser pelo ARCA.** O §4.5 já
+dizia — *"num dispositivo sem imagem alguma, o primeiro backup precisa ser feito
+uma vez pelo menu do Clonezilla"* —, porque o nome do disco no Linux sai do
+`blkdev.list` de dentro de uma imagem. E a tela do `arca prepare` terminava com:
+
+```text
+  Primeiro backup:  arca backup <nome>
+```
+
+**Esse comando recusa.** E os outros dois que armam também: `arca restore` e
+`arca verify --completo` precisam de uma imagem que não existe. **Nenhum dos três
+funciona num dispositivo recém-nascido.**
+
+A peça antiga aqui foi decidida na E6 e na E7, e a nova é a tela desta etapa. O
+que torna este caso pior do que os cinco anteriores é que ele **fere o critério
+que o próprio projeto acabou de escrever** em
+[o-que-falta-para-fechar.md](o-que-falta-para-fechar.md): *nenhuma tela afirma o
+que o repositório não pode mostrar tendo acontecido*.
+
+A tela passou a dizer o que fazer — F12, menu do Clonezilla, e daí em diante o
+ARCA —, **por quê**, e que o F12 do passo 1 é justamente o que responde P-26.
+
+#### E cinco testes de hardware descreviam um dispositivo, e não o conceito
+
+Achado logo depois, ao deixar **só o dispositivo novo** na mesa. Cinco testes
+das etapas E1, E4, E7 e E11 ficaram vermelhos de uma vez, e nenhum por defeito
+de código:
+
+| Teste | O que ele assumia | Por que era verdade até a E10 |
+|---|---|---|
+| `o_que_a_listagem_chama_de_imagem_tem_md5sums_de_verdade` (E1) | o `ARCAVAULT` tem imagens | o dispositivo foi preparado à mão **com imagens dentro** |
+| `todo_md5sums_deste_dispositivo_e_lido_pelo_parser` (E11) | idem | idem |
+| `as_copias_armadas_do_dispositivo_desarmam_para_o_inerte_corrente` (E4) | há três `grub.cfg.teste0*` ao lado do `grub.cfg` | eram sobras do trabalho manual de agosto |
+| `o_grub_cfg_do_dispositivo_e_o_inerte_que_esta_no_repositorio` (E4) | o `grub.cfg` é byte a byte a captura | havia **um** dispositivo, e ele veio do ISO |
+| `o_grub_cfg_do_dispositivo_continua_inerte_e_igual_a_captura` (E7) | idem | idem |
+
+**Nenhuma dessas coisas é verdade num dispositivo que o `arca prepare` faz.** Ele
+nasce vazio — nem consegue ter a primeira imagem, pelo que está logo acima —,
+sem cópias de trabalho manual, e com o `grub.cfg` do **zip**, que difere do ISO
+no `noeject` e em seis segundos de carimbo.
+
+Os cinco afirmavam coisas sobre **aquele** dispositivo achando que afirmavam
+coisas sobre **um** dispositivo. É a mesma família do que o §3.5 do PRD chama de
+"documentar como fundação o que veio do trabalho de validação em volta", com o
+sujeito trocado: aqui não é a documentação, são os testes.
+
+**O que se fez, e o que não se fez.** Os que dependem de imagem passaram a sair
+cedo **dizendo por quê** — um teste de hardware que sai calado é indistinguível
+de um que passou, e a diferença entre *"não testei"* e *"testei e passou"* é a
+mesma que este projeto persegue em toda parte. Os do `grub.cfg` passaram a
+aceitar **os dois inertes conhecidos**, e quem garante que os dois são
+equivalentes não são eles: é `tests/e10_preparar_o_dispositivo.rs`, que os
+compara linha a linha.
+
+**Nenhum deles foi afrouxado.** O que provavam continua provado assim que houver
+o que provar — e o par armar/desarmar, que é o mais valioso, tem oráculo sem
+hardware nenhum em `src/grub.rs`.
+
+#### A falsificação, e o que ela cobriu
+
+Vinte e uma mutações no **código de produção**, uma de cada vez, com a suíte
+inteira rodando entre elas. As sete defesas desligadas uma a uma; a conferência
+do terceiro tempo de PR-4 olhando só o índice; a releitura de PR-5 sem os tipos
+MBR, sem o `IsActive`, sem a ordem das partições, sem a unidade de alocação; o
+SHA256 aceitando qualquer coisa; o identificador de firmware aceitando
+`{bootmgr}`; o `/remove` não tirando nada; o script modernizando para GPT e
+marcando partição ativa; o `IsSystem` que falta virando `false`; e as duas da
+dívida do ADR-0015 — R-7 de volta ao `>=` e a ambiguidade voltando a pedir que
+alguém aponte.
+
+**As vinte e uma foram pegas.** Uma delas nem compila, que é o teste mais barato
+que existe.
+
+#### A dívida do ADR-0015, paga
+
+Ela ficou de duas etapas atrás, e a E11 **não a pagou apesar de ter aberto o
+`restore.rs`** — abriu para ajustes mecânicos da terceira `Operacao` e não
+releu a instrução ao encaixar. Foi paga aqui, antes do resto da etapa, com a
+suíte verde no meio:
+
+- `--destino` saiu do `cli.rs`, e o teste que o guardava virou o inverso: um
+  script antigo que a passe recebe **erro de uso**, e não um argumento ignorado
+  em silêncio;
+- `escolher_o_destino` deixou de aceitar `pedido: Option<u32>`;
+- `DestinoAmbiguo` virou **recusa terminal**, e a mensagem manda desconectar o
+  disco a mais em vez de apontar um;
+- R-7 passou de `>=` para `==`, e o teste
+  `um_destino_maior_passa_e_a_sobra_aparece` virou
+  `um_disco_maior_com_o_modelo_da_origem_tambem_e_recusado` — mudou de sentido,
+  que é o que a decisão pedia;
+- a tela do §6.1 trocou `Cabe (R-7)` pela linha de identidade.
+
+**E ela trouxe um problema que o ADR-0015 previu e não resolveu.** Aquele
+documento diz que R-8 fica *"exatamente por isso"* — por virar redundante no
+caminho normal. Redundante virou **inalcançável**: com o filtro por modelo
+excluindo o dispositivo dos candidatos, nenhum disco que chegue ao julgamento
+pode ser o dispositivo, e as duas barreiras de R-8 deixaram de ter como ser
+exercitadas.
+
+Uma barreira redundante sem teste é uma barreira que ninguém sabe se funciona. O
+julgamento do candidato saiu para função própria — `julgar_o_destino` —, e os
+testes a alcançam por lá. A escolha continua sem deixar o dispositivo entrar na
+lista.
+
+#### O marco, em duas execuções
+
+**Rodou em 23/08/2026**, sobre o segundo dispositivo da mesa — um SSD de 447 GB
+que existe para ser destruído.
+
+A primeira execução, às 18:38, fez tudo: apagou, particionou, formatou,
+rotulou, baixou 535,5 MB, conferiu o SHA256 contra o valor compilado, extraiu,
+desarmou o `grub.cfg` do pacote, instalou o `arca.exe` no `ARCABOOT` e apontou
+a entrada de firmware. A releitura do disco saiu com os offsets **idênticos** aos
+da medição à mão — `1.048.576` e `478.424.334.336` —, `MbrType 7` e `12`,
+nenhuma partição ativa, unidade 4096.
+
+**Ela reusou a entrada de firmware**, porque esta máquina já tinha uma. Com isso
+o caminho da criação — `/copy`, o identificador achado pela forma, o `/remove`
+sobre uma entrada recém-nascida — não foi exercitado **pelo código**, só pela
+medição à mão.
+
+Por isso houve a segunda, às 18:44: a entrada `ARCA` foi apagada e o comando
+rodou de novo, agora com `--iso` (PR-2). Ele criou a `{f4057bd3-…}`, apontou-a
+para `partition=F:`, e o `bcdedit` lido depois mostra o `displayorder` com
+**só o `{bootmgr}`**.
+
+> Um marco que só exercita o ramo fácil é o caso construído mais fácil do que o
+> real que o §11 nomeia. A segunda execução custou um UAC e fechou dois
+> caminhos.
+
+#### P-26, e o que a E10 **não** provou
+
+**Nenhum dispositivo preparado pelo ARCA bootou.** O que se conferiu foi tudo o
+que se pode conferir sem reiniciar — a estrutura relida do disco, os quatro
+caminhos obrigatórios dentro do pacote, o `set default` de volta em
+`live-default`, a entrada de boot relida do `bcdedit`. O que falta é o firmware
+honrar aquela entrada.
+
+**É a mesma forma de P-18**, que a E4 abriu e o marco da E8 fechou: o lado
+Windows prova o que escreveu, e só o hardware prova que o firmware obedeceu.
+Fecha com um `arca backup` no dispositivo novo, e o risco é conhecido — com o
+`grub.cfg` inerte, o pior caso é a máquina parar no menu do Clonezilla.
 
 #### O `arca resultado` devolve o Windows à frente da ordem de boot (P-20)
 
@@ -1760,6 +2107,182 @@ dele"*. Foi copiado antes do marco, e o `--dry-run` rodado **do próprio
 
 ---
 
+### E12 · `arca sondar`
+
+Um boot desatendido que **não faz backup nem restauração**: roda `lsblk`, grava
+a saída no `ARCAVAULT` e desliga. É o que dá ao ARCA o nome que o Linux usa para
+o disco de origem **sem exigir que já exista uma imagem** — e é o que faz um
+dispositivo recém-preparado servir para alguma coisa.
+
+**Cobre**: **SD-1** a **SD-6** — e fecha **P-26**, que a E10 abriu.
+
+> **Esta etapa nasceu de uma pergunta na mesa, e não do plano.** Em 23/08/2026,
+> depois da E10, a pergunta foi *"e quando o outro SSD não estiver lá?"*. A
+> resposta expôs que a tela do `arca prepare` mandava fazer um `arca backup` que
+> **recusa** num dispositivo novo; a correção daquela tela mandou o usuário para
+> o menu do Clonezilla — que é exatamente aquilo que este app existe para não
+> precisar. A E12 é a resposta certa à pergunta.
+
+#### O buraco, em uma frase
+
+O §4.5 diz que o nome do disco no Linux sai do `blkdev.list` de dentro de uma
+imagem. Um dispositivo recém-preparado não tem imagem, logo não tem o nome, logo
+`arca backup` recusa — e `arca restore` e `arca verify --completo` também.
+**Nenhum dos três comandos que armam funciona num dispositivo recém-nascido.**
+
+A E12 dá uma **segunda fonte para o mesmo arquivo**, e ela não depende de imagem
+nenhuma. O parser não muda: `crate::blkdev` continua sendo o único lugar que lê
+aquele formato.
+
+#### O que aqui é transcrição, o que rodou, e o que é código novo
+
+| Parte | Origem |
+|---|---|
+| O `mkdir -p`, o `ARCA_SELO=` com `>`, o `ARCA_FIM`, o `sleep`, o `poweroff` | Transcrito das três receitas que rodaram |
+| A forma `bash -c '...'` com `;` e os cinco parâmetros | Transcrito das três capturas |
+| O `if` sobre o comando principal, escrevendo `OK` ou `FALHOU` | Transcrito das três |
+| O **formato** da saída do `lsblk` | Transcrito do `blkdev.list` de dentro das imagens |
+| Escrever em `/home/partimag` **antes** de qualquer comando do Clonezilla | **Rodou** — verificação armada da E11, 23/08/2026 |
+| **O `lsblk` como comando principal** | **Código novo** — nenhuma receita deste projeto o chamou |
+| **O `ARCA_PROBE=`** | **Código novo** |
+| **As flags exatas do `lsblk`** | **Não medido** — ver abaixo |
+
+#### O pressuposto perigoso já tem original, e ninguém tinha notado
+
+A receita de sondagem escreve em `/home/partimag` **antes** de qualquer comando
+do Clonezilla. Se o repositório não estivesse montado nesse instante, o `mkdir`
+criaria a pasta no tmpfs da RAM e o `poweroff` levaria tudo embora — falha
+silenciosa, sem nada no dispositivo para investigar depois.
+
+Está provado, e a prova é da E11. A receita de verificação
+(`src/receita.rs:781`) tem exatamente essa forma: passo 1 `mkdir -p`, passo 2
+`echo ARCA_SELO= >`, e só no passo 3 o `ocs-chkimg`. Ela rodou em 23/08 às
+16:53, e o resultado está copiado em
+`recursos/capturas/arca-fim-verificacao-2026-08-22_Apps.txt` — 51 bytes que
+saíram daqueles dois primeiros passos.
+
+**Quem monta o `/home/partimag` é o `ocs_repository="dev:///LABEL=ARCAVAULT"` do
+boot, e não o `ocs-sr`.** É o único pressuposto genuinamente novo da sondagem, e
+ele foi pago por uma etapa que não sabia estar pagando.
+
+E há um segundo sinal de graça: o `lsblk` da sondagem roda com o repositório
+montado, então a linha da partição do `ARCAVAULT` sai com `/home/partimag` no
+`MOUNTPOINT` — como já sai nos `blkdev.list` capturados. O próprio arquivo
+testemunha que foi escrito no lugar certo.
+
+#### O `if` não é enfeite, e a primeira versão da receita não o tinha
+
+A forma proposta na mesa era:
+
+```text
+lsblk -o ... > .../blkdev.list;
+echo ARCA_PROBE=OK >> .../arca-fim.txt;
+```
+
+O `;` não olha código de saída. Com o `lsblk` falhando — uma flag que esta versão
+do util-linux não conheça basta —, o `blkdev.list` sai vazio e o desfecho diz
+**`OK`** assim mesmo. É R-5, e é o passo 3 de `montar_backup` desde a E3.
+
+O estrago não é abstrato: o parser leria a lista vazia, devolveria `SemOraculo`,
+e a tela seguinte diria `Disco de origem ... POR DETERMINAR` **logo depois** de
+o `arca resultado` ter dito que a sondagem concluiu com sucesso. Duas afirmações
+contraditórias, as duas do ARCA, na mesma sessão.
+
+É o padrão de sempre — peça nova encaixada em peça antiga que ninguém releu ao
+encaixar —, e desta vez foi pego antes de escrever, o que é a primeira vez neste
+projeto.
+
+#### As flags do `lsblk` são reconstrução, e a etapa tem de dizer isso
+
+Temos o **resultado** — o `blkdev.list` de dentro das imagens, com o cabeçalho
+`KNAME NAME SIZE TYPE FSTYPE MOUNTPOINT MODEL`. Não temos a **linha de comando**
+que o produziu: ela mora nos scripts do Clonezilla, dentro do
+`filesystem.squashfs`.
+
+Reconstruir as colunas a partir do cabeçalho é honesto e é o que se vai fazer.
+Chamá-lo de transcrição não seria. O que a etapa deve garantir é que o modo de
+falha dessa reconstrução seja **barato e visível**: com o `if` no lugar, uma
+flag recusada vira `ARCA_PROBE=FALHOU` numa tela, e não um arquivo vazio com
+carimbo de sucesso.
+
+#### As cinco perguntas que a etapa decide
+
+**1. Onde a sondagem grava, e o que acontece com a anterior.** `pasta_do_log`
+produz `"{operacao}-{nome}"`, e a sondagem não tem nome de imagem. Com pasta
+fixa, duas sondagens colidem e a segunda trunca o `arca-fim.txt` da primeira —
+que é o defeito que a revisão da E3 pegou entre backup e restauração. **Aqui
+pode ser o comportamento certo**, porque a medição mais recente é a que vale. A
+etapa decide e escreve por quê; o que não pode é decidir por omissão.
+
+**2. O `Nome` do `Pedido` e do `estado.json`.** O precedente é da E11: o `disco`
+virou opcional com a **string vazia** como sentinela, e a escolha não foi
+arbitrária — `Disco::novo("")` já recusava desde a E3, então o vazio nunca foi um
+valor possível e não pode colidir. Conferir se `Nome::novo("")` recusa. Se
+recusar, o mesmo argumento vale e a decisão já está tomada por precedente.
+
+**3. A segunda variante de `Origem`.** `blkdev::Origem` só sabe dizer
+`LidoDaImagem { imagem, modelo }`, e o pré-voo imprime isso literalmente. Uma
+sondagem que se apresentasse como imagem seria a mesma falha que o `arca prepare`
+acabou de pagar — uma tela afirmando o que não aconteceu. Precisa de uma
+variante própria, e ela tem de dizer **quando** a sondagem foi feita.
+
+**4. A precedência entre a sondagem e o `blkdev.list` das imagens.** A sondagem
+descreve a máquina de **agora**; a imagem descreve a de quando o backup foi
+feito. A proposta é a sondagem ganhar, com a divergência **dita na tela** e nunca
+resolvida em silêncio. Vale registrar que a defesa existente já ajuda: o
+casamento é por modelo, e uma sondagem obsoleta que descrevesse outro disco cai
+em `ModeloNaoCasa`, que é recusa.
+
+**5. O que se digita para confirmar, e o que essa confirmação impede.** `arca
+backup` e `arca restore` pedem o nome digitado porque a operação é cara ou
+destrutiva. A sondagem não apaga nada — mas **reinicia a máquina**, e isso não é
+pouco para quem está trabalhando. A decisão tem de sobreviver à pergunta *"o que
+essa confirmação impede?"*; uma confirmação que não impede nada é ruído que ensina
+o usuário a digitar sem ler.
+
+#### O pior caso não toca em disco nenhum, e isso é inédito aqui
+
+Esta é a única etapa com marco em hardware cujo modo de falha não envolve
+gravação. A receita não tem `ocs-sr`: não há `savedisk`, não há `restoredisk`,
+não há nada que escreva fora do `ARCAVAULT`.
+
+| Se falhar em | O que acontece | Custo |
+|---|---|---|
+| o boot único não pegar | o Windows sobe normalmente, e o `arca resultado` colhe *sem desfecho* | um reinício |
+| o grub não achar a receita | a máquina para no menu do Clonezilla (§3.2, §4.4) | desligar na mão |
+| o `lsblk` recusar as flags | `ARCA_PROBE=FALHOU`, dito na tela | um reinício |
+
+Comparar com a E9, cujo marco apaga um disco de propósito.
+
+#### O que ela mede de graça, e nenhuma etapa mediu
+
+**Quanto custa o boot do Clonezilla live nesta máquina, isolado.** Todas as
+execuções anteriores tinham uma operação longa depois dele — 39,7 GB gravados,
+uma restauração, um `ocs-chkimg` de 312 s —, e o boot ficou embutido em cada
+total. A sondagem é a primeira em que ele é quase tudo o que há.
+
+O número vale para as estimativas de todas as outras operações, e não está
+escrito em lugar nenhum deste repositório. **Não repetir aqui o `~2 minutos` que
+foi dito na mesa**: ele é palpite, e a etapa existe justamente para trocar
+palpite por medição.
+
+#### Pronto quando
+
+`arca sondar` armou, a máquina bootou **pela entrada de firmware que o `arca
+prepare` criou** no dispositivo que ele criou, o `lsblk` rodou sozinho, a máquina
+desligou, `arca resultado` colheu `ARCA_PROBE=OK` com o selo batendo — e um
+`arca backup --dry-run` em seguida mostrou o disco de origem **descoberto pela
+sondagem**, dizendo na tela que veio dela.
+
+**Isso fecha P-26 inteira, as duas metades de uma vez:** (a) o dispositivo boota;
+(b) a entrada que o ARCA criou leva a ele.
+
+> **Um F12 não serve para o marco.** O F12 responde (a) e não responde (b) — é a
+> distinção que a própria P-26 faz. O boot tem de ser o único, disparado pelo
+> `bootsequence` que o `arca sondar` escreveu.
+
+---
+
 ## Cobertura de requisitos
 
 Nenhum requisito do PRD fica sem etapa.
@@ -1776,8 +2299,9 @@ Nenhum requisito do PRD fica sem etapa.
 | E7 | C-4, C-5, C-9, S-2 — e a segunda metade de C-6, que até aqui só era relatada por leitura |
 | E8 | S-4, S-5, D8 — e C-12, que ganhou o comando que o atende |
 | E9 | R-1, R-2, R-3, **R-7**, **R-8**, L-2 — e P-17. R-7 não tinha etapa nenhuma nesta tabela até aqui |
-| E10 | §7.1, **PR-4**, **PR-5** — e **C-13**, que fechou P-20 e saiu na frente do `arca prepare` |
+| E10 | §7.1, §7.2, **PR-1**, **PR-2**, **PR-3**, **PR-4**, **PR-5** — e **C-13**, que fechou P-20 e saiu na frente do `arca prepare`. C-4 ganhou a outra metade (criar entrada de firmware) e C-5 ganhou a segunda aplicação (tirá-la da ordem). A tabela não previa os três PR do pacote nesta etapa, nem que a dívida do ADR-0015 seria paga aqui |
 | E11 | D6, **V-1**, **V-2** — e V-1 corrigido contra medição, que a tabela não previa |
+| E12 | **SD-1** a **SD-6** — e **P-26**, que fecha inteira. Nenhum requisito novo do §9 existia quando esta tabela foi escrita: os SD nasceram com a etapa |
 
 ## Riscos que atravessam o plano
 
@@ -1844,3 +2368,15 @@ esteve aqui e voltou. O `arca prepare` particiona **o dispositivo**, e só ele,
 com o disco nomeado pelo usuário e confirmado por escrito — disco fixo é recusa
 dura. O que continua fora é ser um gerenciador de discos de uso geral. Ver
 [ADR-0014](../docs/adr/0014-o-arca-particiona-o-dispositivo.md).
+
+**E duas coisas entraram nesta lista na E10**, as duas por escolha e não por
+falta de tempo:
+
+- **Reinstalar o Clonezilla sem apagar as imagens.** O `arca prepare` começa
+  reescrevendo a tabela de partição, e a tela diz isso a quem aponta um
+  dispositivo que já existe. Um comando que só trocasse o conteúdo do
+  `ARCABOOT` é concebível e não foi pedido; ele volta quando o uso pedir.
+- **Modernizar o dispositivo para GPT+ESP.** O ADR-0014 manda resistir a isso, e
+  a razão não mudou: seria trocar um esquema medido por um suposto, num lugar
+  cujo modo de falha só aparece **depois** de o Windows ter sido apagado. Se um
+  dia for desejável, é decisão própria com marco em hardware próprio.

@@ -232,7 +232,10 @@ fn o_dispositivo_a_frente_da_ordem_permanente_exige_o_dispositivo_inerte() {
             .is_some_and(|letra| letra.eq_ignore_ascii_case(&boot))
     };
 
-    let posicao = leitura.ordem_permanente.iter().position(leva_ao_dispositivo);
+    let posicao = leitura
+        .ordem_permanente
+        .iter()
+        .position(leva_ao_dispositivo);
 
     if posicao != Some(0) {
         // A configuracao de ate 22/08 (fora da ordem) e a de um dispositivo
@@ -346,7 +349,9 @@ fn a_captura_do_live_mostra_o_boot_unico_funcionando_sobre_uma_entrada_de_tras()
         .find(|linha| linha.starts_with(&format!("Boot{bootou_por}")))
         .expect("a captura descreve a entrada que bootou");
     assert!(
-        linha_da_entrada.to_ascii_uppercase().contains("BOOTX64.EFI"),
+        linha_da_entrada
+            .to_ascii_uppercase()
+            .contains("BOOTX64.EFI"),
         "a entrada que bootou nao carrega o bootloader do ARCABOOT: {linha_da_entrada}"
     );
 }
@@ -367,12 +372,21 @@ fn nao_ha_boot_unico_pendente_nesta_maquina() {
     );
 }
 
+/// O `grub.cfg` do **zip** do Clonezilla 3.3.3-15, que o `arca prepare`
+/// instala desde a E10.
+const DO_PACOTE: &str = include_str!("../recursos/capturas/grub-clonezilla-do-pacote-3.3.3-15.cfg");
+
 #[test]
-fn o_grub_cfg_do_dispositivo_continua_inerte_e_igual_a_captura() {
+fn o_grub_cfg_do_dispositivo_continua_inerte_e_e_um_dos_conhecidos() {
     // A E4 ja cobra isto, e a E7 o cobra de novo por um motivo proprio: ela e
     // a primeira etapa que **escreve** neste arquivo. A copia em
     // `recursos/capturas/` e a unica que existe fora do dispositivo, e ela tem
     // de continuar sendo o que estava la antes da primeira gravacao.
+    //
+    // **Desde a E10 ha dois inertes legitimos**, e este teste aceita os dois —
+    // ver o irmao dele em `tests/e4_desarmar_o_dispositivo.rs` para por que. O
+    // que importa aqui e a mesma coisa de sempre: o arquivo **nao esta
+    // armado**, e e um dos que este repositorio conhece.
     let Some(caminho) = caminho_do_grub() else {
         return;
     };
@@ -381,12 +395,29 @@ fn o_grub_cfg_do_dispositivo_continua_inerte_e_igual_a_captura() {
         .ler_texto(&caminho)
         .expect("o grub.cfg do dispositivo e legivel");
 
-    assert_eq!(
-        corrente, INERTE,
-        "o grub.cfg do dispositivo divergiu da copia do repositorio. Se foi um `arca backup` que \
-         o armou, `arca desarmar` o devolve; se foi outra coisa, a copia precisa ser refeita antes \
-         de continuar valendo como evidencia"
-    );
+    let do_pacote_inerte = arca::grub::desarmar(DO_PACOTE)
+        .expect("o grub.cfg do pacote se desarma")
+        .texto;
+
+    let qual = if corrente == INERTE {
+        "o do ISO, preparado a mao"
+    } else if corrente == do_pacote_inerte {
+        "o do zip, instalado pelo `arca prepare`"
+    } else {
+        // A mensagem **não** despeja os dois arquivos: são 11 KB cada, e um
+        // `assert_eq!` aqui enche a tela de quem roda a suíte com algo que não
+        // se lê. O que importa é o veredito e o que fazer.
+        panic!(
+            "o grub.cfg de {} nao e nenhum dos dois inertes conhecidos. Se foi um \
+             `arca backup` que o armou, `arca desarmar` o devolve; se foi outra coisa, \
+             a copia precisa ser refeita antes de continuar valendo como evidencia. \
+             Para ver a diferenca: `diff` entre ele e \
+             recursos/capturas/grub-inerte-arcaboot.cfg",
+            caminho.display()
+        )
+    };
+
+    eprintln!("  (o grub.cfg de {} e {qual})", caminho.display());
 }
 
 /// Os três comandos que armam avisam o que vai aparecer depois do reinício.
@@ -420,4 +451,25 @@ fn todo_comando_que_arma_avisa_o_que_vem_depois_do_reinicio() {
 
     assert!(aviso.contains("30 SEGUNDOS"));
     assert!(aviso.contains("NAO DESLIGUE"));
+
+    // **E o `prepare` não arma, o que é a outra metade da invariante.**
+    //
+    // Ele entrou na E10 e é destrutivo, então a pergunta natural ao lê-lo é
+    // *"por que ele não avisa o que vem depois do reinício?"* — a resposta é
+    // que não há reinício: ele é o único comando destrutivo do ARCA que faz
+    // tudo do lado Windows, com a tela na frente.
+    //
+    // Cobrar isso aqui é o que impede que um dia alguém o faça armar e o
+    // deixe sem o aviso. As duas asserções falam da mesma coisa por lados
+    // opostos: quem chama `armar::executar` tem de chamar o aviso, e quem não
+    // chama nenhum dos dois continua não chamando.
+    let prepare = include_str!("../src/comandos/prepare.rs");
+    assert!(
+        !prepare.contains("armar::executar"),
+        "`arca prepare` passou a armar, e nao avisa o que vai aparecer na tela do outro lado do reinicio"
+    );
+    assert!(
+        !prepare.contains("sistema.reiniciar()"),
+        "`arca prepare` passou a reiniciar a maquina, e a tela dele nao diz o que vem depois"
+    );
 }
