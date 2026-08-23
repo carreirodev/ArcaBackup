@@ -223,6 +223,34 @@ pub fn julgar(
         return Err(RecusaDoPreVoo::SemEspaco(*espaco));
     }
 
+    julgar_o_dispositivo(dispositivo, discos)
+}
+
+/// As duas recusas que valem para **toda** operacao que arma: C-6 e C-10.
+///
+/// # Por que elas saíram do `julgar`, na etapa E9
+///
+/// B-3 e B-4 falam do **backup** — de um nome que vai ser gravado e de espaco
+/// para gravar. Estas duas falam do **dispositivo**, e o `arca restore` arma
+/// no mesmo `grub.cfg` e no mesmo firmware.
+///
+/// A primeira versao do `arca restore` não as chamava, e os dois furos eram
+/// reais:
+///
+/// - **C-6**: o `armar` relê o `device` depois de escrever e pega a rejeicao
+///   silenciosa (§3.1) — mas **depois** da confirmacao digitada. Aqui a
+///   confirmacao é o nome de uma imagem que vai apagar um disco, e ninguem a
+///   digita para ouvir um nao que o `MediaType` do WMI já sabia dar antes.
+/// - **C-10**: `dispositivo::encontrar` recusa rotulo **repetido**, e nao
+///   rotulo orfao. Com o dispositivo partido, o `estado.json` iria para o
+///   `ARCABOOT` de um dispositivo e o desfecho para o `ARCAVAULT` do outro —
+///   e a colheita procuraria o desfecho de um job no lugar errado.
+///
+/// Duas versoes da mesma regra divergem na primeira mudanca. Esta e uma so.
+pub fn julgar_o_dispositivo(
+    dispositivo: &Dispositivo,
+    discos: &[DiscoFisico],
+) -> Result<(), RecusaDoPreVoo> {
     // C-6: o sinal antecipado agora e o `MediaType` do WMI, e nao o
     // `GetDriveType` — que classifica este mesmo SSD externo como disco fixo e
     // nao distingue nada (§3.1, D10).
@@ -236,7 +264,7 @@ pub fn julgar(
         return Err(RecusaDoPreVoo::MidiaRemovivel);
     }
 
-    // A pendencia que a E4 deixou nomeada para esta etapa: C-10 recusa rotulo
+    // A pendencia que a E4 deixou nomeada para a E6: C-10 recusa rotulo
     // **repetido**, e nao rotulo orfao. Com dois dispositivos meio prontos na
     // mesa — um so com o `ARCAVAULT`, o outro so com o `ARCABOOT` — cada
     // rotulo aparece uma vez, a contagem passa, e a receita iria para um
@@ -440,6 +468,10 @@ mod testes {
             indice,
             modelo: modelo.to_string(),
             tamanho_bytes: 500_105_249_280,
+            medida: Some(crate::portas::Medida {
+                bytes: 500_107_862_016,
+                bytes_por_setor: 512,
+            }),
             em_uso_bytes: EM_USO,
             tipo_de_midia: midia,
             letras: letras.to_vec(),

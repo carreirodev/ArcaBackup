@@ -5,14 +5,24 @@
 //! confirmacao digitada**: confirmar e armar sao a etapa E7, e um comando que
 //! armasse aqui pularia o que o plano poe entre os dois.
 //!
-//! Com `--dry-run`, imprime tambem as duas receitas inteiras — e nao desarma.
+//! Com `--dry-run`, imprime tambem a receita inteira — e nao desarma.
 //!
-//! # Por que o ensaio imprime tambem a receita de restauracao
+//! # A receita de restauracao saiu daqui na E9
 //!
-//! A E3 cobre R-4 e R-5, e a restauracao so ganha comando na E9. Sem
-//! aparecer aqui, a unica receita destrutiva do sistema ficaria seis etapas
-//! sem ninguem poder olhar para ela. Ela sai marcada como previa: e o que a
-//! E9 armaria, e nao o que este comando faria.
+//! Da E3 a E8 este ensaio imprimia **duas** receitas, e a segunda vinha
+//! marcada como *"previa; quem a arma e a etapa E9"*. A razao era boa: a E3
+//! cobre R-4 e R-5, e sem aparecer aqui a unica receita destrutiva do sistema
+//! ficaria seis etapas sem ninguem poder olhar para ela.
+//!
+//! A E9 chegou, e a razao acabou. `arca restore --dry-run` imprime aquela
+//! receita com o disco de **destino** escolhido e conferido, e nao com o de
+//! origem por coincidencia de desenho — que era o que saia daqui. Manter as
+//! duas seria duas fontes da mesma receita, e duas versoes da mesma coisa
+//! divergem na primeira mudanca.
+//!
+//! E ha o motivo de sempre: a frase *"quem a arma e a etapa E9"* passou a ser
+//! falsa no instante em que a E9 ficou pronta. E a mesma armadilha que a E7
+//! pagou duas vezes — **depois de corrigir, releia o que a correcao encostou.**
 
 use crate::app::Contexto;
 use crate::armar;
@@ -49,7 +59,6 @@ pub struct Ensaio<'a> {
     pub de_exemplo: bool,
 
     pub backup: &'a Receita,
-    pub restauracao: &'a Receita,
 }
 
 pub fn executar(contexto: &Contexto, nome_bruto: &str) -> Resultado<()> {
@@ -249,39 +258,11 @@ fn armar_e_reiniciar(
 
 /// S-2: o nome da imagem por extenso, lido do console.
 ///
-/// Uma tentativa, e nao um laco. Quem digitou errado tem o comando inteiro
-/// para repetir, e o comando e barato: ele nao armou nada. Insistir seria
-/// transformar a confirmacao numa formalidade a atravessar.
+/// O julgamento mora em [`crate::confirmacao`] desde a E9, quando o
+/// `arca restore` passou a precisar do mesmo — e a tela dele e outra, mais
+/// dura, porque a operacao apaga um disco. O que se compartilha e a regra.
 fn confirmar(contexto: &Contexto, nome: &Nome) -> Resultado<()> {
-    use std::io::Write;
-
-    print!("\nDigite o nome do backup para confirmar: ");
-    let _ = std::io::stdout().flush();
-
-    let digitado = contexto.console.ler_linha()?;
-    println!();
-
-    if !confirmacao_bate(&digitado, nome) {
-        return Err(Erro::ConfirmacaoNaoBate {
-            esperado: nome.to_string(),
-            digitado: digitado.trim().to_string(),
-        });
-    }
-    Ok(())
-}
-
-/// Se o texto digitado confirma esta imagem (S-2).
-///
-/// # Exato, e nao "parecido"
-///
-/// Poda espaco das pontas, porque um Enter deixa `\r\n` atras e ninguem digita
-/// espaco de proposito. **Nao** ignora caixa: B-2 aceita maiuscula e
-/// minuscula, e `2026-08-22_apps` e um nome diferente de `2026-08-22_Apps` —
-/// aceitar os dois faria a confirmacao dizer sim para uma imagem que nao e a
-/// que vai ser gravada. E nao aceita prefixo, nem `s`, nem vazio: a
-/// confirmacao existe para custar o trabalho de ler o nome inteiro.
-fn confirmacao_bate(digitado: &str, nome: &Nome) -> bool {
-    digitado.trim() == nome.como_texto()
+    crate::confirmacao::pedir(contexto, "Digite o nome do backup para confirmar", nome)
 }
 
 /// O que se imprime depois de armado, com o aviso de C-9 no fim.
@@ -292,43 +273,13 @@ fn confirmacao_bate(digitado: &str, nome: &Nome) -> bool {
 /// para o dispositivo removivel sem `bootsequence` pendente. Causa nao
 /// determinada, nao reproduzido; remover o SSD elimina o cenario.
 pub fn montar_o_armado(armado: &armar::Armado) -> String {
-    let mut saida = String::new();
-
-    saida.push('\n');
-    saida.push_str(&linha("Entrada de firmware", &match &armado.entrada {
-        armar::Entrada::JaEraDoArca => format!(
-            "{} · {} · {}",
-            crate::firmware::ARCA,
-            armado.identificador,
-            armado.alvo.como_bcdedit_escreve()
-        ),
-        armar::Entrada::MigradaDaLegada { de } => format!(
-            "migrada de `{de}` para {} (C-4) · {} · {}",
-            crate::firmware::ARCA,
-            armado.identificador,
-            armado.alvo.como_bcdedit_escreve()
-        ),
-    }));
-    saida.push_str(&linha(
-        "Receita armada",
-        &format!("ok · {}", armado.caminho_do_grub.display()),
-    ));
-    saida.push_str(&linha(
-        "Boot unico",
-        &format!("ok · relido no bcdedit · {}", armado.identificador),
-    ));
-    saida.push_str(&linha("Selo do job", armado.selo.como_texto()));
-
-    // O caminho inteiro, e nao so o nome da pasta. A revisao pegou isto: a
-    // linha dizia "Desfecho esperado em backup-2026-08-22_Apps", que nao e um
-    // lugar — nada ali diz que aquilo mora sob `ARCA-LOGS\` no `ARCAVAULT`. E
-    // o `caminho_do_desfecho`, que e montado pela mesma funcao de que a
-    // receita monta o caminho Linux, nao tinha chamador nenhum: o unico lugar
-    // que o exibiria mostrava a metade que nao serve para procurar.
-    saida.push_str(&linha(
-        "Desfecho esperado em",
-        &armado.caminho_do_desfecho.to_string_lossy(),
-    ));
+    // As cinco linhas moram em [`crate::armar::montar_as_linhas`] desde a E9,
+    // quando um segundo comando passou a armar. Elas sao a releitura de C-3
+    // impressa, e as duas telas mostram as mesmas: duas copias divergiriam na
+    // primeira mudanca, e uma delas passaria a dizer sobre a releitura algo
+    // que nao e verdade. O que e proprio deste comando e o que vem depois.
+    let mut saida = String::from("\n");
+    saida.push_str(&armar::montar_as_linhas(armado));
 
     saida.push_str(concat!(
         "\nA maquina vai reiniciar agora e desligar sozinha ao terminar.\n",
@@ -442,18 +393,13 @@ fn ensaio_das_receitas(
     // diz — ver [`Selo::de_ensaio`].
     let selo = Selo::de_ensaio();
 
-    let montar_para = |operacao| {
-        Receita::montar(&Pedido {
-            operacao,
-            nome: nome.clone(),
-            disco: o_disco.clone(),
-            selo: selo.clone(),
-        })
-        .map_err(Erro::ReceitaRecusada)
-    };
-
-    let backup = montar_para(Operacao::Backup)?;
-    let restauracao = montar_para(Operacao::Restauracao)?;
+    let backup = Receita::montar(&Pedido {
+        operacao: Operacao::Backup,
+        nome: nome.clone(),
+        disco: o_disco.clone(),
+        selo: selo.clone(),
+    })
+    .map_err(Erro::ReceitaRecusada)?;
 
     contexto.registro.info(format!(
         "ensaio de backup `{nome}` · disco {o_disco}{} · receita de {} caracteres · validada por C-2",
@@ -467,7 +413,6 @@ fn ensaio_das_receitas(
         disco: &o_disco,
         de_exemplo,
         backup: &backup,
-        restauracao: &restauracao,
     }))
 }
 
@@ -505,11 +450,6 @@ pub fn montar(ensaio: &Ensaio) -> String {
         "Receita de backup — e esta que o comando sem --dry-run armaria",
         ensaio.backup,
     ));
-    saida.push('\n');
-    saida.push_str(&secao(
-        "Receita de restauracao — previa; quem a arma e a etapa E9",
-        ensaio.restauracao,
-    ));
 
     // Estas duas frases falavam da E7 no futuro, e a E7 chegou. Ficaram
     // erradas no instante em que o comando passou a armar — e o modo de falha
@@ -521,7 +461,9 @@ pub fn montar(ensaio: &Ensaio) -> String {
         "liga o job ao desfecho que voltar.\n",
         "\nNada foi armado, e o dispositivo nao foi nem desarmado — no ensaio, C-1 nao\n",
         "acontece. O mesmo comando sem `--dry-run` desarma, pede a confirmacao por\n",
-        "extenso, arma e reinicia.\n"
+        "extenso, arma e reinicia.\n",
+        "\nA receita de restauracao nao sai mais daqui: ela e montada com o disco de\n",
+        "DESTINO, que este comando nao escolhe. Para ve-la:  arca restore --dry-run\n"
     ));
 
     saida
@@ -571,7 +513,6 @@ mod testes {
         let nome = Nome::novo("2026-08-22_Apps").unwrap();
         let disco = Disco::novo(DISCO_DE_EXEMPLO).unwrap();
         let backup = receita(Operacao::Backup);
-        let restauracao = receita(Operacao::Restauracao);
 
         montar(&Ensaio {
             dispositivo: &dispositivo,
@@ -579,7 +520,6 @@ mod testes {
             disco: &disco,
             de_exemplo,
             backup: &backup,
-            restauracao: &restauracao,
         })
     }
 
@@ -598,24 +538,20 @@ mod testes {
     }
 
     #[test]
-    fn o_ensaio_imprime_as_duas_receitas_inteiras() {
-        // O criterio de aceite da etapa. "Inteiras" quer dizer que o que sai
+    fn o_ensaio_imprime_a_receita_de_backup_inteira() {
+        // O criterio de aceite da etapa. "Inteira" quer dizer que o que sai
         // impresso e a string que seria gravada, e nao um resumo dela.
         let saida = ensaio_montado();
+        let esperada = receita(Operacao::Backup);
 
-        for operacao in [Operacao::Backup, Operacao::Restauracao] {
-            let esperada = receita(operacao);
-            assert!(
-                saida.contains(esperada.comando()),
-                "faltou a receita de {} inteira:\n{saida}",
-                operacao.nome()
-            );
-            assert!(
-                saida.contains(&esperada.parametros_do_grub()),
-                "faltou a linha do grub.cfg da {}:\n{saida}",
-                operacao.nome()
-            );
-        }
+        assert!(
+            saida.contains(esperada.comando()),
+            "faltou a receita de backup inteira:\n{saida}"
+        );
+        assert!(
+            saida.contains(&esperada.parametros_do_grub()),
+            "faltou a linha do grub.cfg:\n{saida}"
+        );
     }
 
     #[test]
@@ -667,16 +603,30 @@ mod testes {
     }
 
     #[test]
-    fn o_ensaio_separa_a_receita_que_este_comando_arma_da_que_ele_nao_arma() {
-        // A de restauracao aparece aqui porque a E3 a cobre e a E9 e quem a
-        // arma. Sem essa marca, ela leria como algo que este comando faria — e
-        // ela e a unica receita destrutiva do sistema.
+    fn o_ensaio_so_imprime_a_receita_que_este_comando_arma() {
+        // Da E3 a E8 este ensaio imprimia tambem a de restauracao, marcada
+        // como "quem a arma e a etapa E9" — e a frase virou mentira no
+        // instante em que a E9 ficou pronta. O `arca restore --dry-run` monta
+        // aquela receita com o disco de **destino**, que este comando nem
+        // escolhe.
         let saida = ensaio_montado();
+
         assert!(
             saida.contains("o comando sem --dry-run armaria"),
             "{saida}"
         );
-        assert!(saida.contains("quem a arma e a etapa E9"), "{saida}");
+        assert!(
+            !saida.contains("etapa E9"),
+            "a E9 existe; nenhuma frase pode continuar prometendo-a:\n{saida}"
+        );
+        assert!(
+            !saida.contains(receita(Operacao::Restauracao).comando()),
+            "a receita de restauracao nao sai mais daqui:\n{saida}"
+        );
+        assert!(
+            saida.contains("arca restore --dry-run"),
+            "e o ensaio tem de dizer onde ela esta:\n{saida}"
+        );
     }
 
     // ───────────────────────── o comando inteiro ─────────────────────────
@@ -1132,6 +1082,7 @@ mod testes {
                 indice: 0,
                 modelo: "O DISPOSITIVO".to_string(),
                 tamanho_bytes: 256_052_966_400,
+                medida: None,
                 em_uso_bytes: 1000,
                 tipo_de_midia: TipoDeMidia::DiscoExterno,
                 letras: vec!['E', 'R'],
@@ -1140,6 +1091,7 @@ mod testes {
                 indice: 1,
                 modelo: "O WINDOWS".to_string(),
                 tamanho_bytes: 500_105_249_280,
+                medida: None,
                 em_uso_bytes: 112_973_562_368,
                 tipo_de_midia: TipoDeMidia::DiscoFixo,
                 letras: vec!['C'],

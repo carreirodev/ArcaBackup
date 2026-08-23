@@ -348,13 +348,73 @@ fn secao_do_firmware(leitura: &Leitura, dispositivo: &Dispositivo) -> String {
 /// dispositivo — o `{bootmgr}` e uma — nao tem letra, e supor que ela alcanca o
 /// dispositivo faria o aviso abaixo disparar sempre, que e o mesmo que nao
 /// avisar.
-fn alcanca_o_arcaboot(entrada: &firmware::EntradaDeFirmware, dispositivo: &Dispositivo) -> bool {
+pub fn alcanca_o_arcaboot(entrada: &firmware::EntradaDeFirmware, dispositivo: &Dispositivo) -> bool {
     let (Some(alvo), Some(boot)) = (&entrada.alvo, &dispositivo.boot) else {
         return false;
     };
     match (alvo.letra(), boot.letra) {
         (Some(apontada), Some(atual)) => apontada.eq_ignore_ascii_case(&atual),
         _ => false,
+    }
+}
+
+/// Onde o dispositivo esta na ordem permanente, e por quantas entradas.
+///
+/// # Por que isto e uma funcao publica, e nao um `if` repetido
+///
+/// A E9 precisa da mesma pergunta que a E8 ja fazia: antes de reiniciar para
+/// uma **restauracao**, o aviso de que a maquina boota no dispositivo sozinha
+/// deixa de ser chateacao e passa a ser "religar apaga o disco de novo". Duas
+/// versoes da mesma regra divergem na primeira mudanca — foi por isso que o
+/// `arca resultado` reusa `list::montar` em vez de formatar de novo, e e por
+/// isso que a regra que decide o aviso mora aqui, num lugar so.
+///
+/// O que ela **nao** faz e o texto: `arca status` diz uma coisa e
+/// `arca restore` diz outra, porque os dois estao em momentos diferentes. O
+/// que se compartilha e o julgamento, e nao a frase.
+pub struct LugarNaOrdem {
+    /// A posicao da **primeira** entrada da ordem que leva ao `ARCABOOT` desta
+    /// mesa. `None` quando nenhuma leva.
+    pub posicao: Option<usize>,
+
+    /// Quantas entradas da ordem levam a ele. Desde o marco de 22/08 sao
+    /// **duas** nesta maquina — a `{f4057bd0}` do ARCA e a `{687478f2}`
+    /// `UEFI OS` que o firmware criou —, e e por isso que a pergunta e sobre o
+    /// alvo e nunca sobre o nome.
+    pub quantas: usize,
+}
+
+impl LugarNaOrdem {
+    /// Se todo reinicio boota no dispositivo. Falso tambem quando ele nao esta
+    /// na ordem — que e a resposta certa e a tranquilizadora ao mesmo tempo.
+    pub fn em_primeiro(&self) -> bool {
+        self.posicao == Some(0)
+    }
+}
+
+/// Percorre a ordem permanente resolvendo cada identificador na entrada que ele
+/// nomeia, e pergunta se o alvo e o `ARCABOOT` que esta na mesa.
+///
+/// **Quem chama tem de ter conferido `viu_o_gerenciador` antes.** Uma leitura
+/// que nao se deixou entender produz ordem vazia, e ordem vazia sai daqui como
+/// "o dispositivo esta fora da ordem" — a resposta tranquilizadora. Ver a
+/// guarda em [`secao_da_ordem_de_boot`].
+pub fn lugar_do_dispositivo(leitura: &Leitura, dispositivo: &Dispositivo) -> LugarNaOrdem {
+    let leva_ao_dispositivo = |identificador: &String| {
+        leitura
+            .entradas
+            .iter()
+            .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador))
+            .is_some_and(|entrada| alcanca_o_arcaboot(entrada, dispositivo))
+    };
+
+    LugarNaOrdem {
+        posicao: leitura.ordem_permanente.iter().position(leva_ao_dispositivo),
+        quantas: leitura
+            .ordem_permanente
+            .iter()
+            .filter(|id| leva_ao_dispositivo(id))
+            .count(),
     }
 }
 
@@ -400,23 +460,7 @@ fn secao_da_ordem_de_boot(leitura: &Leitura, dispositivo: &Dispositivo) -> Strin
     }
 
     let total = leitura.ordem_permanente.len();
-
-    // Para cada identificador da ordem, a entrada que ele nomeia — e se ela
-    // leva a este dispositivo.
-    let leva_ao_dispositivo = |identificador: &String| {
-        leitura
-            .entradas
-            .iter()
-            .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador))
-            .is_some_and(|entrada| alcanca_o_arcaboot(entrada, dispositivo))
-    };
-
-    let posicao = leitura.ordem_permanente.iter().position(leva_ao_dispositivo);
-    let quantas = leitura
-        .ordem_permanente
-        .iter()
-        .filter(|id| leva_ao_dispositivo(id))
-        .count();
+    let LugarNaOrdem { posicao, quantas } = lugar_do_dispositivo(leitura, dispositivo);
 
     let Some(posicao) = posicao else {
         return linha(

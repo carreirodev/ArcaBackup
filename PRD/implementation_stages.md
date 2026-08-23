@@ -17,7 +17,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E6 | Pré-voo | III | ✅ | 2026-08-22 19:24 |
 | E7 | Armar e disparar | III | ✅ | 2026-08-22 21:06 · marco cumprido |
 | E8 | Colher o desfecho | III | ✅ | 2026-08-22 21:14 · marco cumprido |
-| E9 | Restauração | IV | ⬜ | — |
+| E9 | Restauração | IV | 🟨 | 2026-08-23 · escrita, revisada e commitada; **marco em hardware devendo** |
 | E10 | `arca prepare` | IV | ⬜ | — |
 | E11 | `arca verify` | IV | ⬜ | — |
 
@@ -31,8 +31,9 @@ que o dispararia. A E4 já tinha entregue o critério dela "cumprido pela metade
 verificável"; a diferença é que lá a outra metade era barata, e aqui ela era o
 marco inteiro.
 
-**As duas viraram ✅ em 22/08/2026, e o 🟨 fica documentado porque vai voltar
-na E9.** O reinício aconteceu numa sessão à parte: o backup `2026-08-22_Apps`
+**As duas viraram ✅ em 22/08/2026, e o 🟨 voltou na E9**, que é a terceira
+etapa com marco em hardware e a única cuja operação **apaga um disco**. O
+reinício aconteceu numa sessão à parte: o backup `2026-08-22_Apps`
 foi armado às 20:53:48, a máquina bootou pelo dispositivo por boot único,
 gravou 39,7 GB, verificou, escreveu o desfecho às 21:06:02 e desligou; a
 colheita foi às 21:14:49. Os blocos **"o que falta para o marco, nomeado"** das
@@ -59,7 +60,7 @@ Três regras que decidem a ordem toda:
 | 2 | **A receita continua sendo uma string no `grub.cfg`**, como no mecanismo já validado em hardware. Não vira arquivo `custom-ocs` | Nada a remedir. `toram` fica como está. C-2 valida a string; sem pipes, só `>` e `>>` |
 | 3 | **Correlação por selo, nunca por data** | Fecha S-6, R-6 e o caso "não há `arca-fim.txt`" com um mecanismo só |
 | 4 | **`arca verify` confere `MD5SUMS` no Windows**; `--completo` arma boot para `ocs-chkimg` | Verificação rápida sem reinício. Não substitui B-9, que continua obrigatória no backup |
-| 5 | **Destino divergente é permitido**, com confirmação que nomeia o disco de destino. Recusa dura só se o destino for **menor** que a origem | ~~`-k0` num disco menor corrompe em vez de falhar.~~ **A premissa está errada** — ver P-17: o help do `ocs-sr` diz que o Clonezilla confere o tamanho do destino **por padrão** e desiste se for menor, e que `-icds` é quem desliga isso. A recusa do ARCA continua valendo como defesa em profundidade, mas não é a única. A E9 resolve. Em disco novo, `-iefi` não acha entrada correspondente e o `bcdboot` volta a ser necessário |
+| 5 | **Destino divergente é permitido**, com confirmação que nomeia o disco de destino. Recusa dura só se o destino for **menor** que a origem | ~~`-k0` num disco menor corrompe em vez de falhar.~~ **A premissa estava errada, e a E9 resolveu** (P-17, [ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)): o help do `ocs-sr` diz que o Clonezilla confere o tamanho do destino **por padrão** e **desiste** se for menor, e que `-icds` é quem desliga isso. A recusa do ARCA fica, e a razão passa a ser **onde** ela acontece: a do Clonezilla custa um reinício de uma operação destrutiva. E resolver isso obrigou a descobrir a armadilha da régua — o `MSFT_Disk` e o `Win32_DiskDrive` dão dois tamanhos para o mesmo disco, e com o segundo o disco não cabe em si mesmo. Destino divergente ganhou `--destino <indice>`; sem ele a metade permissiva de R-7 seria inalcançável. Em disco novo, `-iefi` não acha entrada correspondente e o `bcdboot` volta a ser necessário |
 | 6 | **Clonezilla com versão fixada e SHA256 embutido no binário do ARCA**, nunca baixado | Cópia do pacote usado fica no `ARCAVAULT`. `--iso <caminho>` para instalação offline |
 | 7 | **`--dry-run` é flag de primeira classe** em todo comando que arma | A armadilha registrada no PRD (`--dry-run` virou execução real) é exatamente o que C-7 previne. Os dois andam juntos, na E0 |
 
@@ -956,10 +957,154 @@ consequência que o ADR previa, e ela custava um marco para ser vista.
 
 ### E9 · Restauração
 
-Só começa depois do marco da E8. Lista no Windows, com a escolha antes do ponto sem volta (R-1); conferência do destino contra `disk` e `blkdev.list` da própria imagem (R-2); nome da imagem digitado por extenso (R-3). Destino divergente segue a decisão 5: passa com confirmação que nomeia o disco, e é recusado se for menor que a origem.
+Só começa depois do marco da E8. Lista no Windows, com a escolha antes do ponto sem volta (R-1); conferência do destino contra a própria imagem (R-2); nome da imagem digitado por extenso (R-3). Destino divergente segue a decisão 5: passa com confirmação que nomeia o disco, e é recusado se for menor que a origem.
 
-**Cobre**: R-1, R-2, R-3
+**Cobre**: R-1, R-2, R-3, R-7, R-8, L-2 — e **P-17**, que era a etapa por escrito.
 **Marco em hardware**: restauração completa disparada pelo ARCA. Depois disto, o projeto está funcionalmente pronto.
+
+#### O que a etapa entregou, e onde
+
+A terceira etapa seguida em que quase nada é mecanismo novo, e isso é o desenho
+dando certo. A receita de restauração está montada e validada desde a E3;
+`armar::executar` recebe a operação como parâmetro e não sabe qual é;
+`desfecho::ler` já lê `ARCA_RESTORE=` por sufixo; `arca resultado` já colhe as
+duas operações. O que a E9 escreveu foi **a escolha, a conferência e a
+recusa**:
+
+| Peça | Onde | O que responde |
+|---|---|---|
+| A lista numerada, sem resíduo | `src/comandos/restore.rs` | R-1, L-2 |
+| A conferência da imagem contra ela mesma | idem, `conferir_a_imagem` | R-2 |
+| A medida da origem, de dentro da imagem | `src/gpt.rs` — **módulo novo** | R-7 |
+| A medida do destino, pelo `MSFT_Disk` | `portas::Medida`, `adaptadores/windows/wmi.rs` | R-7 |
+| A escolha e o julgamento do destino | `restore.rs`, `escolher_o_destino` | R-7, R-8 |
+| A confirmação digitada, compartilhada com o backup | `src/confirmacao.rs` — **módulo novo** | S-2, R-3 |
+| O aviso da janela do ADR-0009 na restauração | `restore.rs`, `montar_o_armado` | C-9 |
+| A colheita que não confunde o sujeito | `src/comandos/resultado.rs` | S-5 |
+
+#### O achado que muda a etapa, e ele está medido
+
+**O mesmo disco tem dois tamanhos conforme quem responde.** Medido nesta
+máquina em 23/08/2026:
+
+```text
+Get-Disk (MSFT_Disk) ........ 500.107.862.016 bytes = 976.773.168 setores
+Win32_DiskDrive.Size ........ 500.105.249.280 bytes = 976.768.065 setores
+nvme0n1-gpt.sgdisk na imagem  976.773.168 setores
+diferenca ................... 2.612.736 bytes = 5.103 setores
+```
+
+`60801 × 255 × 63 × 512` dá exatamente o número do `Win32_DiskDrive` — a
+geometria CHS legada truncada no último cilindro inteiro; os 5.103 setores que
+faltam são menos de um cilindro (16.065). O `MSFT_Disk` bate byte a byte com o
+que a imagem registra.
+
+A armadilha é de **régua**: medir a origem pela GPT de dentro da imagem e o
+destino pela fonte que `Discos::discos_fisicos` usa desde a E6 faria R-7 recusar
+o disco por não caber **nele mesmo**. Para B-4 a fonte antiga continua servindo
+— lá ela superestima o em uso, que é o lado seguro. Ver
+[ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md).
+
+#### As duas coisas que a etapa achou fora do escopo
+
+**P-19 estreitou, e não pelo caminho previsto.** O ADR-0009 apostou que um
+segundo backup responderia, pelo `efi-nvram.dat` de dentro da imagem. Os dois
+`efi-nvram.dat` — o de 21/08 e o de 22/08 — saíram **byte-idênticos**. Quem
+respondeu foram as capturas de 20/08 que já estavam no dispositivo: em três
+boots pelo dispositivo a entrada continuou na forma que o `bcdedit` escreve,
+o que descarta *"o firmware reescreve em todo boot"*. E, no caminho, apareceu
+que as duas leituras de NVRAM de 21/08 são de **dois boots diferentes** — uma
+do backup e outra da restauração — e que a que o §3.1 usava é da restauração.
+Ver [ADR-0011](../docs/adr/0011-as-capturas-de-21-08-sao-de-dois-boots.md).
+
+**A recusa engolindo o desarmar, de novo.** A primeira versão do
+`arca restore` montava a tela inteira depois de julgar imagem e destino, e com
+a recusa subindo como erro nada era impresso — o desarmar de C-1, que já tinha
+acontecido, sumia em silêncio. É o **mesmo defeito** que a revisão da E7 pegou
+no `arca backup`, cometido de novo com o comentário que o descreve a poucas
+linhas de distância. Achado **rodando o comando de verdade**, e não relendo o
+código: `arca restore --destino 1` imprimiu a recusa e mais nada.
+
+#### O que a revisão de código pegou, e o padrão é o de sempre
+
+Cinco defeitos, e **quatro deles são a peça nova encaixada numa peça antiga que
+ninguém releu ao encaixar** — o mesmo padrão que a E3 nomeou e que a E7 pagou
+duas vezes.
+
+**O mais grave: uma recusa por identidade do Windows guardando um valor do
+Linux.** R-8 recusa o dispositivo como destino pela **letra**; o nome que vai
+para a receita é do **Linux**, e sai de um casamento por **modelo** nos
+`blkdev.list`. Com um segundo disco do mesmo modelo do dispositivo,
+`--destino <o outro>` passava pela recusa por letra, passava pela medida e pelo
+tamanho — e o passo que resolve o nome achava aquele modelo só sob `sda`, que é
+o dispositivo. A receita sairia `restoredisk <imagem> sda`, que é exatamente o
+desfecho que R-8 existe para impedir. **A recusa dura tinha um contorno por
+acidente de modelo.** A defesa é resolver o nome do Linux do dispositivo pelo
+mesmo oráculo e comparar.
+
+**O `Model:` do `sgdisk` era opcional, e o vazio viajava.** Uma imagem sem
+aquela linha produzia `modelo == ""`, e daí: R-2 recusava uma imagem coerente
+por "as fontes discordam"; a busca do destino dizia "nenhum disco desta máquina
+tem o modelo ``"; e a tela de confirmação imprimia `Origem da imagem:  ·
+nvme0n1`. É o mesmo raciocínio que faz o leitor do WMI exigir o `Model`.
+
+**`NadaAOferecer` contava só os resíduos.** Um `ARCAVAULT` com uma única pasta
+de imagem cujo nome não passa por B-2 dizia "não há imagem no ARCAVAULT para
+restaurar" enquanto o `arca list` mostrava a pasta — a mesma omissão que o
+próprio módulo argumenta contra para o resíduo.
+
+**A busca do destino por modelo não excluía o dispositivo.** Com ele tendo o
+modelo do disco de origem, havia dois candidatos e a recusa saía
+`DestinoAmbiguo` — cuja mensagem manda "nomeie o destino com `--destino`", um
+caminho que ali também não leva a lugar nenhum.
+
+O quinto — C-6 e C-10 não checados no `arca restore` — já estava corrigido
+quando a revisão terminou; ela leu uma versão anterior do arquivo. Foi achado
+relendo `prevoo::julgar` com a restauração na mão, que é a mesma defesa.
+
+#### O que falta para o marco, nomeado
+
+Tudo que é verificável sem reiniciar está feito: 543 testes, 6 deles de
+integração contra o hardware desta mesa, o `--dry-run` rodado de verdade e as
+recusas exercitadas no binário real.
+
+**E o caminho sem `--dry-run` rodou inteiro, até uma linha antes do ponto sem
+volta.** Em 23/08/2026, `arca restore 2026-08-22_Apps` com a confirmação
+digitada **errada** de propósito:
+
+```text
+  Desarmando receita anterior ..... ok · ja estava inerte · R:\boot\grub\grub.cfg
+  Imagem escolhida ................ 2026-08-22_Apps
+  Origem da imagem ................ KINGSTON SNV3S500G · nvme0n1 · 976773168 setores de 512 B · 465,8 GB
+  Destino ......................... KINGSTON SNV3S500G · disco 0 do Windows · nvme0n1 · 976773168 setores de 512 B · 465,8 GB
+  Cabe (R-7) ...................... ok · o destino tem exatamente o tamanho da origem
+  ...
+ATENCAO: a restauracao APAGA o disco de destino.
+
+erro: a confirmacao nao bate: era para digitar `2026-08-22_Apps` e veio
+`nao-e-o-nome`. Nada foi armado                            (codigo de saida 1)
+```
+
+O desarmar de C-1 **aconteceu de verdade**, a conferência de R-2 leu os
+arquivos de dentro da imagem, R-7 comparou as duas medidas reais, e S-2 barrou.
+Conferido pelos dois lados: o `grub.cfg` e o `estado.json` saíram com o mesmo
+SHA256 e o mesmo conteúdo de antes. É o análogo do que a E7 fez com o
+`bootsequence` — exercitar tudo que não custa um reinício.
+
+**O que falta é o reinício**, e ele apaga o disco desta máquina. Falta:
+
+1. Escolher **qual imagem restaurar** — e isso decide o que se perde.
+2. `arca restore`, a confirmação digitada, e a máquina reiniciando.
+3. Do outro lado: as cinco linhas do armar (§6.1), que só existem numa execução
+   real, e o `arca-restore.log` que a receita redireciona — **nenhum dos dois
+   tem original**, como o `arca-fim.txt` não tinha antes da E7.
+4. `arca resultado` colhendo uma restauração: a tela do §6.3, também sem
+   original.
+5. E as duas leituras que respondem §3.4 pelo lado do ARCA: o `bcdedit`
+   **antes** de armar e **depois** de religar, para comparar com o
+   `efi-nvram.dat` que a restauração não escreve — ela não é um `savedisk`.
+
+Uma sessão à parte colhe, como na E7 e na E8.
 
 ### E10 · `arca prepare`
 
@@ -1045,13 +1190,24 @@ Nenhum requisito do PRD fica sem etapa.
 | E6 | B-2, B-3, B-4, B-5, B-6 |
 | E7 | C-4, C-5, C-9, S-2 — e a segunda metade de C-6, que até aqui só era relatada por leitura |
 | E8 | S-4, S-5, D8 — e C-12, que ganhou o comando que o atende |
-| E9 | R-1, R-2, R-3 |
+| E9 | R-1, R-2, R-3, **R-7**, **R-8**, L-2 — e P-17. R-7 não tinha etapa nenhuma nesta tabela até aqui |
 | E10 | §7.1 |
 | E11 | D6 |
 
 ## Riscos que atravessam o plano
 
-**P-6 continua aberto, e sucesso não o fecha.** O ramo de falha do `ocs-sr` nunca foi observado — por definição, execuções bem-sucedidas não o exercitam. No backup existem **dois** sinais independentes do código de saída, e não um: a conferência nativa que o Clonezilla faz por padrão (e que `-scs` desligaria, razão de ele ficar de fora — ver ADR-0004) e o `ocs-chkimg` explícito de B-9. **Na restauração não há segundo sinal**: se o `ocs-sr` devolver 0 ao falhar, o `if/then/else` de R-5 escreve `OK` sobre uma restauração quebrada. O que segura esse caso hoje é o Windows subir ou não.
+**P-6 continua aberto, e sucesso não o fecha.** O ramo de falha do `ocs-sr` nunca foi observado — por definição, execuções bem-sucedidas não o exercitam. No backup existem **dois** sinais independentes do código de saída, e não um: a conferência nativa que o Clonezilla faz por padrão (e que `-scs` desligaria, razão de ele ficar de fora — ver ADR-0004) e o `ocs-chkimg` explícito de B-9. **Na restauração não há segundo juiz do resultado**: se o `ocs-sr` devolver 0 ao falhar, o `if/then/else` de R-5 escreve `OK` sobre uma restauração quebrada. O que segura esse caso hoje é o Windows subir ou não, e o `arca resultado` diz isso na tela desde a E9 (§6.3).
+
+> **Uma correção de letra, achada na E9 lendo o help inteiro.** Este parágrafo
+> dizia *"na restauração não há segundo sinal"*, e há: `-scr`,
+> `--skip-check-restorable-r`, desligaria uma conferência que o Clonezilla faz
+> **por padrão** antes de restaurar, e a receita não o usa — do mesmo jeito que
+> não usa `-scs`. O que a conferência dele responde é *"esta imagem é
+> restaurável?"*, e não *"a restauração deu certo?"*. Ela pode fazer o `ocs-sr`
+> desistir antes de tocar no disco, e isso é bom; o que ela não é, é um segundo
+> juiz do resultado. O espírito do parágrafo estava certo e a letra estava
+> errada, e a distinção é a mesma que o método nomeia: **conferir se a
+> evidência fala sobre a pergunta.**
 
 ~~**O mecanismo de desfecho nunca rodou**~~ (P-16, achado na E3). Nenhuma das três receitas preservadas escreve `arca-fim.txt`, grava selo ou usa `if/then/else` — o que existia no dispositivo veio de trabalho manual de validação. O plano supunha que a E7 e a E9 confirmariam um mecanismo pronto; elas foram a **primeira execução** dele. **Rodou em 22/08/2026, e o ramo do sucesso funcionou inteiro**; o de falha continua sem rodar, e é P-6. O que continua valendo é a regra que o risco produziu: antes de tratar qualquer linha do §3 do PRD como medida, procurar o original em `recursos/capturas/` — cinco vezes ele não estava lá, e uma vez estava.
 

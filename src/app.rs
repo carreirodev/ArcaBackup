@@ -60,7 +60,15 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
         Comando::Backup { nome } => return comandos::backup::executar(contexto, nome),
 
         Comando::Resultado => return comandos::resultado::executar(contexto),
-        Comando::Restore => ("restore", "E9"),
+
+        // A unica operacao do ARCA que destroi dados, e a etapa E9 e quem a
+        // entrega. Ela desarma (C-1), lista sem oferecer residuo (L-2, R-1),
+        // confere o destino contra a propria imagem (R-2, R-7), pede o nome
+        // por extenso (R-3, S-2) e so entao arma.
+        Comando::Restore { nome, destino } => {
+            return comandos::restore::executar(contexto, nome.as_deref(), *destino);
+        }
+
         Comando::Verify { .. } => ("verify", "E11"),
         Comando::Prepare { .. } => ("prepare", "E10"),
     };
@@ -135,7 +143,6 @@ mod testes {
         let contexto = bancada.contexto();
 
         for (argumentos, etapa_esperada) in [
-            (vec!["arca", "restore"], "E9"),
             (vec!["arca", "verify", "n"], "E11"),
             (vec!["arca", "prepare"], "E10"),
         ] {
@@ -155,9 +162,10 @@ mod testes {
     fn os_comandos_ja_construidos_fazem_o_trabalho_em_vez_de_nomear_etapa() {
         // `list` e `status` desde a E1 e a E2; `backup` entrou na E6, quando
         // deixou de responder "armar e a E7" para rodar o pre-voo do §5.2, e
-        // passou a armar de verdade na **E7**. O `resultado` entrou na **E8**.
+        // passou a armar de verdade na **E7**. O `resultado` entrou na **E8**,
+        // e o `restore` na **E9**.
         //
-        // Sem dispositivo conectado, os quatro devolvem a recusa da descoberta
+        // Sem dispositivo conectado, os cinco devolvem a recusa da descoberta
         // — e nunca `AindaNaoImplementado`.
         let bancada = Bancada::nova("construidos");
         let contexto = bancada.contexto();
@@ -167,6 +175,7 @@ mod testes {
             vec!["arca", "status"],
             vec!["arca", "backup", "2026-08-22_Apps"],
             vec!["arca", "resultado"],
+            vec!["arca", "restore"],
         ] {
             let erro = executar(&Cli::parse_from(&argumentos), &contexto).unwrap_err();
             assert!(

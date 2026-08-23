@@ -228,6 +228,65 @@ pub fn executar(
     })
 }
 
+/// As cinco linhas que contam o que armar fez, para a tela.
+///
+/// # Elas moram aqui, e não em cada comando
+///
+/// São a **releitura de C-3 impressa**: cada uma é algo que o ARCA mandou fazer
+/// e conferiu perguntando de novo, porque o sucesso do `bcdedit` nunca é prova.
+/// O `arca backup` e o `arca restore` mostram as mesmas cinco, e é isso que
+/// justifica elas serem uma função só: duas cópias divergiriam na primeira
+/// mudança, e uma delas passaria a dizer sobre a releitura algo que não é
+/// verdade.
+///
+/// O que **não** vem daqui é o que vem depois — o aviso de C-9 e o reinício.
+/// Ali os dois comandos são diferentes de propósito: um perde um backup, o
+/// outro apaga um disco. Ver
+/// [`crate::comandos::backup::montar_o_armado`] e
+/// [`crate::comandos::restore::montar_o_armado`].
+pub fn montar_as_linhas(armado: &Armado) -> String {
+    use crate::formato::linha;
+
+    let mut saida = String::new();
+
+    saida.push_str(&linha(
+        "Entrada de firmware",
+        &match &armado.entrada {
+            Entrada::JaEraDoArca => format!(
+                "{} · {} · {}",
+                firmware::ARCA,
+                armado.identificador,
+                armado.alvo.como_bcdedit_escreve()
+            ),
+            Entrada::MigradaDaLegada { de } => format!(
+                "migrada de `{de}` para {} (C-4) · {} · {}",
+                firmware::ARCA,
+                armado.identificador,
+                armado.alvo.como_bcdedit_escreve()
+            ),
+        },
+    ));
+    saida.push_str(&linha(
+        "Receita armada",
+        &format!("ok · {}", armado.caminho_do_grub.display()),
+    ));
+    saida.push_str(&linha(
+        "Boot unico",
+        &format!("ok · relido no bcdedit · {}", armado.identificador),
+    ));
+    saida.push_str(&linha("Selo do job", armado.selo.como_texto()));
+
+    // O caminho inteiro, e nao so o nome da pasta. A revisao da E7 pegou isto:
+    // a linha dizia "Desfecho esperado em backup-2026-08-22_Apps", que nao e um
+    // lugar — nada ali diz que aquilo mora sob `ARCA-LOGS\` no `ARCAVAULT`.
+    saida.push_str(&linha(
+        "Desfecho esperado em",
+        &armado.caminho_do_desfecho.to_string_lossy(),
+    ));
+
+    saida
+}
+
 /// C-4: acha a entrada do ARCA e, sendo a legada, renomeia-a.
 ///
 /// Renomeia, e nao cria outra. A entrada desta maquina ja tem o `.efi` certo,

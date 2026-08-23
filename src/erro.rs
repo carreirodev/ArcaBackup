@@ -37,6 +37,15 @@ pub enum Erro {
     #[error("o pre-voo recusou: {0}")]
     PreVooRecusou(crate::prevoo::RecusaDoPreVoo),
 
+    /// A restauracao foi recusada **antes** da confirmacao digitada, e portanto
+    /// antes de qualquer escrita (R-1, R-2, R-3, R-7, L-2).
+    ///
+    /// Toda recusa desta familia acontece antes de o usuario digitar o nome da
+    /// imagem: ninguem digita o nome inteiro de uma imagem para ouvir um nao
+    /// depois — a mesma regra que a E7 aplicou ao disco de origem.
+    #[error("a restauracao foi recusada: {0}")]
+    RestauracaoRecusada(crate::comandos::restore::RecusaDaRestauracao),
+
     /// A enumeracao de discos nao achou o disco onde o Windows mora, ou achou
     /// so o proprio dispositivo.
     ///

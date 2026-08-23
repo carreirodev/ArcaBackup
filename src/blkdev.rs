@@ -307,6 +307,22 @@ pub fn nome_do_disco(
     }
 }
 
+/// Se dois modelos, escritos por ferramentas diferentes, sao do mesmo disco.
+///
+/// Publica desde a E9, que precisa comparar o modelo que o Windows da ao disco
+/// de **destino** com o que o `sgdisk` de dentro da imagem deu ao de origem
+/// (R-2, R-7). E a mesma pergunta que [`nome_do_disco`] ja fazia, feita fora
+/// dela: uma segunda normalizacao escrita a mao divergiria da primeira na
+/// primeira mudanca.
+///
+/// Dois modelos vazios **nao** casam. Um `Model:` que o `sgdisk` nao trouxe e
+/// um disco sem identidade, e casar tudo com tudo faria a conferencia de R-2
+/// aprovar qualquer destino.
+pub fn mesmo_modelo(um: &str, outro: &str) -> bool {
+    let um = normalizar(um);
+    !um.is_empty() && um == normalizar(outro)
+}
+
 /// Um modelo comparavel entre o WMI e o `lsblk`.
 ///
 /// Maiusculas, so letra e digito, e sem o `SCSI Disk Device` que o Windows

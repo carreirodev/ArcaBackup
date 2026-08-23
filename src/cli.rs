@@ -72,7 +72,24 @@ pub enum Comando {
     List,
 
     /// Lista, confirma e reinicia para restaurar.
-    Restore,
+    Restore {
+        /// Nome da imagem. Omitido, o comando lista e pergunta o numero — que
+        /// e a tela do §6.1. Dado, ele pula a lista; a confirmacao por extenso
+        /// (R-3, S-2) continua obrigatoria nos dois caminhos.
+        #[arg(value_name = "NOME")]
+        nome: Option<String>,
+
+        /// Restaura em outro disco (R-7), pelo **indice do Windows**.
+        ///
+        /// O indice nomeia o disco de um jeito curto e conferivel do lado
+        /// Windows, e **nunca chega a receita**: o ARCA traduz indice → modelo
+        /// → nome do Linux pelo `blkdev.list` de dentro das imagens, que e o
+        /// oraculo de §4.5. Pedir o `nvme0n1` direto seria aceitar um nome do
+        /// Linux digitado no Windows, que e o que a E7 recusou por nao ter
+        /// contra o que conferi-lo — e aqui a receita apaga o disco.
+        #[arg(long, value_name = "INDICE")]
+        destino: Option<u32>,
+    },
 
     /// Confere os MD5SUMS de uma imagem, sem reiniciar.
     Verify {
@@ -105,7 +122,7 @@ impl Comando {
             Comando::Backup { .. } => "backup",
             Comando::Resultado => "resultado",
             Comando::List => "list",
-            Comando::Restore => "restore",
+            Comando::Restore { .. } => "restore",
             Comando::Verify { .. } => "verify",
             Comando::Status => "status",
             Comando::Desarmar => "desarmar",
@@ -154,6 +171,36 @@ mod testes {
         assert_eq!(analisar(&["arca", "verify", "n"]).comando.nome(), "verify");
         assert_eq!(analisar(&["arca", "status"]).comando.nome(), "status");
         assert_eq!(analisar(&["arca", "desarmar"]).comando.nome(), "desarmar");
+    }
+
+    #[test]
+    fn restore_sem_nome_e_o_caminho_da_lista_numerada() {
+        assert_eq!(
+            analisar(&["arca", "restore"]).comando,
+            Comando::Restore {
+                nome: None,
+                destino: None
+            }
+        );
+    }
+
+    #[test]
+    fn restore_aceita_nome_e_destino() {
+        assert_eq!(
+            analisar(&["arca", "restore", "2026-08-22_Apps", "--destino", "0"]).comando,
+            Comando::Restore {
+                nome: Some("2026-08-22_Apps".to_string()),
+                destino: Some(0)
+            }
+        );
+    }
+
+    #[test]
+    fn o_destino_e_indice_do_windows_e_nao_nome_de_disco() {
+        // §4.5: `nvme0n1` e um nome do **Linux**, e nao ha nada do lado
+        // Windows contra o que conferi-lo. Aceitar `--destino nvme0n1` seria
+        // pôr na receita destrutiva um valor sem oraculo.
+        assert!(Cli::try_parse_from(["arca", "restore", "--destino", "nvme0n1"]).is_err());
     }
 
     #[test]

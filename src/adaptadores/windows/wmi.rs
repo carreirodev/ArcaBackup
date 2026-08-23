@@ -75,7 +75,7 @@
 //! esperando que ninguem o use.
 
 use crate::erro::{Erro, Resultado};
-use crate::portas::{DiscoFisico, TipoDeMidia};
+use crate::portas::{DiscoFisico, Medida, TipoDeMidia};
 use std::process::Command;
 
 use super::texto::{de_pagina_de_codigo, pagina_do_console};
@@ -85,6 +85,12 @@ use super::texto::{de_pagina_de_codigo, pagina_do_console};
 /// Pede **so** o que o ARCA usa. `Select-Object` explicito e nao `*`: o que
 /// nao se pede nao chega, e o `DeviceID` e justamente o que nao se quer ver.
 const CONSULTA: &str = r#"$ProgressPreference='SilentlyContinue'
+$msft = @{}
+try {
+  foreach ($m in (Get-CimInstance -Namespace root/Microsoft/Windows/Storage -ClassName MSFT_Disk -ErrorAction Stop)) {
+    $msft[[int]$m.Number] = @{ Bytes=$m.Size; Setor=$m.LogicalSectorSize }
+  }
+} catch { }
 $discos = Get-CimInstance Win32_DiskDrive | ForEach-Object {
   $d = $_
   $letras = @(Get-CimAssociatedInstance -InputObject $d -ResultClassName Win32_DiskPartition | ForEach-Object {
@@ -95,7 +101,8 @@ $discos = Get-CimInstance Win32_DiskDrive | ForEach-Object {
     $ld = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$l'"
     if ($ld) { $livre += $ld.FreeSpace }
   }
-  [pscustomobject]@{ Index=$d.Index; Model=$d.Model; Size=$d.Size; MediaType=$d.MediaType; Letras=$letras; Livre=$livre }
+  $medido = $msft[[int]$d.Index]
+  [pscustomobject]@{ Index=$d.Index; Model=$d.Model; Size=$d.Size; MediaType=$d.MediaType; Letras=$letras; Livre=$livre; MedidaBytes=$medido.Bytes; MedidaSetor=$medido.Setor }
 }
 ConvertTo-Json -InputObject @($discos) -Compress -Depth 4"#;
 
@@ -207,10 +214,30 @@ pub fn ler(json: &str) -> Resultado<Vec<DiscoFisico>> {
         let livre = numero(&objeto, "Livre").ok_or_else(|| recusar("falta o Livre"))?;
         let modelo = cadeia(&objeto, "Model").ok_or_else(|| recusar("falta o Model"))?;
 
+        // A medida de R-7 e **opcional**, e e a unica coisa desta lista que e.
+        // As outras vem do `Win32_DiskDrive`, que sempre responde; esta vem do
+        // `MSFT_Disk`, que depende do servico de armazenamento estar de pe. Um
+        // disco sem ela nao vira um disco com tamanho zero nem cai de volta no
+        // `Size` do `Win32_DiskDrive`: fica `None`, e quem precisar da medida
+        // recusa nomeando isso. Ver [`crate::portas::Medida`].
+        let medida = match (
+            numero(&objeto, "MedidaBytes"),
+            numero(&objeto, "MedidaSetor"),
+        ) {
+            (Some(bytes), Some(bytes_por_setor)) if bytes > 0 && bytes_por_setor > 0 => {
+                Some(Medida {
+                    bytes,
+                    bytes_por_setor,
+                })
+            }
+            _ => None,
+        };
+
         discos.push(DiscoFisico {
             indice: indice as u32,
             modelo,
             tamanho_bytes,
+            medida,
             // Tudo que nao esta livre num volume com letra conta como em uso.
             // Superestima, e superestimar e o lado seguro de "cabe uma
             // imagem?" — ver o campo em [`DiscoFisico`].

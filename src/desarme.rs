@@ -119,7 +119,7 @@ impl Desarme {
 /// ordens deixam estados diferentes:
 ///
 /// - `grub.cfg` inerte com a marca ainda no firmware: a maquina reinicia no
-///   dispositivo e **para no menu normal do Clonezilla**. E o §6.3 do PRD,
+///   dispositivo e **para no menu normal do Clonezilla**. E o §6.4 do PRD,
 ///   sem nada de mais.
 /// - `grub.cfg` armado com a marca ja limpa: a maquina reinicia no Windows,
 ///   e o dispositivo fica com uma receita esperando quem bootar nele por F12.

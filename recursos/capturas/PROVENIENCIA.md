@@ -182,11 +182,21 @@ O resumo do que elas mostram, para quem chegar aqui primeiro:
 | 20/08 | `nvram-original.txt` | `0000,0001` | `0001` |
 | 20/08 | `nvram-windows-antes.txt` (é `bcdedit`, não `efibootmgr`) | `{bootmgr}`, `{f4057bd0}`, +3 | — |
 | 20/08 | `R1/nvram-antes.txt`, `R1/nvram-depois.txt` | `0000,0001` | `0001` |
-| 20/08 | `R2/nvram-antes.txt`, `R2/nvram-depois.txt` | `0003,0000` | `0003` |
-| 21/08 | `2026-08-21_WindowsCompleto/nvram-antes.txt` e `-depois.txt` | `0001,0000` | `0001` |
+| 20/08 | `R2/nvram-antes.txt`, `R2/nvram-depois.txt` — **restauração R2** | `0003,0000` | `0003` |
+| **21/08 12:51** | `2026-08-21_WindowsCompleto/efi-nvram.dat` — **o backup** | **`0000,0001`** | `0001` |
+| **21/08 14:28 e 14:46** | `ARCA-LOGS/2026-08-21_WindowsCompleto/nvram-antes.txt` e `-depois.txt` — **a restauração** | `0001,0000` | `0001` |
 | 22/08 manhã | `bcdedit /enum {fwbootmgr}` desta máquina | `{bootmgr}` | — |
 | 22/08 ~20:57 | **`nvram-live-2026-08-22.txt`** — está neste diretório | **`0000,0001`** | **`0001`** |
 | 22/08 21:17 | `bcdedit-enum-firmware-2026-08-22-pos-marco.txt` | `{f4057bd0}`, `{bootmgr}`, `{687478f2}` | — |
+| 23/08 | `bcdedit /enum {fwbootmgr}` desta máquina | `{f4057bd0}`, `{687478f2}`, `{bootmgr}` | — |
+
+> **As duas linhas de 21/08 eram uma só até a etapa E9, e a que estava aqui é
+> da restauração.** Os `nvram-antes.txt` e `-depois.txt` moram em
+> `E:\ARCA-LOGS\2026-08-21_WindowsCompleto\` — ao lado do `arca-fim.txt` de
+> `ARCA_RESTORE=OK` —, e o `mtime` deles é 14:28 e 14:46; o `savedisk` daquele
+> dia terminou às 12:54. A NVRAM do boot do **backup** é o `efi-nvram.dat` de
+> dentro da imagem, e ele diz `0000,0001`, com o Windows à frente. Ver
+> [ADR-0011](../../docs/adr/0011-as-capturas-de-21-08-sao-de-dois-boots.md).
 
 Três coisas que só aparecem lendo os arquivos inteiros, e não a tabela:
 
@@ -212,10 +222,16 @@ Ver [ADR-0009](../../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md).
 
 **E a linha de 20:57 é a que fecha P-18.** `BootCurrent: 0001` com
 `BootOrder: 0000,0001`: a máquina bootou por uma entrada que **não** era a
-primeira da ordem. Só o `bootsequence` explica. Em 21/08 a mesma leitura trazia
-`0001,0000` — o dispositivo à frente —, e era por isso que aquele backup não
-provava nada; a diferença entre as duas linhas é a diferença entre uma
-coincidência e uma medição.
+primeira da ordem. Só o `bootsequence` explica.
+
+> **O que separa os dois backups não é a ordem de boot.** Este parágrafo dizia
+> que em 21/08 o dispositivo estava à frente e que era por isso que aquele
+> backup não provava nada. Ele estava em **segundo**, igual ao de 22/08 — a
+> leitura que dizia o contrário é da restauração daquele dia. O que os separa é
+> que em 21/08 **não existia ARCA** (o `git log` começa em 22/08 às 11:47), e
+> com o Windows à frente aquele boot só pode ter vindo de alguém: F12, ou um
+> `BootNext` posto à mão. Em 22/08 havia `bootsequence` gravado pelo ARCA e
+> ninguém tocou na máquina. Corrigido na etapa E9 (ADR-0011).
 
 ## O `bootsequence`, medido pela primeira vez (etapa E7)
 
@@ -359,6 +375,33 @@ Duas coisas mais, das mesmas comparações:
   quatro com `set default="arca-backup"` — a única que provavelmente rodou
   desatendida —, e perdeu o parâmetro de NVMe numa máquina cujo disco de origem
   é NVMe.
+
+## As quatro capturas da etapa E9
+
+Cópias byte a byte, conferidas por SHA256 contra o dispositivo depois de
+gravadas. As três de NVRAM estavam em `E:\` e vieram para cá porque o ADR-0011
+argumenta sobre a **forma** da entrada em cada uma, e não só sobre a ordem de
+boot — e a tabela acima não carrega isso.
+
+| Arquivo | O que é | SHA256 | O que prova |
+|---|---|---|---|
+| `nvme0n1-gpt-2026-08-22_Apps.sgdisk` | `E:\2026-08-22_Apps\nvme0n1-gpt.sgdisk`, 840 bytes | `ddcaf4ff…` | **R-7.** O tamanho do disco de origem, em setores, escrito pelo Clonezilla dentro da imagem. É o oráculo de `src/gpt.rs` |
+| `nvram-live-backup-2026-08-21.txt` | `E:\2026-08-21_WindowsCompleto\efi-nvram.dat`, 1642 bytes | `44345e21…` | A NVRAM durante o **backup** de 21/08: `0000,0001`, e a entrada como `UEFI OS`. **É byte-idêntica à de 22/08** |
+| `nvram-live-restauracao-2026-08-21.txt` | `E:\ARCA-LOGS\2026-08-21_WindowsCompleto\nvram-antes.txt`, 2299 bytes | `6697a7cf…` | A NVRAM durante a **restauração** de 21/08, uma hora e meia depois: `0001,0000`, e a entrada como `ARCA` com `BCDOBJECT` |
+| `nvram-live-restauracao-2026-08-20-R2.txt` | `E:\ARCA-LOGS\R2\nvram-depois.txt`, 2305 bytes | `53fefaea…` | Um boot pelo dispositivo em que a entrada **não** foi reescrita: `Clonezilla`, caminho em minúsculas, `BCDOBJECT` presente. É o que descarta a primeira metade de P-19 |
+
+**As três de NVRAM só significam alguma coisa juntas**, e é por isso que estão
+aqui as três. Uma delas sozinha diz uma ordem de boot; as três em sequência
+dizem que a entrada foi reescrita entre 20/08 e 21/08 12:51, voltou à forma do
+`bcdedit` até 21/08 14:28, e estava reescrita de novo em 22/08 — três mudanças
+em três dias, nenhuma delas feita pelo ARCA.
+
+E o `nvme0n1-gpt.sgdisk` está aqui pela razão de sempre: `src/gpt.rs` extrai
+`976773168 sectors` e `Sector size (logical/physical): 512/512 bytes` daquele
+formato, e um teste contra texto inventado provaria que eu sei imaginar o
+formato do `sgdisk`. `500.107.862.016 ÷ 512 = 976.773.168` é o mesmo número que
+o `MSFT_Disk` responde hoje, byte a byte — e o `Win32_DiskDrive` responde
+`976.768.065` para o mesmo disco (ADR-0010).
 
 ## O que nenhuma delas contém
 

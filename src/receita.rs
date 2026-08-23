@@ -871,10 +871,15 @@ mod testes {
 
     // ───────────────────────── codigo novo ─────────────────────────
     //
-    // Daqui para baixo nao ha original. Nenhuma receita real escreveu
+    // Daqui para baixo nao havia original. Nenhuma receita real escreveu
     // `arca-fim.txt`, nenhuma usou `if/then/else`, nenhuma gravou selo. Estes
-    // testes cobram a forma que se quer, e a E7 e a E9 a confirmam em
-    // hardware.
+    // testes cobram a forma que se quer, e o marco da E7 e da E8 a confirmou
+    // em hardware **pelo lado do backup**, em 22/08/2026: o `arca-fim.txt`
+    // com selo e `ARCA_FIM` esta em `recursos/capturas/`.
+    //
+    // Pelo lado da **restauracao** continua sem original, e e o marco da E9 —
+    // que muda o marcador (`ARCA_RESTORE=`) e o redirecionamento do
+    // `arca-restore.log`, e nao a forma.
 
     #[test]
     fn nenhuma_receita_real_escreveu_arca_fim_txt() {
@@ -1375,11 +1380,16 @@ mod testes {
 
     #[test]
     fn o_help_diz_que_destino_menor_ja_e_recusado_pelo_proprio_clonezilla() {
-        // Fora do escopo da E3, anotado aqui porque e onde a evidencia esta:
-        // a decisao 5 do plano e R-7 partem da premissa contraria — de que
-        // `-k0` num disco menor corromperia em vez de falhar. O help diz que
-        // por padrao o Clonezilla confere e desiste, e que `-icds` e quem
-        // desliga essa conferencia. Quem resolve e a E9.
+        // Anotado na E3 como fora de escopo, **resolvido na E9**: a premissa
+        // de R-7 estava errada. O help diz que por padrao o Clonezilla confere
+        // o tamanho do destino e **desiste**, em vez de corromper, e que
+        // `-icds` e quem desligaria isso.
+        //
+        // A recusa do ARCA fica, e a razao passa a ser **onde** ela acontece:
+        // a do Clonezilla e do outro lado do reinicio, e custa um boot de uma
+        // operacao destrutiva. Este teste continua guardando o que importa
+        // aqui — que a receita nao desligue a conferencia dele. Ver
+        // `docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md`.
         assert!(
             HELP.contains("-icds, --ignore-chk-dsk-size-pt"),
             "`-icds` sumiu do help"

@@ -49,6 +49,7 @@ use crate::desfecho::{Encontrado, Julgamento};
 use crate::dispositivo::{self, Dispositivo};
 use crate::erro::{Erro, Resultado};
 use crate::estado::{self, Estado, Situacao};
+use crate::receita::Operacao;
 use crate::formato::{dia_e_mes, linha, tamanho};
 use crate::imagens::{self, Pasta, Veredito};
 use crate::portas::Arquivos;
@@ -207,7 +208,7 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
         )));
     }
 
-    match julgar_o_conjunto(&desfecho, pasta) {
+    match julgar_o_conjunto(&desfecho, pasta, estado_do_job.comando) {
         Some(porque) => Err(Erro::OperacaoNaoConcluida(porque)),
         None => Ok(()),
     }
@@ -249,9 +250,40 @@ fn encerra_o_job(desfecho: &Encontrado) -> bool {
 /// A ordem e a mesma que o resto do projeto usa: **toda forma de nao ter dado
 /// certo antes de toda forma de ter dado**. Um `ARCA_BACKUP=OK` com imagem
 /// reprovada cai na segunda metade, e e exatamente o caso que S-5 nomeia.
-fn julgar_o_conjunto(desfecho: &Encontrado, pasta: Option<&Pasta>) -> Option<String> {
+///
+/// # A restauracao para na primeira metade, e a E9 achou isso relendo esta
+///
+/// Ate a E9 esta funcao nao conhecia a operacao, e a segunda metade valia para
+/// as duas. Numa restauracao ela estava **errada**, e do jeito mais caro: um
+/// `ARCA_RESTORE=OK` cuja pasta nao tem `arca-check.log` saia reprovado por
+/// "a imagem esta sem veredito", e uma restauracao bem-sucedida era relatada
+/// como falha.
+///
+/// A confusao e de sujeito. No backup a pasta e **o que a operacao produziu**,
+/// e o veredito dela e o segundo sinal que S-5 manda nao esconder. Na
+/// restauracao a pasta e **a imagem de origem**: ela ja existia antes, o
+/// veredito dela e do backup que a criou, e ele nao diz nada sobre a
+/// restauracao ter dado certo. Julgar a operacao por ele e julgar uma coisa
+/// pelo parecer de outra.
+///
+/// O que sobra na restauracao e o desfecho, sozinho — e P-6 aplicado a ela e a
+/// razao de o [`conselho`] dizer isso na tela em vez de deixar por conta de
+/// quem lê.
+///
+/// Achada relendo **esta funcao** procurando o que a restauracao muda nela, e
+/// nao lendo o codigo novo procurando defeitos. E a mesma defesa que funcionou
+/// na E4 e na E7.
+fn julgar_o_conjunto(
+    desfecho: &Encontrado,
+    pasta: Option<&Pasta>,
+    operacao: Operacao,
+) -> Option<String> {
     if !matches!(desfecho, Encontrado::Arquivo(Julgamento::Concluida)) {
         return Some(format!("a operacao nao foi concluida: {desfecho}"));
+    }
+
+    if operacao == Operacao::Restauracao {
+        return None;
     }
 
     match pasta.map(|pasta| &pasta.especie) {
@@ -325,10 +357,20 @@ pub fn montar(colheita: &Colheita) -> String {
     // desfecho OK com veredito REPROVADA aparece assim mesmo, e e por isso
     // que sao duas linhas e nao uma conclusao.
     saida.push_str(&format!("  Desfecho: {}\n", colheita.desfecho));
-    saida.push_str(&format!(
-        "  Verificacao: {}\n",
-        descrever_veredito(colheita.pasta)
-    ));
+
+    // A segunda linha muda de **rotulo** conforme a operacao, e nao so de
+    // valor. `Verificacao:` numa restauracao seria a mesma confusao de sujeito
+    // que [`julgar_o_conjunto`] cometia: quem lesse concluiria que a
+    // restauracao foi verificada, e o que esta ali e o parecer do backup que
+    // criou a imagem de origem, dias antes e sobre outra coisa.
+    saida.push_str(&match colheita.estado.comando {
+        Operacao::Backup => format!("  Verificacao: {}\n", descrever_veredito(colheita.pasta)),
+        Operacao::Restauracao => format!(
+            "  Imagem de origem: {} — veredito do backup que a criou, e nao desta operacao\n",
+            descrever_veredito(colheita.pasta)
+        ),
+    });
+
     saida.push_str(&format!("  Selo: {}\n", colheita.estado.selo));
 
     saida.push('\n');
@@ -379,6 +421,14 @@ fn conselho(colheita: &Colheita) -> String {
     }
 
     match colheita.desfecho {
+        // A restauracao tem conselho proprio no ramo do exito, e o backup nao
+        // tem nenhum: la o exito e exito, e ha dois sinais independentes
+        // dizendo isso. Aqui ha um so.
+        Encontrado::Arquivo(Julgamento::Concluida)
+            if colheita.estado.comando == Operacao::Restauracao =>
+        {
+            conselho_da_restauracao(colheita)
+        }
         Encontrado::Arquivo(Julgamento::Concluida) => match colheita.pasta.map(|p| &p.especie) {
             Some(imagens::Especie::Imagem {
                 veredito: Some(Veredito::Aprovada),
@@ -423,6 +473,61 @@ fn conselho(colheita: &Colheita) -> String {
         )
         .to_string(),
     }
+}
+
+/// O que dizer depois de uma restauracao que o Clonezilla deu por concluida.
+///
+/// Tres coisas, e nenhuma delas e "deu tudo certo".
+///
+/// **P-6 dói mais deste lado.** No backup ha dois sinais independentes sobre o
+/// codigo de saida: a conferencia nativa que o Clonezilla faz por padrao — e
+/// que `-scs` desligaria, razao de ele ficar de fora (ADR-0004) — e o
+/// `ocs-chkimg` explicito de B-9. Na restauracao ha uma conferencia parecida,
+/// e ela e sobre **outra pergunta**: `-scr` desligaria a checagem de que a
+/// imagem e restauravel, e ela roda **antes** de gravar. Nenhuma delas olha o
+/// resultado da gravacao. Se o `ocs-sr` devolver zero ao falhar, o
+/// `if/then/else` de R-5 escreve `OK` sobre uma restauracao quebrada, e o
+/// unico juiz que sobra e o Windows subir.
+///
+/// **O `arca.log` deste lado foi destruido pela propria operacao.** Ele mora em
+/// `%LOCALAPPDATA%\ARCA`, no `C:`, que e o que a restauracao substitui. E uma
+/// consequencia de §4.1 que so agora tem dente: o registro do lado Windows de
+/// que o job foi armado nao existe mais, e o que sobrevive e o `estado.json`
+/// do `ARCABOOT` — que e exatamente o que §4.1 existe para garantir. O
+/// `arca.log` que estiver la agora e o de **dentro da imagem**, e as linhas
+/// dele sao de outro tempo.
+///
+/// **A janela do [ADR-0009] fechou aqui, e ela era destrutiva.** O desarmar ja
+/// aconteceu — a linha acima diz isso —, e a partir de agora um reinicio com o
+/// SSD conectado para no menu do Clonezilla em vez de restaurar de novo.
+///
+/// [ADR-0009]: ../../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md
+fn conselho_da_restauracao(colheita: &Colheita) -> String {
+    let mut saida = String::from(
+        "\n  A RESTAURACAO TERMINOU, e o `OK` acima vem de UM sinal so. Num backup o\n\
+         \x20 ARCA tem dois — a conferencia nativa do Clonezilla e o `ocs-chkimg` de\n\
+         \x20 B-9 —, e aqui nao ha nada depois do `ocs-sr` para desmenti-lo (P-6). O\n\
+         \x20 juiz que falta e o Windows subir: religue e confira.\n",
+    );
+
+    saida.push_str(&format!(
+        "\x20 O log do Clonezilla desta operacao esta em\n\
+         \x20 ARCA-LOGS\\{}\\arca-restore.log, no ARCAVAULT, que a restauracao nao\n\
+         \x20 tocou.\n",
+        crate::desfecho::pasta_do_job(colheita.estado.comando, &colheita.estado.nome)
+    ));
+
+    saida.push_str(concat!(
+        "\x20 O `arca.log` do lado Windows foi DESTRUIDO por esta operacao: ele mora\n",
+        "  em %LOCALAPPDATA%\\ARCA, no C:, que e o que a imagem substituiu. O que\n",
+        "  estiver la agora veio de dentro da imagem, e e de outro tempo. Quem\n",
+        "  sobreviveu foi o `estado.json` do ARCABOOT, e e para isto que §4.1\n",
+        "  existe.\n",
+        "\n  O dispositivo ja foi desarmado acima, e com isso fechou a janela em que\n",
+        "  um reinicio com o SSD conectado restauraria de novo (ADR-0009).\n",
+    ));
+
+    saida
 }
 
 /// Nao ha `estado.json`: nao ha nada a colher (§5.5, ultima linha).
@@ -609,6 +714,89 @@ mod testes {
         assert!(saida.contains("FALHA PARCIAL E FALHA TOTAL"), "{saida}");
     }
 
+    /// A mesma colheita, com o job sendo uma **restauracao**.
+    fn colher_restauracao(desfecho: Encontrado, veredito: Option<Veredito>) -> String {
+        let estado = Estado {
+            comando: Operacao::Restauracao,
+            ..estado(Situacao::Armado)
+        };
+        let pastas = vec![imagem("2026-08-22_Apps", veredito)];
+        let desarme = desarme();
+        let pasta = pastas.first();
+
+        montar(&Colheita {
+            estado: &estado,
+            desfecho: &desfecho,
+            pasta,
+            desarme: &desarme,
+            encerramento: &Encerramento::Encerrado,
+            pastas: &pastas,
+            livre_bytes: 176_312_811_520,
+        })
+    }
+
+    #[test]
+    fn a_colheita_de_uma_restauracao_nao_chama_a_imagem_de_origem_de_verificacao() {
+        let saida = colher_restauracao(
+            Encontrado::Arquivo(Julgamento::Concluida),
+            Some(Veredito::Aprovada),
+        );
+
+        assert!(saida.contains("Restauracao 2026-08-22_Apps"), "{saida}");
+        assert!(saida.contains("Desfecho: concluida"), "{saida}");
+        assert!(
+            saida.contains("Imagem de origem: APROVADA — veredito do backup que a criou"),
+            "a linha tem de dizer de quem e o veredito:\n{saida}"
+        );
+        assert!(
+            !saida.contains("Verificacao:"),
+            "nao ha verificacao numa restauracao — a imagem e a origem:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn uma_restauracao_concluida_sem_veredito_nao_sai_como_falha_parcial() {
+        // O defeito de sujeito, agora pelo lado da tela. Ate a E9 esta saida
+        // trazia `FALHA PARCIAL E FALHA TOTAL (S-5)` numa restauracao que deu
+        // certo, porque a imagem de origem nao tinha `arca-check.log`.
+        let saida = colher_restauracao(Encontrado::Arquivo(Julgamento::Concluida), None);
+
+        assert!(!saida.contains("FALHA PARCIAL"), "{saida}");
+        assert!(saida.contains("A RESTAURACAO TERMINOU"), "{saida}");
+    }
+
+    #[test]
+    fn a_restauracao_concluida_diz_que_ha_um_sinal_so_e_que_o_arca_log_se_foi() {
+        let saida = colher_restauracao(
+            Encontrado::Arquivo(Julgamento::Concluida),
+            Some(Veredito::Aprovada),
+        );
+
+        // P-6 deste lado: nao ha segundo juiz do resultado.
+        assert!(saida.contains("vem de UM sinal so"), "{saida}");
+        assert!(saida.contains("(P-6)"), "{saida}");
+        // §4.1 com dente: o registro do lado Windows foi destruido.
+        assert!(saida.contains("`arca.log` do lado Windows foi DESTRUIDO"), "{saida}");
+        // O log do Clonezilla desta operacao, que sobreviveu no ARCAVAULT.
+        assert!(
+            saida.contains(r"ARCA-LOGS\restauracao-2026-08-22_Apps\arca-restore.log"),
+            "{saida}"
+        );
+        // E a janela do ADR-0009, que o desarmar acima fechou.
+        assert!(saida.contains("restauraria de novo"), "{saida}");
+    }
+
+    #[test]
+    fn uma_restauracao_que_falhou_continua_apontando_o_log() {
+        let saida = colher_restauracao(
+            Encontrado::Arquivo(Julgamento::Falhou),
+            Some(Veredito::Aprovada),
+        );
+
+        assert!(saida.contains("O CLONEZILLA FALHOU E DISSE"), "{saida}");
+        assert!(!saida.contains("A RESTAURACAO TERMINOU"), "{saida}");
+    }
+
     #[test]
     fn o_conjunto_e_julgado_pelo_pior_dos_dois() {
         let aprovada = imagem("2026-08-22_Apps", Some(Veredito::Aprovada));
@@ -620,7 +808,7 @@ mod testes {
         };
         let concluida = Encontrado::Arquivo(Julgamento::Concluida);
 
-        assert!(julgar_o_conjunto(&concluida, Some(&aprovada)).is_none());
+        assert!(julgar_o_conjunto(&concluida, Some(&aprovada), Operacao::Backup).is_none());
 
         // Cada um destes e uma forma de nao ter dado certo, e nenhuma delas
         // pode sair como exito.
@@ -631,7 +819,7 @@ mod testes {
             (None, "sem pasta"),
         ] {
             assert!(
-                julgar_o_conjunto(&concluida, pasta).is_some(),
+                julgar_o_conjunto(&concluida, pasta, Operacao::Backup).is_some(),
                 "desfecho OK com imagem {o_que} passou por exito"
             );
         }
@@ -652,10 +840,59 @@ mod testes {
             },
         ] {
             assert!(
-                julgar_o_conjunto(&desfecho, Some(&aprovada)).is_some(),
+                julgar_o_conjunto(&desfecho, Some(&aprovada), Operacao::Backup).is_some(),
                 "`{desfecho}` com imagem aprovada passou por exito"
             );
         }
+    }
+
+    #[test]
+    fn numa_restauracao_o_veredito_da_imagem_de_origem_nao_reprova_a_operacao() {
+        // O defeito que a E9 achou relendo `julgar_o_conjunto` procurando o
+        // que a restauracao muda nela. A pasta e a imagem **de origem**: o
+        // veredito dela e do backup que a criou, e nao diz nada sobre esta
+        // operacao ter dado certo.
+        //
+        // O caso caro e o `sem veredito`: uma imagem trazida de outro
+        // dispositivo, ou verificada por `arca verify` em vez de por B-9, nao
+        // tem `arca-check.log` — e ate a E9 uma restauracao bem-sucedida a
+        // partir dela saia relatada como falha.
+        let concluida = Encontrado::Arquivo(Julgamento::Concluida);
+
+        for (pasta, o_que) in [
+            (
+                Some(imagem("2026-08-22_Apps", Some(Veredito::Aprovada))),
+                "aprovada",
+            ),
+            (
+                Some(imagem("2026-08-22_Apps", Some(Veredito::Reprovada))),
+                "reprovada",
+            ),
+            (Some(imagem("2026-08-22_Apps", None)), "sem veredito"),
+            (None, "sem pasta"),
+        ] {
+            assert!(
+                julgar_o_conjunto(&concluida, pasta.as_ref(), Operacao::Restauracao).is_none(),
+                "uma restauracao concluida com a imagem de origem {o_que} tem de passar"
+            );
+        }
+
+        // E o desfecho continua mandando: a restauracao nao ganhou passe
+        // livre, ela perdeu o segundo juiz — que era de outra pergunta.
+        let origem = imagem("2026-08-22_Apps", Some(Veredito::Aprovada));
+        assert!(
+            julgar_o_conjunto(
+                &Encontrado::Arquivo(Julgamento::Falhou),
+                Some(&origem),
+                Operacao::Restauracao
+            )
+            .is_some(),
+            "`ARCA_RESTORE=FALHOU` tem de reprovar"
+        );
+        assert!(
+            julgar_o_conjunto(&Encontrado::SemArquivo, None, Operacao::Restauracao).is_some(),
+            "ausencia de desfecho e falha, nunca silencio (C-12)"
+        );
     }
 
     #[test]

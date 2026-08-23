@@ -87,11 +87,16 @@ pub const ID_DO_MODELO: &str = "live-toram";
 /// O titulo do `menuentry` do ARCA, como as quatro copias armadas o escrevem.
 ///
 /// Transcrito, e constante de proposito: a captura de **restauracao** traz
-/// este mesmo titulo. Ele nunca nomeou a operacao, e inventar agora um
-/// "ARCA - restauracao automatica" para a E9 seria acrescentar uma diferenca
-/// que nunca rodou. Quem decide o que executa e o `--id`, para onde o
-/// `set default` aponta; o titulo so apareceria num menu que o boot
-/// desatendido nao chega a mostrar.
+/// este mesmo titulo. Ele nunca nomeou a operacao, e inventar um
+/// "ARCA - restauracao automatica" seria acrescentar uma diferenca que nunca
+/// rodou. Quem decide o que executa e o `--id`, para onde o `set default`
+/// aponta; o titulo so apareceria num menu que o boot desatendido nao chega a
+/// mostrar.
+///
+/// **A E9 chegou e nao mexeu nisto**, que era a tentacao que o ADR-0007 tinha
+/// nomeado com um ano de antecedencia — ou melhor, com duas etapas. O
+/// `arca restore` arma o mesmo bloco, com o mesmo titulo, e o que muda entre
+/// as duas operacoes esta inteiro dentro do `ocs_live_run`.
 pub const TITULO: &str = "ARCA - backup automatico";
 
 /// A diretiva do `grub.cfg` que carrega a linha de comando do kernel.

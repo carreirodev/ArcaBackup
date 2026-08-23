@@ -44,7 +44,7 @@ pub mod sistema;
 
 pub use arquivos::{Arquivos, Entrada};
 pub use console::Console;
-pub use discos::{DiscoFisico, Discos, TipoDeMidia, Volume};
+pub use discos::{DiscoFisico, Discos, Medida, TipoDeMidia, Volume};
 pub use entropia::Entropia;
 pub use firmware::Firmware;
 pub use privilegios::Privilegios;

@@ -1,0 +1,15 @@
+Disk /dev/nvme0n1: 976773168 sectors, 465.8 GiB
+Model: KINGSTON SNV3S500G                      
+Sector size (logical/physical): 512/512 bytes
+Disk identifier (GUID): A35D1AF7-52A2-481C-9A4A-328F4C7F2F42
+Partition table holds up to 128 entries
+Main partition table begins at sector 2 and ends at sector 33
+First usable sector is 34, last usable sector is 976773134
+Partitions will be aligned on 2048-sector boundaries
+Total free space is 2029 sectors (1014.5 KiB)
+
+Number  Start (sector)    End (sector)  Size       Code  Name
+   1            2048          616447   300.0 MiB   EF00  EFI system partition
+   2          616448          649215   16.0 MiB    0C01  Microsoft reserved ...
+   3          649216       974675967   464.5 GiB   0700  Basic data partition
+   4       974675968       976773119   1024.0 MiB  2700  Basic data partition

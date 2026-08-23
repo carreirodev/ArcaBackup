@@ -7,7 +7,7 @@
 
 use crate::erro::{Erro, Resultado, erro_de_arquivo};
 use crate::portas::{
-    Arquivos, Console, DiscoFisico, Discos, Entrada, Entropia, Firmware, Privilegios, Relogio,
+    Arquivos, Console, DiscoFisico, Discos, Entrada, Entropia, Firmware, Medida, Privilegios, Relogio,
     SaidaDeFerramenta, Sistema, TipoDeMidia, Volume,
 };
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
@@ -382,16 +382,28 @@ impl DiscosDeMentira {
     }
 }
 
-/// Os dois discos desta maquina, medidos pelo WMI em 22/08/2026.
+/// Os dois discos desta maquina, medidos pelo WMI em 22/08/2026, com a medida
+/// do `MSFT_Disk` acrescentada em 23/08/2026.
 ///
 /// Numeros de verdade, e nao redondos: um teste que passe com
 /// `498_700_000_000` e falhe com o tamanho real nao esta testando nada.
+///
+/// **Os dois tamanhos do mesmo disco estao aqui de proposito.** O
+/// `tamanho_bytes` e o `Win32_DiskDrive.Size`, e a `medida` e o
+/// `MSFT_Disk.Size`: no `KINGSTON SNV3S500G` eles diferem em 2.612.736 bytes,
+/// e e nessa diferenca que R-7 tropecaria se medisse as duas pontas em reguas
+/// diferentes. Um duplo que trouxesse o mesmo numero nos dois campos faria
+/// todo teste de R-7 passar sem exercitar nada. Ver [`crate::gpt`].
 pub fn discos_desta_mesa() -> Vec<DiscoFisico> {
     vec![
         DiscoFisico {
             indice: 0,
             modelo: "KINGSTON SNV3S500G".to_string(),
             tamanho_bytes: 500_105_249_280,
+            medida: Some(Medida {
+                bytes: 500_107_862_016,
+                bytes_por_setor: 512,
+            }),
             em_uso_bytes: 112_973_562_368,
             tipo_de_midia: TipoDeMidia::DiscoFixo,
             letras: vec!['C'],
@@ -400,6 +412,10 @@ pub fn discos_desta_mesa() -> Vec<DiscoFisico> {
             indice: 1,
             modelo: "KGSSE100 256 SCSI Disk Device".to_string(),
             tamanho_bytes: 256_052_966_400,
+            medida: Some(Medida {
+                bytes: 256_060_514_304,
+                bytes_por_setor: 512,
+            }),
             em_uso_bytes: 78_660_457_472,
             tipo_de_midia: TipoDeMidia::DiscoExterno,
             letras: vec!['E', 'R'],
