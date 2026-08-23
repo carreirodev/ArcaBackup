@@ -967,6 +967,61 @@ Exige a FAT32 vazia de ≥ 1 GB já criada — o ARCA não particiona (§7.1). B
 
 Fica tarde de propósito: o dispositivo atual já existe, preparado à mão. Esta etapa serve ao **segundo** dispositivo.
 
+**Cobre**: §7.1 — e **P-20**, decidida abaixo.
+
+#### O `arca resultado` devolve o Windows à frente da ordem de boot (P-20)
+
+Pedido em 22/08/2026, depois do marco da E8, e a razão é operacional: com o
+dispositivo em primeiro no `displayorder`, **ligar a máquina com o SSD
+conectado boota nele**. O grub está inerte, então isso para no menu do
+Clonezilla e espera alguém. A rotina vira "ligar sem o SSD, conectar depois", e
+isso é fricção que o usuário paga em todo boot.
+
+A entrega: ao colher, o `arca resultado` põe o `{bootmgr}` em primeiro no
+`displayorder`, **independentemente de o dispositivo estar conectado** — o
+estado ruim é da NVRAM, e não do que está na mesa.
+
+**Isto exige revisar C-5, e a revisão é um ADR.** C-5 diz "nunca alterar a
+ordem permanente", e o [ADR-0009](../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md)
+decidiu, no mesmo dia, **avisar em vez de consertar**. Quem for implementar tem
+de derrubar aquela decisão com argumento, e não por baixo dela — um ADR novo
+que a supersede.
+
+O argumento a favor, e ele é forte o bastante para a revisão valer a pena:
+**C-5 foi escrito contra uma operação e este pedido é a oposta.** O perigo que
+o §3.1, o ADR-0007 e o `src/armar.rs` nomeiam é o ARCA **acrescentar** um
+caminho permanente para bootar no dispositivo — "desfeito o job, a máquina
+continuaria com um caminho a mais". Pôr o Windows à frente **remove** um
+caminho. As duas escrevem no mesmo `displayorder`, e C-5 não distingue as duas;
+a assimetria é real e nunca foi discutida.
+
+Três coisas contra, e nenhuma é fatal:
+
+- **O ADR-0009 argumentou que a entrada foi posta pelo Windows**, a partir do
+  objeto `{f4057bd0}` do BCD, e que desfazer isso é mexer numa decisão de outro
+  dono. Repare que o pedido não pede tirar a entrada — pede **reordenar**, o
+  que é menos invasivo e reversível pelo mesmo `bcdedit`.
+- **É a NVRAM de boot**, onde um erro deixa a máquina sem bootar. A releitura de
+  C-3 é obrigatória, e o modo de falha do `bcdedit` — responder êxito sem ter
+  mudado nada — já está medido desde a E2.
+- **O conserto não é permanente.** O ADR-0009 mediu que o ciclo de boot põe o
+  dispositivo de volta na ordem a cada backup. Então isto é limpeza recorrente,
+  e o `arca resultado` é justamente o lugar certo para ela: roda uma vez por
+  job, depois do boot que sujou a ordem.
+
+**O que medir antes de escrever**, e nada disto está medido: a forma exata do
+comando que reordena (`/set {fwbootmgr} displayorder {bootmgr} /addfirst` é o
+candidato), se ele sai com código 0, se a releitura confirma, e o que ele faz
+com as outras entradas — a `{687478f2}` `UEFI OS` do firmware inclusive. Medir
+à mão primeiro, como a E7 fez com o `bootsequence`, e transcrever depois.
+
+**E há uma pergunta de desenho a decidir**: se isto entra no `arca resultado`,
+ele passa a fazer duas coisas — colher e arrumar. A E8 já registrou que
+misturar "colhi" com "arrumei" tira de quem lê a saída a informação de qual das
+duas aconteceu, e foi por isso que `arca resultado` **não** desarma quando não
+há job. A saída tem de dizer as duas coisas em linhas separadas, ou isto é um
+comando próprio.
+
 ### E11 · `arca verify`
 
 `MD5SUMS` conferido no Windows, em segundos. `--completo` arma boot único que só roda `ocs-chkimg` e desliga — mesmo mecanismo da E7, receita menor.

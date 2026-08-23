@@ -111,6 +111,18 @@ proibição não tem cláusula para o caso de o ARCA achar que está arrumando. 
 a entrada foi posta pelo Windows a partir do BCD, e tirá-la seria desfazer uma
 decisão de outro dono, no lugar onde um erro deixa a máquina sem bootar.
 
+> **Esta decisão recebeu pedido de revisão no mesmo dia, e ele tem argumento.**
+> Ver P-20 e a seção da E10 no plano. A fricção que sobra do "avisar" é real —
+> ligar a máquina com o SSD conectado boota nele, e a rotina vira "ligar sem o
+> SSD, conectar depois" —, e o parágrafo acima trata duas operações como uma
+> só: **C-5 foi escrito contra acrescentar um caminho para o dispositivo, e o
+> que se pede é remover um.** A assimetria é real e não foi discutida aqui.
+>
+> O que continua de pé deste parágrafo é o risco, não a proibição: é a NVRAM de
+> boot, e um erro ali deixa a máquina sem bootar. Se a revisão passar, ela vem
+> como ADR novo que supersede este — e com a forma do comando medida à mão
+> antes de virar código, como a E7 fez com o `bootsequence`.
+
 **Não fazer nada** deixa o usuário descobrir sozinho, num reinício qualquer, que
 a máquina agora para num menu em inglês técnico. É o modo de falha que o §3.2
 descreve, chegando pelo caminho que ninguém esperava.
