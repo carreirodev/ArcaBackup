@@ -163,19 +163,50 @@ const TETO_DOS_PARAMETROS: usize = TETO_DA_LINHA_DE_COMANDO - RESERVADO_PARA_O_M
 /// operacao de dezenas de minutos nao custam nada.
 const ESPERA_ANTES_DE_DESLIGAR: u32 = 20;
 
-/// Qual das duas operacoes a receita executa.
+/// Qual das operacoes a receita executa.
+///
+/// # A terceira nasceu na etapa E11, e a pergunta era se ela devia nascer
+///
+/// `Backup` e `Restauracao` atravessam este modulo, o `estado.json`, o
+/// marcador do `arca-fim.txt`, a [`pasta_do_log`], o `arca resultado` e o
+/// `arca status`. Acrescentar uma terceira toca tudo isso, e o que decidiu foi
+/// **a pasta do log**.
+///
+/// [`pasta_do_log`] existe porque toda receita comeca truncando o proprio
+/// `arca-fim.txt` com um `>`. A revisao da E3 pegou o backup e a restauracao
+/// dividindo o mesmo caminho: um `arca restore X` rodado antes de o backup de
+/// X ser colhido apagava o desfecho dele, e o §5.5 lia um backup bem-sucedido
+/// como desfecho ausente. O selo nao cobre isso — ele julga um desfecho
+/// **encontrado**, e nao serve para nada quando o arquivo ja foi por cima.
+///
+/// Uma verificacao armada que reusasse `Backup` cometeria o mesmo defeito pela
+/// terceira vez, e agora contra um desfecho que o ARCA acabou de produzir. Ela
+/// precisa de pasta propria, pasta propria vem do nome da operacao, e o nome
+/// da operacao e isto aqui.
+///
+/// Ver `docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operacao {
     Backup,
     Restauracao,
+
+    /// `arca verify --completo` (V-2): so o `ocs-chkimg`, e desliga.
+    Verificacao,
 }
 
 impl Operacao {
     /// O marcador que a receita escreve no `arca-fim.txt` (§4.3, S-4).
+    ///
+    /// O `ARCA_VERIFY` e **codigo novo**, como o `ARCA_BACKUP` e o
+    /// `ARCA_RESTORE` eram antes de 22/08/2026: nenhuma receita real o
+    /// escreveu. A forma e transcrita dos dois que rodaram — `ARCA_` mais o
+    /// nome da operacao em ingles, maiusculo —, e o que nao tem original e o
+    /// marcador em si.
     fn marcador(self) -> &'static str {
         match self {
             Operacao::Backup => "ARCA_BACKUP",
             Operacao::Restauracao => "ARCA_RESTORE",
+            Operacao::Verificacao => "ARCA_VERIFY",
         }
     }
 
@@ -183,6 +214,19 @@ impl Operacao {
         match self {
             Operacao::Backup => "backup",
             Operacao::Restauracao => "restauracao",
+            Operacao::Verificacao => "verificacao",
+        }
+    }
+
+    /// Se esta operacao nomeia um disco na receita.
+    ///
+    /// O `savedisk` e o `restoredisk` nomeiam; o `ocs-chkimg` opera sobre a
+    /// **imagem**, e nao sobre disco nenhum. E o que faz o `disco` do
+    /// [`Pedido`] e do [`crate::estado::Estado`] ser opcional a partir da E11.
+    pub fn nomeia_disco(self) -> bool {
+        match self {
+            Operacao::Backup | Operacao::Restauracao => true,
+            Operacao::Verificacao => false,
         }
     }
 }
@@ -334,6 +378,13 @@ pub enum RecusaDaReceita {
         tem: usize,
         teto: usize,
     },
+
+    /// A operacao e o disco nao combinam: um `savedisk` sem disco, ou um
+    /// `ocs-chkimg` com um.
+    DiscoIncoerente {
+        operacao: Operacao,
+        tem_disco: bool,
+    },
 }
 
 impl fmt::Display for RecusaDaReceita {
@@ -380,6 +431,22 @@ impl fmt::Display for RecusaDaReceita {
                 f,
                 "a receita ocuparia {tem} caracteres na linha do grub.cfg, e o orcamento e {teto}: acima disso o kernel trunca a linha em silencio, e uma receita truncada faz o Clonezilla abrir o menu interativo. Use um nome de imagem mais curto"
             ),
+            RecusaDaReceita::DiscoIncoerente {
+                operacao,
+                tem_disco: true,
+            } => write!(
+                f,
+                "a operacao `{}` nao nomeia disco nenhum na receita — quem o faz sao o `savedisk` e o `restoredisk` —, e veio um. Um disco carregado ate uma receita que nao o usa e um valor que ninguem confere",
+                operacao.nome()
+            ),
+            RecusaDaReceita::DiscoIncoerente {
+                operacao,
+                tem_disco: false,
+            } => write!(
+                f,
+                "a operacao `{}` nomeia um disco na receita e nenhum foi dado",
+                operacao.nome()
+            ),
         }
     }
 }
@@ -389,7 +456,16 @@ impl fmt::Display for RecusaDaReceita {
 pub struct Pedido {
     pub operacao: Operacao,
     pub nome: Nome,
-    pub disco: Disco,
+
+    /// O disco que a receita nomeia, quando a operacao nomeia algum.
+    ///
+    /// `None` **so** na verificacao, e [`Receita::montar`] cobra a coerencia
+    /// nos dois sentidos: um backup sem disco e recusado, e uma verificacao
+    /// **com** disco tambem. O segundo importa tanto quanto o primeiro — um
+    /// disco carregado ate uma receita que nao o usa e um valor que ninguem
+    /// confere, num arquivo que arma operacao destrutiva.
+    pub disco: Option<Disco>,
+
     pub selo: Selo,
 }
 
@@ -434,9 +510,21 @@ pub struct Receita {
 impl Receita {
     /// Monta e valida (C-2). Recusa antes de devolver, nunca depois de gravar.
     pub fn montar(pedido: &Pedido) -> Result<Receita, RecusaDaReceita> {
-        let comando = match pedido.operacao {
-            Operacao::Backup => montar_backup(pedido),
-            Operacao::Restauracao => montar_restauracao(pedido),
+        // A coerencia entre a operacao e o disco e cobrada **aqui**, nos dois
+        // sentidos, e nao dentro de cada montagem: e a unica porta por onde uma
+        // receita nasce, e um `Option` destravado dentro de `montar_backup`
+        // deixaria a incoerencia virar um `unwrap` em vez de uma recusa com
+        // nome.
+        let comando = match (pedido.operacao, &pedido.disco) {
+            (Operacao::Backup, Some(disco)) => montar_backup(pedido, disco),
+            (Operacao::Restauracao, Some(disco)) => montar_restauracao(pedido, disco),
+            (Operacao::Verificacao, None) => montar_verificacao(pedido),
+            (operacao, disco) => {
+                return Err(RecusaDaReceita::DiscoIncoerente {
+                    operacao,
+                    tem_disco: disco.is_some(),
+                });
+            }
         };
 
         validar(&comando)?;
@@ -565,10 +653,8 @@ fn arquivo_do_desfecho(operacao: Operacao, nome: &Nome) -> String {
 /// 5. o `ARCA_FIM`, que e o que separa um desfecho completo de um truncado
 ///    por desligamento no meio (§5.5);
 /// 6. a espera e o `poweroff`.
-fn montar_backup(pedido: &Pedido) -> String {
-    let Pedido {
-        nome, disco, selo, ..
-    } = pedido;
+fn montar_backup(pedido: &Pedido, disco: &Disco) -> String {
+    let Pedido { nome, selo, .. } = pedido;
 
     let marcador = pedido.operacao.marcador();
     let log = log_do_job(pedido.operacao, nome);
@@ -600,10 +686,8 @@ fn montar_backup(pedido: &Pedido) -> String {
 /// E por isso que P-6 — o `ocs-sr` devolver zero ao falhar — dói mais deste
 /// lado: no backup o `ocs-chkimg` e um segundo sinal independente, e aqui o
 /// unico juiz e o Windows subir ou nao.
-fn montar_restauracao(pedido: &Pedido) -> String {
-    let Pedido {
-        nome, disco, selo, ..
-    } = pedido;
+fn montar_restauracao(pedido: &Pedido, disco: &Disco) -> String {
+    let Pedido { nome, selo, .. } = pedido;
 
     let marcador = pedido.operacao.marcador();
     let log = log_do_job(pedido.operacao, nome);
@@ -622,6 +706,88 @@ fn montar_restauracao(pedido: &Pedido) -> String {
             "if ocs-sr {FLAGS_DE_RESTAURACAO} restoredisk {nome} {disco} > {registro_do_clonezilla} 2>&1; \
              then echo {marcador}=OK >> {desfecho}; \
              else echo {marcador}=FALHOU >> {desfecho}; fi"
+        ),
+        format!("echo {MARCA_DO_FIM} >> {desfecho}"),
+        format!("sleep {ESPERA_ANTES_DE_DESLIGAR}"),
+        "poweroff".to_string(),
+    ];
+
+    passos.join("; ")
+}
+
+/// A receita da verificacao armada (V-2), e a menor das tres.
+///
+/// # O que aqui e transcricao e o que aqui e invencao
+///
+/// | Parte | Origem |
+/// |---|---|
+/// | `ocs-chkimg -b -or /home/partimag <nome>` | Transcrito de `ARCA-TESTE-03` |
+/// | O `if` sobre o `ocs-chkimg` escrevendo `ARCA_VEREDITO=` | Transcrito da receita de backup, que rodou em 22/08/2026 |
+/// | O `mkdir -p`, o `ARCA_SELO=` com `>`, o `ARCA_FIM`, o `sleep`, o `poweroff` | Transcrito das duas que rodaram |
+/// | A forma `bash -c '...'` com `;` e os cinco parametros | Transcrito das tres capturas |
+/// | **O `ARCA_VERIFY=`** | **Codigo novo** — nenhuma receita real o escreveu |
+/// | **O `ocs-chkimg` como comando principal, fora de um `savedisk`** | **Codigo novo** — nas capturas ele so aparece aninhado |
+///
+/// As duas ultimas sao o que esta etapa estreia, e e menos do que a E7
+/// estreou: o `if/then/else` e o `arca-fim.txt` ja rodaram.
+///
+/// # O `>>` no `arca-check.log`, e o backup usa `>`
+///
+/// A receita de backup redireciona o `ocs-chkimg` com `>`, porque a imagem
+/// acabou de nascer e o log nao existe. Aqui ele existe: e o veredito do
+/// backup que criou a imagem, e o `>` o **destruiria**.
+///
+/// Isso custaria duas coisas. O §6.3 mostra `Imagem de origem: APROVADA —
+/// veredito do backup que a criou`, e a frase viraria mentira depois da
+/// primeira verificacao. E o `>` **trunca ao abrir**, antes de o comando
+/// rodar (§5.5, medido): um desligamento nessa janela deixaria uma imagem boa
+/// com o `arca-check.log` em zero byte, e ela apareceria `sem veredito` na
+/// listagem — perda de informacao sobre uma imagem que nao tem nada de errado.
+///
+/// # O marco desmentiu a metade otimista disto, e o `>>` fica assim mesmo
+///
+/// A versao anterior deste comentario dizia que com `>>` o
+/// [ADR-0003](../docs/adr/0003-veredito-lido-do-arca-check-log.md) valeria como
+/// esta escrito — *"uma imagem verificada duas vezes fica com as duas marcas"*.
+/// **Nao ficou.** Medido em 23/08/2026, depois da verificacao armada da
+/// `2026-08-22_Apps`: o `arca-check.log` tem **uma** ocorrencia de
+/// `ARCA_VEREDITO=`, no fim, e **uma** inicializacao de terminal — ou seja, uma
+/// execucao do `ocs-chkimg`, e nao duas. O log do backup sumiu.
+///
+/// A receita tinha `>>` — o `--dry-run` a imprimiu assim, e
+/// `recursos/ensaio-da-receita.sh` prova que `>>` acrescenta num bash de
+/// verdade. **A causa nao esta determinada**, e e P-25.
+///
+/// **O `>>` fica, com a razao trocada.** Ele nao compra a preservacao do log
+/// antigo; o que ele compra e nao ter a janela do `>`, que **trunca ao abrir**
+/// e deixaria uma imagem boa com o log em zero byte se o desligamento pegasse
+/// ali. E o mesmo movimento do
+/// [ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md):
+/// a defesa fica, e a razao muda para a que sobreviveu a medicao.
+///
+/// A ordem "toda forma de reprovar antes de toda forma de aprovar" decide o
+/// que sai **quando** as duas marcas estao no mesmo arquivo: uma imagem que ja
+/// reprovou uma vez continua reprovada mesmo que a verificacao nova aprove. E
+/// o lado conservador de proposito — mídia que falha de forma intermitente e o
+/// caso em que a segunda leitura mente —, e e o que S-5 pede. Continua sem
+/// original, como o ADR-0003 ja registrava.
+fn montar_verificacao(pedido: &Pedido) -> String {
+    let Pedido { nome, selo, .. } = pedido;
+
+    let marcador = pedido.operacao.marcador();
+    let log = log_do_job(pedido.operacao, nome);
+    let desfecho = arquivo_do_desfecho(pedido.operacao, nome);
+    let veredito = format!("{PARTIMAG}/{nome}/{}", CHECK_LOG);
+
+    let passos = [
+        format!("mkdir -p {log}"),
+        format!("echo {MARCA_DO_SELO}{selo} > {desfecho}"),
+        format!(
+            "if ocs-chkimg {FLAGS_DE_VERIFICACAO} {PARTIMAG} {nome} >> {veredito} 2>&1; \
+             then echo ARCA_VEREDITO=APROVADA >> {veredito}; \
+             echo {marcador}=OK >> {desfecho}; \
+             else echo ARCA_VEREDITO=REPROVADA >> {veredito}; \
+             echo {marcador}=FALHOU >> {desfecho}; fi"
         ),
         format!("echo {MARCA_DO_FIM} >> {desfecho}"),
         format!("sleep {ESPERA_ANTES_DE_DESLIGAR}"),
@@ -711,7 +877,7 @@ mod testes {
         Pedido {
             operacao,
             nome: Nome::novo(nome).expect("nome valido"),
-            disco: Disco::novo(disco).expect("disco valido"),
+            disco: Some(Disco::novo(disco).expect("disco valido")),
             selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
         }
     }
@@ -722,6 +888,17 @@ mod testes {
 
     fn restauracao() -> Receita {
         Receita::montar(&pedido(Operacao::Restauracao, "2026-08-22_Apps", "nvme0n1")).unwrap()
+    }
+
+    /// A terceira, da E11. Sem disco: o `ocs-chkimg` opera sobre a imagem.
+    fn verificacao() -> Receita {
+        Receita::montar(&Pedido {
+            operacao: Operacao::Verificacao,
+            nome: Nome::novo("2026-08-22_Apps").expect("nome valido"),
+            disco: None,
+            selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
+        })
+        .unwrap()
     }
 
     // ───────────────────────── transcricao ─────────────────────────
@@ -1157,6 +1334,161 @@ mod testes {
         ));
     }
 
+    // ────────────── a verificacao armada, etapa E11 (V-2) ──────────────
+
+    #[test]
+    fn a_verificacao_transcreve_o_ocs_chkimg_da_captura() {
+        // O unico pedaco desta receita que tem original: a chamada do
+        // `ocs-chkimg`, tirada de `grub-backup-arca-teste-03.cfg` e ja usada
+        // pela receita de backup desde a E3. O oraculo e o arquivo.
+        let comando = verificacao().comando().to_string();
+
+        assert!(
+            comando.contains("ocs-chkimg -b -or /home/partimag 2026-08-22_Apps"),
+            "{comando}"
+        );
+        assert!(
+            !comando.contains("savedisk") && !comando.contains("restoredisk"),
+            "a verificacao nao toca em disco nenhum: {comando}"
+        );
+        assert!(
+            !comando.contains("ocs-sr"),
+            "o `ocs-sr` nao entra nesta receita: {comando}"
+        );
+    }
+
+    #[test]
+    fn a_verificacao_acrescenta_ao_check_log_em_vez_de_trunca_lo() {
+        // **A diferenca que separa esta receita da de backup.** La o
+        // redirecionamento e `>`, porque a imagem acabou de nascer e o log nao
+        // existe. Aqui ele existe — e o veredito do backup que criou a imagem
+        // —, e o `>` o destruiria: o §6.3 mostra `Imagem de origem: APROVADA —
+        // veredito do backup que a criou`, e a frase viraria mentira.
+        //
+        // Pior: o `>` **trunca ao abrir**, antes de o comando rodar (§5.5,
+        // medido). Um desligamento nessa janela deixaria uma imagem boa com o
+        // log em zero byte, e ela apareceria `sem veredito` na listagem.
+        let comando = verificacao().comando().to_string();
+
+        assert!(
+            comando.contains(">> /home/partimag/2026-08-22_Apps/arca-check.log 2>&1"),
+            "a verificacao tem de ACRESCENTAR ao arca-check.log: {comando}"
+        );
+        // Com o espaco na frente, para nao casar dentro do proprio `>>` — que
+        // e o que este teste pegou de si mesmo na primeira vez que rodou.
+        assert!(
+            !comando.contains(" > /home/partimag/2026-08-22_Apps/arca-check.log 2>&1"),
+            "sobrou um `>` truncando o log: {comando}"
+        );
+
+        // E o backup continua com `>`, que e o certo la: a pasta da imagem
+        // acabou de nascer, e o log com ela.
+        let do_backup = backup().comando().to_string();
+        assert!(
+            do_backup.contains(" > /home/partimag/2026-08-22_Apps/arca-check.log 2>&1"),
+            "a receita de backup nao pode ter mudado junto: {do_backup}"
+        );
+        assert!(
+            !do_backup.contains(">> /home/partimag/2026-08-22_Apps/arca-check.log 2>&1"),
+            "o backup nao acrescenta, ele cria: {do_backup}"
+        );
+    }
+
+    #[test]
+    fn a_verificacao_escreve_o_desfecho_e_o_veredito_nos_dois_ramos() {
+        // O `ARCA_VERIFY=` e **codigo novo** — nenhuma receita real o
+        // escreveu. O que ele acompanha e transcricao: o `if` sobre o
+        // `ocs-chkimg` escrevendo `ARCA_VEREDITO=` rodou em 22/08/2026, dentro
+        // do ramo de exito do backup.
+        let comando = verificacao().comando().to_string();
+
+        for marca in [
+            "ARCA_VERIFY=OK",
+            "ARCA_VERIFY=FALHOU",
+            "ARCA_VEREDITO=APROVADA",
+            "ARCA_VEREDITO=REPROVADA",
+        ] {
+            assert!(comando.contains(marca), "falta `{marca}`: {comando}");
+        }
+    }
+
+    #[test]
+    fn a_verificacao_tem_pasta_de_log_propria() {
+        // **A razao de a verificacao ser uma `Operacao` e nao reusar
+        // `Backup`.** Toda receita comeca truncando o proprio `arca-fim.txt`
+        // com um `>`; dividir a pasta faria a verificacao apagar o desfecho de
+        // um backup ainda nao colhido. A revisao da E3 pegou exatamente isto
+        // entre o backup e a restauracao, e o selo nao cobre — ele julga um
+        // desfecho **encontrado**.
+        let nome = Nome::novo("2026-08-22_Apps").unwrap();
+        assert_eq!(
+            pasta_do_log(Operacao::Verificacao, &nome),
+            "verificacao-2026-08-22_Apps"
+        );
+
+        let tres = [
+            pasta_do_log(Operacao::Backup, &nome),
+            pasta_do_log(Operacao::Restauracao, &nome),
+            pasta_do_log(Operacao::Verificacao, &nome),
+        ];
+        let unicas: std::collections::BTreeSet<&String> = tres.iter().collect();
+        assert_eq!(unicas.len(), 3, "as tres pastas tem de ser diferentes");
+    }
+
+    #[test]
+    fn a_verificacao_com_disco_e_recusada() {
+        // A coerencia nos **dois** sentidos. Um disco carregado ate uma
+        // receita que nao o usa e um valor que ninguem confere, e o lugar de
+        // recusar e a unica porta por onde uma receita nasce.
+        let erro = Receita::montar(&Pedido {
+            operacao: Operacao::Verificacao,
+            nome: Nome::novo("2026-08-22_Apps").unwrap(),
+            disco: Some(Disco::novo("nvme0n1").unwrap()),
+            selo: Selo::novo("a3f1c9e07b2d4856").unwrap(),
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            erro,
+            RecusaDaReceita::DiscoIncoerente {
+                operacao: Operacao::Verificacao,
+                tem_disco: true
+            }
+        );
+    }
+
+    #[test]
+    fn backup_e_restauracao_sem_disco_sao_recusados() {
+        for operacao in [Operacao::Backup, Operacao::Restauracao] {
+            let erro = Receita::montar(&Pedido {
+                operacao,
+                nome: Nome::novo("2026-08-22_Apps").unwrap(),
+                disco: None,
+                selo: Selo::novo("a3f1c9e07b2d4856").unwrap(),
+            })
+            .unwrap_err();
+
+            assert_eq!(
+                erro,
+                RecusaDaReceita::DiscoIncoerente {
+                    operacao,
+                    tem_disco: false
+                },
+                "{} sem disco tinha de ser recusado",
+                operacao.nome()
+            );
+        }
+    }
+
+    #[test]
+    fn a_verificacao_passa_por_c2_como_as_outras_duas() {
+        // O porteiro e o mesmo, e a receita menor nao ganha passe. Ela e
+        // montada e validada pela mesma `Receita::montar`, entao ter uma em
+        // maos ja e a garantia de C-2 — e este teste cobra que a string de
+        // fato passa pelo validador.
+        assert!(validar(verificacao().comando()).is_ok());
+    }
+
     // ───────────────────────── o ensaio em bash ─────────────────────────
 
     /// O que o `bash` faz com a receita, e nao o que ela contem.
@@ -1176,7 +1508,7 @@ mod testes {
 
     #[test]
     fn o_ensaio_em_bash_ensaia_a_receita_de_hoje() {
-        for receita in [backup(), restauracao()] {
+        for receita in [backup(), restauracao(), verificacao()] {
             let comando = receita
                 .comando()
                 .replace("2026-08-22_Apps", "ARCA-TESTE-02");
@@ -1207,7 +1539,7 @@ mod testes {
             let receita = Receita::montar(&Pedido {
                 operacao,
                 nome: Nome::novo(&mais_longo).expect("o nome mais longo que B-2 aceita"),
-                disco: Disco::novo("nvme0n1").unwrap(),
+                disco: Some(Disco::novo("nvme0n1").unwrap()),
                 selo: Selo::de_ensaio(),
             })
             .unwrap_or_else(|recusa| {
@@ -1262,7 +1594,7 @@ mod testes {
         let receita = Receita::montar(&Pedido {
             operacao: Operacao::Backup,
             nome: Nome::sem_julgar_para_teste(&"n".repeat(400)),
-            disco: Disco::novo("nvme0n1").unwrap(),
+            disco: Some(Disco::novo("nvme0n1").unwrap()),
             selo: Selo::de_ensaio(),
         });
 

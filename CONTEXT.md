@@ -36,6 +36,10 @@ _Evitar_: script, comando, configuração
 Uma operação armada e ainda não colhida. Existe entre o reinício e a leitura do desfecho.
 _Evitar_: tarefa, execução, operação pendente
 
+**Operação**:
+O que a receita executa, e o que dá nome à pasta do desfecho: **backup**, **restauração** ou **verificação**. São três desde a E11, e a terceira nasceu porque toda receita começa truncando o próprio `arca-fim.txt` — duas operações que dividissem a pasta apagariam o desfecho uma da outra. Só as duas primeiras nomeiam um disco; a verificação opera sobre a imagem.
+_Evitar_: comando, ação, tarefa
+
 **Colher**:
 Ler o que há no lugar do desfecho, julgá-lo pelo selo e dizer o que era. Encerra o job — inclusive quando o que se encontra é nada, que é uma resposta. O que não encerra é não ter conseguido ler.
 _Evitar_: verificar, conferir, finalizar
@@ -83,3 +87,9 @@ _Evitar_: resultado, status, saída
 **Veredito**:
 O parecer do `ocs-chkimg` sobre a integridade de uma imagem: aprovada ou reprovada. É independente do desfecho — um backup pode terminar e a imagem ser reprovada.
 _Evitar_: verificação, checagem, validação
+
+**Conferência**:
+O que `arca verify` faz sem reiniciar: somar cada arquivo listado no `MD5SUMS` e comparar. Responde **"os bytes que estão aqui são os que o Clonezilla gravou?"** — e nunca "esta imagem é restaurável?", que é o que o veredito responde. Um `.zst` intacto byte a byte que carregue dentro de si um NTFS inconsistente **passa na conferência e reprova no veredito**.
+
+Por isso a conferência não escreve no `arca-check.log` e não muda a coluna do `arca list`: as duas palavras nomeiam julgamentos sobre perguntas diferentes, e misturá-las faria a listagem afirmar algo que o `ocs-chkimg` não disse ([ADR-0016](docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md)).
+_Evitar_: verificação, validação, checksum

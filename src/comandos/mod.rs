@@ -11,3 +11,4 @@ pub mod list;
 pub mod restore;
 pub mod resultado;
 pub mod status;
+pub mod verify;

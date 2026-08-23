@@ -25,6 +25,8 @@
 //! frase e o que C-3 existe para evitar; quem decide e o codigo de saida.
 
 use crate::erro::Resultado;
+use crate::resumo::Algoritmo;
+use std::path::Path;
 
 /// O que uma ferramenta de console respondeu.
 ///
@@ -85,6 +87,34 @@ pub trait Sistema {
     /// `/scan`, e nunca `/f`: o `/scan` roda com o volume montado e nao
     /// escreve nada. Agendar o `/f` e oferta de B-6, e quem decide e o usuario.
     fn conferir_volume(&self, letra: char) -> Resultado<SaidaDeFerramenta>;
+
+    /// Roda `certutil -hashfile <caminho> <algoritmo>` e devolve o que ele
+    /// respondeu (V-1, PR-1).
+    ///
+    /// # Por que aqui, e nao em [`crate::portas::Arquivos`]
+    ///
+    /// Porque quem faz o trabalho e uma **ferramenta do console do Windows**,
+    /// e este modulo e o das ferramentas do console — o `powercfg` de B-5, o
+    /// `chkdsk` de B-6 e o `shutdown` da E7. A porta dos arquivos entrega
+    /// conteudo e metadado por API; esta entrega codigo de saida e texto
+    /// bruto, que e exatamente o que se precisa aqui: as tres linhas da
+    /// resposta do `certutil` vem **traduzidas**, e quem as julga e codigo
+    /// puro em [`crate::resumo::do_certutil`].
+    ///
+    /// # S-1 continua valendo
+    ///
+    /// Resumir um arquivo e lê-lo por caminho, pela API do proprio Windows.
+    /// Nao ha handle de dispositivo, caminho bruto nem deslocamento em setores
+    /// — nem nesta assinatura, nem no que o `certutil` faz.
+    ///
+    /// # Nao julga, e o motivo e o mesmo do `chkdsk`
+    ///
+    /// Codigo diferente de zero **nao** vira erro aqui. E resposta: um arquivo
+    /// que sumiu entre a leitura do `MD5SUMS` e a conferencia dele responde
+    /// `0x80070002`, e isso e uma linha da tela de V-1 — nao o fim do comando.
+    /// Quem verifica trinta e nove arquivos nao pode parar no primeiro que
+    /// falta e deixar os outros trinta e oito sem resposta.
+    fn resumir(&self, caminho: &Path, algoritmo: Algoritmo) -> Resultado<SaidaDeFerramenta>;
 
     /// Reinicia a maquina agora.
     ///

@@ -111,6 +111,37 @@ impl Desarme {
     }
 }
 
+/// A linha `Desarmando receita anterior ..... <o que houve>`, comum a todo
+/// comando que arma.
+///
+/// # Ela mora aqui desde a E11, e antes eram duas copias iguais
+///
+/// O `arca backup` (§5.2) e o `arca restore` (§6.1) tinham o mesmo `match`
+/// palavra por palavra, em [`crate::prevoo`] e em
+/// [`crate::comandos::restore`]. A E11 traria a terceira, e tres copias de uma
+/// regra divergem na primeira mudanca — e a que divergir vai passar a dizer
+/// sobre o desarmar algo que nao aconteceu, que e justamente o modo de falha
+/// que esta linha existe para nao ter.
+///
+/// # `None` e o ensaio, e ele nao pode dizer `ok`
+///
+/// A linha distingue tres coisas: havia receita armada, ja estava inerte, e
+/// **nao desarmou porque e ensaio**. A terceira e a que custou: um `ok` sobre
+/// uma acao que nao aconteceu e a mentira que o `--dry-run` deste projeto ja
+/// contou uma vez (§11 do PRD).
+pub fn linha_do_desarme(desarme: Option<&Desarme>, caminho_do_grub: &str) -> String {
+    crate::formato::linha(
+        "Desarmando receita anterior",
+        &match desarme {
+            Some(desarme) if desarme.havia_job() => {
+                format!("ok · havia receita armada · {caminho_do_grub}")
+            }
+            Some(_) => format!("ok · ja estava inerte · {caminho_do_grub}"),
+            None => format!("nao, e ensaio · {caminho_do_grub}"),
+        },
+    )
+}
+
 /// Desarma: `grub.cfg` primeiro, marca de boot unico depois.
 ///
 /// # Por que nesta ordem

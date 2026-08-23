@@ -117,7 +117,12 @@ pub struct Pedir<'a> {
     pub dispositivo: &'a Dispositivo,
     pub operacao: Operacao,
     pub nome: &'a Nome,
-    pub disco: &'a Disco,
+
+    /// O disco que a receita nomeia, quando a operacao nomeia algum.
+    ///
+    /// `None` so na verificacao da E11, e quem cobra a coerencia entre os dois
+    /// e [`Receita::montar`] — aqui ele so atravessa.
+    pub disco: Option<&'a Disco>,
 }
 
 /// Arma o dispositivo e confere que armou.
@@ -181,7 +186,7 @@ pub fn executar(
     let receita = Receita::montar(&Pedido {
         operacao: pedido.operacao,
         nome: pedido.nome.clone(),
-        disco: pedido.disco.clone(),
+        disco: pedido.disco.cloned(),
         selo: selo.clone(),
     })
     .map_err(Erro::ReceitaRecusada)?;
@@ -200,7 +205,7 @@ pub fn executar(
         selo: selo.clone(),
         comando: pedido.operacao,
         nome: pedido.nome.clone(),
-        disco: pedido.disco.clone(),
+        disco: pedido.disco.cloned(),
         armado_em: MomentoDoArmar::agora(relogio),
         situacao: estado::Situacao::Armado,
     };
@@ -226,6 +231,51 @@ pub fn executar(
         ),
         pasta_do_desfecho: desfecho::pasta_do_job(pedido.operacao, pedido.nome),
     })
+}
+
+/// O que vai aparecer na tela depois do reinício, e por quanto tempo.
+///
+/// # Isto nasceu de uma operação que foi desligada no meio
+///
+/// Em 23/08/2026, na E11, uma verificação armada foi disparada e **não
+/// aconteceu**: a máquina reiniciou, o menu do Clonezilla apareceu, e quem
+/// estava na frente da tela viu que não era o Windows e desligou. Não havia
+/// defeito nenhum — era o funcionamento normal, e a tela do ARCA não dizia
+/// isso.
+///
+/// O `grub.cfg` deste dispositivo tem `set timeout="30"`. O `set default`
+/// escolhe **qual** entrada boota sozinha; ele **não** tira a espera. Então
+/// todo boot armado passa por:
+///
+/// 1. o menu do Clonezilla, com onze entradas, **parado por trinta segundos**;
+/// 2. o live system carregando para a memória — `toram` copia centenas de
+///    megabytes, e isso não é instantâneo;
+/// 3. só então a receita roda, e o primeiro passo dela é o `mkdir -p` que cria
+///    a pasta do desfecho.
+///
+/// Antes do passo 3 **não há nada a colher**: o `arca-fim.txt` nem existe.
+/// Desligar nessa janela deixa o job pendente sem desfecho, que é o caso do
+/// §5.5 que C-12 atende — e o rastro de "desliguei durante o menu" é
+/// **idêntico** ao de "o Clonezilla descartou a receita". Foi preciso ir ao
+/// dispositivo procurar a pasta do log para separar os dois.
+///
+/// O aviso é comum aos três comandos que armam, e por isso mora aqui: o que
+/// se vê na tela do outro lado do reinício é o mesmo nos três, e três cópias
+/// divergiriam.
+pub fn montar_o_que_vem_pela_frente() -> &'static str {
+    concat!(
+        "\nA maquina vai reiniciar agora e desligar sozinha ao terminar.\n",
+        "\n",
+        "O QUE VOCE VAI VER, e nada disso e erro:\n",
+        "  1. o menu do Clonezilla, com onze linhas, PARADO POR 30 SEGUNDOS.\n",
+        "     Ele aparece sempre, e a entrada do ARCA ja esta escolhida.\n",
+        "  2. a tela enchendo de texto enquanto o sistema carrega para a memoria.\n",
+        "  3. so entao a operacao comeca — e ate ai nao ha nada a colher.\n",
+        "\n",
+        "NAO DESLIGUE NESSA ESPERA. Desligar antes do passo 3 deixa o job\n",
+        "pendente sem desfecho nenhum, e o rastro disso e igual ao de uma\n",
+        "receita que o Clonezilla recusou (C-12).\n",
+    )
 }
 
 /// As cinco linhas que contam o que armar fez, para a tela.
@@ -468,6 +518,39 @@ mod testes {
 
     const INERTE: &str = include_str!("../recursos/capturas/grub-inerte-arcaboot.cfg");
     const PT: &str = include_str!("../recursos/capturas/bcdedit-enum-firmware-pt.txt");
+
+    #[test]
+    fn o_aviso_da_espera_diz_o_tempo_do_timeout_do_grub_deste_dispositivo() {
+        // O número não é escolhido: é o `set timeout` do `grub.cfg` que está no
+        // dispositivo. Se ele mudar, o aviso passa a mentir — e o modo de falha
+        // é alguém desligar a máquina durante uma espera que a tela disse ser
+        // mais curta do que é.
+        let timeout = INERTE
+            .lines()
+            .find_map(|linha| linha.trim().strip_prefix("set timeout="))
+            .map(|valor| valor.trim().trim_matches('"').to_string())
+            .expect("o grub.cfg inerte declara um timeout");
+
+        assert_eq!(timeout, "30", "o timeout do dispositivo mudou");
+        assert!(
+            montar_o_que_vem_pela_frente().contains(&format!("PARADO POR {timeout} SEGUNDOS")),
+            "o aviso nao diz o timeout de verdade:\n{}",
+            montar_o_que_vem_pela_frente()
+        );
+    }
+
+    #[test]
+    fn o_aviso_da_espera_nomeia_o_menu_e_o_que_desligar_nele_custa() {
+        // Nasceu de uma operação real que foi desligada no meio, em 23/08/2026:
+        // o menu apareceu, quem estava na frente viu que não era o Windows e
+        // desligou. Não havia defeito — a tela é que não dizia o que ia
+        // aparecer.
+        let aviso = montar_o_que_vem_pela_frente();
+
+        assert!(aviso.contains("menu do Clonezilla"), "{aviso}");
+        assert!(aviso.contains("NAO DESLIGUE"), "{aviso}");
+        assert!(aviso.contains("C-12"), "diz o que fica para trás: {aviso}");
+    }
     const LEGADO: &str = include_str!("../recursos/capturas/bcdedit-enum-firmware-legado-pt.txt");
 
     const GRUB: &str = r"R:\boot\grub\grub.cfg";
@@ -537,7 +620,7 @@ mod testes {
                 dispositivo: &dispositivo,
                 operacao: Operacao::Backup,
                 nome: &nome,
-                disco: &disco,
+                disco: Some(&disco),
             },
         )
     }
@@ -843,7 +926,7 @@ mod testes {
                 dispositivo: &dispositivo,
                 operacao: Operacao::Backup,
                 nome: &nome,
-                disco: &disco,
+                disco: Some(&disco),
             },
         )
         .unwrap_err();
@@ -865,7 +948,7 @@ mod testes {
         assert_eq!(lido.selo, armado.selo);
         assert_eq!(lido.comando, Operacao::Backup);
         assert_eq!(lido.nome.como_texto(), "2026-08-22_Apps");
-        assert_eq!(lido.disco.como_texto(), "nvme0n1");
+        assert_eq!(lido.disco.as_ref().map(Disco::como_texto), Some("nvme0n1"));
         assert_eq!(lido.situacao, estado::Situacao::Armado);
     }
 }

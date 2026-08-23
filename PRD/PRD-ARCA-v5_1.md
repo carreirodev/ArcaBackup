@@ -3,7 +3,8 @@
 **Automatizador de Clonezilla para backup e restauração de imagem de disco.**
 
 Versão 5.1 · 22/08/2026 · Substitui a v4
-Última revisão: 23/08/2026, **etapa E9, escrita** — R-7 reescrito contra o help do `ocs-sr` e contra a medição das duas réguas do mesmo disco ([ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)), **P-17 fecha**; §6.1 ganha a tela real e perde o `498,7 GB` — a **sexta** vez do mesmo número medido na coisa errada; §6.2 ganha o que a imagem de fato carrega; §3.1 corrigido — as duas leituras de NVRAM de 21/08 são de **dois boots diferentes**, e a que o documento usava é da restauração ([ADR-0011](../docs/adr/0011-as-capturas-de-21-08-sao-de-dois-boots.md)); P-19 **estreita**: a primeira metade está descartada por medição; §8 ganha `--destino`; §11 ganha a armadilha de datar a captura e não saber de que operação ela é
+Última revisão: 23/08/2026, **etapa E11, marco cumprido** — a verificação armada rodou às 16:53:30 e foi colhida `concluida` com veredito `APROVADA`; **P-24 fecha** e o `ARCA_VERIFY=` ganha original. **E o marco desmentiu uma linha desta etapa**: o `>>` do §10.2.4 devia deixar duas marcas no `arca-check.log` e deixou uma — o log do backup sumiu, a causa não está medida, e é **P-25**, a primeira vez neste projeto em que uma receita rodou e o rastro divergiu do que a string manda fazer. §11 ganha as três armadilhas novas, e uma delas custou uma operação inteira: a tela não dizia que o menu do Clonezilla fica **trinta segundos** parado antes de a receita começar. **V-1 perde o "em segundos", e o requisito é que estava errado**: são **202,6 s** para 39,7 GB, medidos, e a tela passa a estimar pelo tamanho real ([ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md)); §9.5 ganha a tela de V-1, que é **execução real**, e a de reprovação junto; §8 ganha o `--completo` e diz por que ele pede confirmação sem destruir nada; §10.2.4 nasce com a terceira receita, e o `>>` do `arca-check.log` é a decisão que ela carrega; §10.2.2 e §3.5 registram que **V-2 não rodou** (P-24). E o `MD5SUMS` foi lido de verdade antes de o leitor existir — o formato é do Clonezilla, e a ordem dele não é alfabética, o que quase fez V-1 nascer conferindo só metadados
+Revisão anterior: 23/08/2026, **etapa E9, escrita** — R-7 reescrito contra o help do `ocs-sr` e contra a medição das duas réguas do mesmo disco ([ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)), **P-17 fecha**; §6.1 ganha a tela real e perde o `498,7 GB` — a **sexta** vez do mesmo número medido na coisa errada; §6.2 ganha o que a imagem de fato carrega; §3.1 corrigido — as duas leituras de NVRAM de 21/08 são de **dois boots diferentes**, e a que o documento usava é da restauração ([ADR-0011](../docs/adr/0011-as-capturas-de-21-08-sao-de-dois-boots.md)); P-19 **estreita**: a primeira metade está descartada por medição; §8 ganha `--destino`; §11 ganha a armadilha de datar a captura e não saber de que operação ela é
 Revisão anterior: 22/08/2026, **marco em hardware das etapas E7 e E8** — o primeiro backup disparado e colhido pelo ARCA, sem uma única tela. **P-16 e P-18 fecharam** (§3.5); §3.1 mostra que a ordem permanente muda **no ciclo de boot**, e não à mão ([ADR-0009](../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md)); §5.2 e §5.4 são de execução real, com o `Desfecho esperado em` que a revisão da E7 já tinha corrigido no código; §10.2.3 ganhou o orçamento medido da linha que rodou; §11 ganhou a armadilha de medir o firmware **depois** do reinício; P-19 aberta
 Revisão anterior: etapas E7 e E8, escrita — §3.1 ganhou a **tabela de ordem de boot** desta máquina; §10.2.1 corrigido (o `menuentry` base é o **`live-toram`**, e o `toram` nunca foi acrescentado); §5.2 ganhou as cinco linhas do armar e a ordem certa entre confirmação, aviso e reinício; §4.5 decide o que fazer sem nome de disco (**recusar**); §4.3 e §5.4 ganharam o `estado.json` de seis campos e a linha `Job: encerrado`
 Revisão anterior: etapa E6 — §4.5 diz **de onde sai o nome do disco de origem**, que o documento nunca disse; §5.2 corrigido contra medição (o `498,7 GB` era a partição `C:`, não o disco); B-4, B-5, B-6, C-6 e C-10 ganharam o que a medição mostrou
@@ -285,6 +286,8 @@ Restauração real sobre o `nvme0n1`. Do comando ao Windows restaurado, **sem in
 | P-19 | **Só quando ela foi consumida por `bootsequence`?** — a metade que sobrou. **A primeira metade fechou na E9, pela negativa: o firmware NÃO reescreve a entrada em todo boot pelo dispositivo.** Em 20/08 houve pelo menos três boots pelo dispositivo, e em todas as capturas a entrada continua na forma que o `bcdedit` escreve — `Clonezilla`, caminho em minúsculas, `BCDOBJECT` presente —, inclusive em dois deles com a entrada fora da frente da ordem. O que **não** fecha é datar a reescrita: uma captura feita durante o boot N mostra a NVRAM como ela está, e não qual boot a deixou assim. O experimento que fecha é **um backup disparado por F12**, com o `bcdedit` lido imediatamente antes. Ver [ADR-0011](../docs/adr/0011-as-capturas-de-21-08-sao-de-dois-boots.md) |
 | ~~P-21~~ | **Fechada por escopo em 23/08/2026** ([ADR-0015](../docs/adr/0015-a-restauracao-so-restaura-no-disco-de-origem.md)): só o disco de origem é destino válido, então o caso que esta pergunta descreve não é alcançável pelo ARCA. ~~O `ocs-sr` sai com código diferente de zero quando desiste por destino menor?~~ Aberta na E9, e é P-6 com outra roupa: o help diz que ele *"quit"*, e se esse `quit` sair com zero o `if/then/else` de R-5 escreve `ARCA_RESTORE=OK` sobre uma restauração que não aconteceu. **Não é urgente**, e a razão é o desenho: R-7 recusa antes, do lado Windows, e essa pergunta só chega a importar se a recusa do ARCA tiver um furo ([ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)) |
 | ~~P-20~~ | ~~O `arca resultado` deve devolver o `{bootmgr}` à frente do `displayorder`.~~ **Fechada em 23/08/2026, etapa E10.** Virou **C-13**. Os quatro comandos foram medidos à mão antes de virar código — `/addfirst` move e não duplica, `/remove` tira sem apagar o objeto, e os quatro respondem "êxito" com código 0 inclusive quando não mudam nada. `/addfirst {bootmgr}` ficou, e `/remove` foi descartado pelo modo de falha: ele precisa acertar **quais** entradas tirar, e essa é a pergunta que a revisão do marco da E8 já pegou respondida errado. C-5 ganhou limite explícito em vez de exceção. Ver [ADR-0013](../docs/adr/0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md) |
+| ~~P-24~~ | ~~A verificação armada (V-2) nunca rodou.~~ **Fechada em 23/08/2026, etapa E11.** `arca verify 2026-08-22_Apps --completo` armou às 16:53:30, a máquina bootou pelo dispositivo, o `ocs-chkimg` rodou sozinho e ela desligou; a colheita saiu `concluida` com veredito `APROVADA`. O `arca-fim.txt` traz `ARCA_SELO=aefa48f71fc66a46`, `ARCA_VERIFY=OK` e `ARCA_FIM` — **o `ARCA_VERIFY=` era código novo**, e agora tem original em `recursos/capturas/`. E a pasta própria provou o que ela existe para provar: o desfecho do backup de 22/08 continua intacto ao lado, com o selo `7d2d2f5153625b38`. **Abriu P-25** |
+| P-25 | **Por que o `arca-check.log` foi substituído, se a receita usa `>>`?** Aberta no marco da E11. A verificação armada devia **acrescentar** ao log — o `--dry-run` imprimiu `>> …/arca-check.log 2>&1` minutos antes de armar, e `recursos/ensaio-da-receita.sh` prova que `>>` acrescenta num bash de verdade. Medido depois: o arquivo tem **uma** ocorrência de `ARCA_VEREDITO=`, no fim, e **uma** inicialização de terminal — ou seja, **uma execução do `ocs-chkimg`**, e não duas. O log do backup de 22/08 sumiu. Um append daria mais de 7600 bytes; o arquivo tem 4759. **Alguma coisa entre o redirecionamento e o disco truncou o arquivo, e não se sabe o quê.** O `>>` fica assim mesmo, com a razão trocada: ele não compra a preservação, mas elimina a janela em que o `>` deixa o log em zero byte. Fecha comparando uma segunda verificação armada com esta — e o experimento custa um reinício ([ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md)) |
 | P-23 | **Por que o `arca-restore.log` começa no meio?** Aberta no marco da E9, medindo o primeiro original que ele teve. Ele traz uma passagem só do Partclone — a da última das quatro partições — e um `Ending /usr/sbin/ocs-sr` sem o `Starting`. A receita redireciona com `> … 2>&1`, e o `arca-check.log` do backup não tem esse corte. **Importa porque o §6.3 aponta esse arquivo a quem quer saber o que aconteceu.** Fecha na próxima restauração, e a pergunta é se o corte cai sempre no mesmo lugar |
 | P-22 | **O `bcdedit /enum firmware` mostra a NVRAM do firmware, ou o BCD do disco?** Aberta no marco da E9. Nunca precisou de resposta até a restauração devolver a ordem permanente de dentro da imagem: **se é o BCD, a NVRAM pode continuar com o dispositivo à frente e a máquina continuaria bootando nele — enquanto a linha `Ordem de boot` do `arca status` diria que está tudo bem.** Seria uma afirmação de segurança feita sobre uma leitura que não fala da pergunta, que é o defeito que a revisão do marco da E8 já pegou naquela mesma linha. **O experimento custa um reinício e nenhum risco**: religar com o SSD conectado, sem job armado e com o `grub.cfg` inerte. Parando no Windows, a NVRAM acompanhou; parando no menu do Clonezilla, não acompanhou. Ver [ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md) |
 
@@ -1101,10 +1104,20 @@ arca resultado            # le o veredito e desarma o SSD
 arca list                 # imagens no dispositivo conectado
 arca restore [<nome>]     # lista, confirma e reinicia para restaurar
                           #   --destino <indice>  restaura em outro disco (R-7)
-arca verify <nome>        # confere os MD5SUMS, sem reiniciar
+arca verify <nome>        # confere os MD5SUMS, sem reiniciar (~3,5 min em 39,7 GB)
+                          #   --completo  arma boot unico para o ocs-chkimg (V-2)
 arca status               # diagnostico: dispositivo, firmware, job pendente
 arca desarmar             # devolve o dispositivo ao estado inerte (§4.4)
 ```
+
+> **`arca verify --completo` é o terceiro comando que arma**, e entrou na etapa
+> E11. Ele desarma primeiro (C-1), pede a confirmação digitada e reinicia, como
+> os outros dois — e pede a confirmação **mesmo não destruindo nada**, pelo
+> mesmo motivo que o `arca backup` a pede: a máquina vai reiniciar e desligar
+> sozinha, e quem digitou `--completo` sem ler está a um Enter de perder o que
+> estiver aberto. Sem `--completo`, o comando só lê: não escreve, não arma, não
+> reinicia e **não desarma** — C-1 fala dos comandos que armam, e este não arma
+> (o mesmo raciocínio que o `arca resultado` já usava).
 
 **`arca desarmar` não substitui C-1.** Desarmar continua sendo o primeiro passo
 de todo comando que arma — não é algo que o usuário precise lembrar de fazer. O
@@ -1210,8 +1223,78 @@ Todos exigem privilégio administrativo.
 |---|---|
 | L-1 | `arca list` lê o dispositivo, nunca um catálogo — se a informação está na listagem de diretórios, não há o que armazenar |
 | L-2 | Pasta sem `MD5SUMS` aparece como **resíduo**, não como imagem, e nunca é oferecida para restaurar |
-| V-1 | `arca verify <nome>` confere os `MD5SUMS` no Windows, em segundos, sem reiniciar. Pega corrupção de mídia e cópia truncada |
-| V-2 | `arca verify <nome> --completo` arma boot único que só roda `ocs-chkimg`. É outra força de verificação: **não substitui B-9**, que continua obrigatória em todo backup |
+| V-1 | `arca verify <nome>` confere os `MD5SUMS` no Windows, **sem reiniciar**. Pega corrupção de mídia e cópia truncada. *(Etapa E11: o requisito dizia **"em segundos"**, e isso era uma afirmação sobre 39,7 GB que ninguém tinha medido. Medido em 23/08/2026: **202,6 s** — 3 min 23 s, a 200,5 MB/s —, e o comando confirmou com 199,4 s e 202,8 s. O que a tela diz agora não é outro número fixo: ela **estima pelo tamanho real**, com a taxa medida, e diz de onde o número veio. Ver [ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md).)* |
+| V-2 | `arca verify <nome> --completo` arma boot único que só roda `ocs-chkimg`. É outra força de verificação: **não substitui B-9**, que continua obrigatória em todo backup. *(Etapa E11: as duas respondem perguntas **diferentes**, e é isso que faz as duas existirem — V-1 pergunta "os bytes são os que o Clonezilla gravou?" e V-2 pergunta "esta imagem é restaurável?". Um `.zst` intacto byte a byte que carregue dentro de si um NTFS inconsistente **passa em V-1 e reprova em V-2**. Medido: V-1 leva 3 min 23 s e zero reinícios; V-2 levou 5 min 12 s em 22/08 e custa um reinício — e o que separa as duas na prática é o reinício, não os dois minutos.)* |
+
+#### A tela de V-1, e ela é execução real
+
+Rodada em 23/08/2026 sobre a `2026-08-22_Apps`, do dispositivo desta mesa —
+**202,8 s**, e a estimativa da terceira linha acertou o segundo. Abreviada nas
+trinta e sete linhas do meio:
+
+```
+> arca verify 2026-08-22_Apps
+
+Dispositivo ARCA: ARCAVAULT (D:) · 125 GB livres
+Imagem: 2026-08-22_Apps · 22/08 · 39,7 GB
+
+  MD5SUMS lido .................... 39 arquivos · D:\2026-08-22_Apps\MD5SUMS
+  A conferir ...................... 39,7 GB
+
+Conferindo 39 arquivos · 39,7 GB. Estimativa: 3 min 23 s.
+A tela vai andando um arquivo por vez — parada nao e travamento.
+
+  [ 1/39] blkdev.json ..................... ok
+  [ 2/39] blkdev.list ..................... ok
+  ...
+  [24/39] nvme0n1p3.ntfs-ptcl-img.zst.aa .. ok
+  ...
+  [39/39] parts ........................... ok
+
+  Conferidos ...................... 39 de 39 · 39,7 GB lidos
+  Fora do MD5SUMS ................. 4 arquivos · normal — o proprio MD5SUMS e o que nasce depois dele
+  Veredito ........................ APROVADA — os bytes sao os que o Clonezilla gravou
+
+  Isto conferiu que os bytes nao mudaram desde o backup. NAO conferiu que a
+  imagem e restauravel — quem responde isso e o `ocs-chkimg`, e para isso ha
+  `arca verify <nome> --completo`, que custa um reinicio.
+```
+
+> **`D:` e não `E:`, e isso não é erro de transcrição.** Todas as outras telas
+> deste documento mostram o `ARCAVAULT` em `E:`; nesta sessão ele veio em `D:`.
+> A letra muda de uma conexão para outra e o rótulo não, que é exatamente o que
+> B-1 e S-3 dizem — e é a primeira vez que o documento tem os dois valores lado
+> a lado para prová-lo.
+
+> **A coluna do andamento não é a coluna de 33 do §5.2.** Ela sai do maior nome
+> da lista, e a razão apareceu **rodando o comando**: os nomes que o Clonezilla
+> dá aos pedaços de uma partição têm trinta caracteres, e com a coluna fixa
+> **catorze das trinta e nove linhas estouravam** com um ponto só. O caso que
+> `formato::linha` trata como excepcional é aqui o caso normal.
+
+> **A linha `Fora do MD5SUMS` nunca é problema, e é o que ela existe para
+> dizer.** A pasta tem 43 arquivos e o `MD5SUMS` lista 39. Os quatro que sobram
+> têm hora: o `MD5SUMS`, o `clonezilla-img` e o `Info-img-id.txt` levam o
+> **mesmo mtime** — 18:00:49, o fim do `savedisk` —, e o `arca-check.log` é de
+> 18:06:02, escrito cinco minutos depois pelo `ocs-chkimg` de B-9. Não é falta:
+> é a hora em que cada um nasceu, e chamar isso de falha reprovaria toda imagem
+> que o Clonezilla já fez.
+
+**E o caminho de reprovação rodou**, sobre uma pasta montada de propósito com
+um resumo errado e um arquivo ausente. A tela sai inteira antes do erro, com
+cada falha nomeada, e o comando sai com código diferente de zero (S-5):
+
+```
+  [1/3] disk .... ok
+  [2/3] parts ... NAO BATE · o MD5SUMS diz 000000000000 e o arquivo soma b9c383232530
+  [3/3] sumido .. AUSENTE · o MD5SUMS o lista e ele nao esta na pasta da imagem
+```
+
+**`AUSENTE` e `NAO DEU PARA LER` são linhas diferentes**, e a distinção é a
+mesma que a E5 pagou caro para existir: *"não consegui olhar" nunca vira "não
+há nada lá"*. O `certutil` responde `0x80070002` para arquivo ausente, e cair
+nesse ramo faria as duas chegarem iguais — por isso quem responde sobre
+existência é o sistema de arquivos, antes de o `certutil` ser chamado.
 
 ### 9.6 — Preparação de dispositivo
 
@@ -1281,6 +1364,63 @@ poweroff
 O `LOG` mora no `ARCAVAULT`, que a restauração não toca — a imagem substitui o `nvme0n1`, e o desfecho sobrevive num disco que não estava no caminho. Sem verificação: B-9 é do backup, e aqui não há imagem nova para conferir.
 
 **A pasta do log leva a operação, e não só o nome da imagem.** Toda receita começa truncando o próprio `arca-fim.txt` com um `>`. Se as duas dividissem o caminho, um `arca restore X` rodado antes de o backup de X ser colhido apagaria o desfecho dele, e §5.5 leria um backup bem-sucedido como desfecho ausente. O selo não cobre isso: ele julga um desfecho **encontrado**, e não serve para nada quando o arquivo já foi por cima.
+
+### 10.2.4 — Receita de verificação
+
+Acrescentada na etapa E11, e é a menor das três. Gerada por `src/receita.rs`
+para `NOME=2026-08-22_Apps` e um selo de exemplo:
+
+```text
+mkdir -p /home/partimag/ARCA-LOGS/verificacao-2026-08-22_Apps;
+echo ARCA_SELO=a3f1c9e07b2d4856 > /home/partimag/ARCA-LOGS/verificacao-2026-08-22_Apps/arca-fim.txt;
+if ocs-chkimg -b -or /home/partimag 2026-08-22_Apps >> /home/partimag/2026-08-22_Apps/arca-check.log 2>&1;
+  then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-22_Apps/arca-check.log;
+    echo ARCA_VERIFY=OK >> /home/partimag/ARCA-LOGS/verificacao-2026-08-22_Apps/arca-fim.txt;
+  else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-22_Apps/arca-check.log;
+    echo ARCA_VERIFY=FALHOU >> /home/partimag/ARCA-LOGS/verificacao-2026-08-22_Apps/arca-fim.txt;
+fi;
+echo ARCA_FIM >> /home/partimag/ARCA-LOGS/verificacao-2026-08-22_Apps/arca-fim.txt;
+sleep 20;
+poweroff
+```
+
+**Ela não nomeia disco nenhum**, e é a única das três assim: o `ocs-chkimg`
+opera sobre a **imagem**. É por isso que o campo `disco` do `estado.json`
+passou a ser opcional na E11, com a string vazia dizendo "nenhum" — e o vazio
+foi escolhido porque `Disco::novo("")` já recusava desde a E3, então ele nunca
+poderia colidir com um nome que o Linux dê ([ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md)).
+
+**O `>>` no `arca-check.log` é a diferença que importa, e o backup usa `>`.**
+Lá a imagem acabou de nascer e o log não existe; aqui ele existe, e é o
+veredito do backup que a criou. Um `>` o destruiria — e faria a linha
+`Imagem de origem: APROVADA — veredito do backup que a criou` do §6.3 virar
+mentira. Pior: o `>` **trunca ao abrir**, antes de o comando rodar, e um
+desligamento nessa janela deixaria uma imagem **boa** aparecendo `sem veredito`
+na listagem.
+
+Com `>>`, o [ADR-0003](../docs/adr/0003-veredito-lido-do-arca-check-log.md)
+vale como está escrito: as duas marcas ficam no arquivo, e o leitor lê **toda
+forma de reprovar antes de toda forma de aprovar** — uma imagem que já reprovou
+continua reprovada, mesmo que a verificação nova aprove. É o lado conservador
+de propósito, e é o que S-5 pede.
+
+**O que aqui era código novo**: o `ARCA_VERIFY=`, e o `ocs-chkimg` como comando
+principal em vez de aninhado dentro do ramo de êxito de um `savedisk`. Tudo o
+mais é transcrição — a chamada do `ocs-chkimg` vem de `ARCA-TESTE-03`, e o `if`
+que escreve o `ARCA_VEREDITO=` rodou em 22/08/2026.
+
+> **Esta receita rodou em 23/08/2026**, no marco da E11, e fecha P-24. O
+> desfecho está em `recursos/capturas/arca-fim-verificacao-2026-08-22_Apps.txt`:
+> `ARCA_SELO=aefa48f71fc66a46`, `ARCA_VERIFY=OK`, `ARCA_FIM` — cinquenta e um
+> bytes, três linhas, o selo batendo com o do `estado.json` do mesmo job.
+>
+> **E uma parte dela não fez o que a receita diz.** O `>>` devia acrescentar ao
+> `arca-check.log`, e o arquivo saiu com **uma** execução do `ocs-chkimg` — o
+> log do backup de 22/08 sumiu. É **P-25**, a primeira vez neste projeto em que
+> uma receita rodou e o rastro dela divergiu do que a string manda fazer. O
+> `>>` fica assim mesmo, e a razão trocou: ele não compra a preservação, mas
+> não abre a janela em que o `>` deixaria o log em zero byte
+> ([ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md)).
 
 ### 10.2.3 — O orçamento da linha de comando
 
@@ -1386,6 +1526,8 @@ qualquer das linhas acima:
 | O `arca-fim.txt`, o `ARCA_SELO=`, o `ARCA_FIM` | **Era código novo** — nenhuma receita real o escrevera. Rodou em 22/08/2026, e o original está em `recursos/capturas/arca-fim-2026-08-22_Apps.txt` |
 | O `ARCA_VEREDITO=` no `arca-check.log` | **Era código novo** — ADR-0003. Rodou em 22/08/2026, e o original está em `recursos/capturas/arca-check-2026-08-22_Apps.log` |
 | O `sleep 20` | **Era código novo** — nenhuma captura o tem. Rodou em 22/08/2026 |
+| O `ARCA_VERIFY=`, e o `ocs-chkimg` fora de um `savedisk` | **Era código novo** — acrescentado na etapa E11 (§10.2.4). **Rodou em 23/08/2026**, e o original está em `recursos/capturas/arca-fim-verificacao-2026-08-22_Apps.txt`. Fecha P-24 |
+| O `>>` no `arca-check.log` da verificação | **Rodou, e não fez o que se esperava**: o log saiu com uma execução só, e o do backup sumiu. É P-25 — a única linha desta tabela cujo comportamento em hardware **divergiu** do que a receita diz |
 
 Ver [ADR-0004](../docs/adr/0004-a-receita-transcreve-o-que-rodou.md).
 
@@ -1450,6 +1592,10 @@ Cada uma custou uma execução real para aparecer.
 | **A recusa engolindo a notícia do desarmar** | C-1 desarma incondicionalmente, como primeiro passo; uma recusa posterior sobe como erro e corta a saída. Quem rodasse `arca restore --destino <errado>` num dispositivo armado veria só a recusa, e o job armado teria sumido em silêncio. **Aconteceu duas vezes**: a revisão da E7 pegou no `arca backup`, e a E9 cometeu de novo no `arca restore` — com o comentário que descreve o defeito a poucas linhas de distância | Imprimir o que já aconteceu **antes** de julgar. As duas telas saem em duas metades, e a primeira traz o desarmar. Achado rodando o comando de verdade, e não relendo o código |
 | **Um par honesto respondendo por um evento maior do que ele** | O §3.4 dizia que a restauração não mexe na NVRAM, sustentado num par `antes`/`depois` real, do mesmo evento, com hora — nada dele veio de trabalho manual. Só que as duas leituras são **do mesmo boot do live**, e por isso só podiam falar do `ocs-sr`. O ciclo inteiro faz outra coisa: a ordem permanente volta ao que está dentro da imagem. Procurar o original não acharia este defeito, porque o original estava lá | Perguntar **entre que dois instantes** a evidência foi tirada, e se a pergunta cabe dentro deles. O par da E9 é do lado Windows e atravessa o reinício ([ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)) |
 | **A operação apagando o registro de que foi armada** | O `%LOCALAPPDATA%\ARCA\arca.log` mora no `C:`. Numa restauração, a linha do armar é escrita minutos antes do reinício e **substituída pela imagem** junto com o resto do disco: o log que sobra salta do último comando de antes da imagem direto para a colheita. E a tela que a imprimiu morreu no reinício que ela disparou | §4.1 — o `estado.json` mora no `ARCABOOT` e sobrevive. É o único lugar que liga o selo do desfecho a um job, e a colheita de uma restauração se vira só com ele (§6.3) |
+| **Um redirecionamento que o bash honra e o Clonezilla não** | A receita da verificação usa `>>` para **acrescentar** ao `arca-check.log`, e o ensaio em bash prova que `>>` acrescenta. Em hardware o arquivo saiu com **uma** execução do `ocs-chkimg`, e o log do backup que a imagem carregava sumiu. O `--dry-run` tinha impresso `>>` minutos antes; o ensaio tinha passado; a suíte estava verde. **Nada disso fala sobre o que o `ocs-chkimg` faz com o descritor que recebe** | Contar execuções no arquivo, e não confiar no redirecionamento: toda execução do `ocs-chkimg` abre com a mesma sequência de escapes de terminal, e duas execuções dariam duas. É P-25, e o `>>` fica pela razão que sobreviveu — ele não abre a janela de zero byte que o `>` abre |
+| **A tela não dizer o que vai aparecer do outro lado do reinício** | O `grub.cfg` tem `set timeout="30"`, e o `set default` escolhe **qual** entrada boota sozinha **sem tirar a espera**. Todo boot armado mostra o menu do Clonezilla parado por meio minuto, depois carrega o live system para a RAM (`toram`), e só então a receita roda. Em 23/08/2026 uma verificação armada foi disparada, o menu apareceu, quem estava na frente viu que não era o Windows e **desligou a máquina** — não havia defeito nenhum, e a tela do ARCA dizia só *"vai reiniciar e desligar sozinha ao terminar"*. **E o rastro de "desliguei durante o menu" é idêntico ao de "o Clonezilla recusou a receita"**: nos dois casos não há `arca-fim.txt`, e C-12 reporta as duas causas porque não há como separá-las de fora | `armar::montar_o_que_vem_pela_frente`, nos **três** comandos que armam: nomeia o menu, os trinta segundos e o que desligar ali custa. O número sai do `set timeout` do `grub.cfg` capturado, e há teste que falha se os dois divergirem. O que separou as duas causas naquele dia foi ir ao dispositivo procurar a pasta do log: o primeiro passo de toda receita é um `mkdir -p`, e **ela não estava lá** |
+| **Ler as pontas de uma lista e concluir o que há no meio** | O `MD5SUMS` de uma imagem tem 39 linhas, e a ordem **não é alfabética pura**: os catorze `nvme0n1p*` — os 39,7 GB — ficam no meio, entre o `nvme0n1-mbr` e o `nvme0n1-pt.parted`. Olhando as oito primeiras e as três últimas, a conclusão é que o `MD5SUMS` cobre só os metadados — e V-1 inteiro nasceria sobre isso, aprovando uma imagem tendo lido 2 KB de 39,7 GB | Contar. `tests/e11_verificar_a_imagem.rs` cobra que **toda** imagem do dispositivo liste arquivos de partição, e `src/md5sums.rs` fixa os catorze da captura. A pergunta que separa os dois casos é a mesma de sempre: *a evidência que olhei fala sobre a pergunta inteira?* |
+| **Uma coluna que cabe no caso comum e morre no caso real** | As linhas do §5.2 têm coluna fixa em 33, e `formato::linha` deixa o rótulo **estourar** quando não cabe — o que está certo para um rótulo excepcional. No andamento de V-1 o rótulo é um nome do Clonezilla, e `nvme0n1p3.ntfs-ptcl-img.zst.aa` tem trinta caracteres: **catorze das trinta e nove linhas** saíam com um ponto só, e a coluna deixava de existir justamente na parte que demora três minutos | A coluna do andamento sai do **maior nome da lista**, e não de uma constante. Achado **rodando o comando de verdade**, com a suíte verde — como na E6, na E7, na E9 e na E10 |
 | **O log do Clonezilla não é o log inteiro** | O `arca-restore.log` do marco tem o fim da operação e não tem o começo: uma passagem só do Partclone — a da última partição, 1,1 GB —, nenhuma das outras três, e um `Ending /usr/sbin/ocs-sr` sem o `Starting` correspondente. Causa não determinada. O §6.3 aponta esse arquivo a quem quer saber o que aconteceu, e o que está lá **pode não cobrir a parte que falhou** | Saber disso antes de concluir qualquer coisa por ausência. Medir de novo na próxima restauração, e perguntar se o corte cai sempre no mesmo lugar |
 
 ## 12. Decisões e pendências
@@ -1488,6 +1634,9 @@ Cada uma custou uma execução real para aparecer.
 | Sem nome de disco determinado, `arca backup` **recusa**; não pergunta nem deriva | Um nome do Linux digitado do lado Windows não tem contra o que ser conferido, e a receita que o nomeia é destrutiva na E9 (§4.5) |
 | Colher **marca** o `estado.json` como colhido, e nunca o apaga | O arquivo é o único registro que liga um selo a um nome. Marcar fecha o par que a E5 deixou aberto sem reabrir B-10 ([ADR-0008](../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md)) |
 | Armar não cria entrada de firmware; migra a que existe, ou recusa | Criar uma do zero é código sem original. O lugar disso é o `arca prepare` (C-4) |
+| **A verificação armada é uma terceira `Operacao`**, e não um backup sem `savedisk` | A pasta do log vem do nome da operação, e toda receita trunca o próprio `arca-fim.txt` com um `>`. Dividir a pasta faria a verificação apagar o desfecho de um backup não colhido — o defeito que a revisão da E3 pegou entre backup e restauração, cometido pela terceira vez ([ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md)) |
+| **A verificação acrescenta ao `arca-check.log`; o backup o cria** | Lá a imagem acabou de nascer; aqui o log é o veredito do backup que a criou, e um `>` o destruiria — inclusive por truncar ao abrir, deixando uma imagem boa sem veredito. Com `>>`, a ordem "toda forma de reprovar antes de toda forma de aprovar" do ADR-0003 passa a valer entre **duas verificações**, que é o caso que ele previu (ADR-0016) |
+| **V-1 não grava veredito na listagem** | A coluna do `arca list` é o parecer do `ocs-chkimg` — outra pergunta. Escrever ali uma reprovação de MD5 faria a listagem afirmar que ele reprovou, e ele nem rodou. A tela de V-1 diz isso quando reprova (ADR-0016) |
 
 ### Pendências
 
@@ -1505,6 +1654,8 @@ Cada uma custou uma execução real para aparecer.
 | P-22 | **O `bcdedit /enum firmware` mostra a NVRAM, ou o BCD do disco?** — ver §3.5. Aberta no marco da E9, e importa porque a linha `Ordem de boot` do `arca status` é uma afirmação de segurança lida dali. **E C-13 aumentou o que ela vale**: se for o BCD, a releitura de C-3 do conserto confirma sobre o espelho, e a máquina continua bootando no dispositivo. Fecha com um reinício com o SSD conectado, sem job armado |
 | ~~P-20~~ | ~~O `arca resultado` deve devolver o `{bootmgr}` à frente do `displayorder`.~~ **Fechada em 23/08/2026, etapa E10.** Virou C-13, com os quatro comandos medidos à mão antes de virar código. Ver [ADR-0013](../docs/adr/0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md) |
 | P-23 | **Por que o `arca-restore.log` começa no meio?** — ver §3.5. Aberta no marco da E9. O §6.3 aponta esse arquivo a quem quer saber o que aconteceu, e ele não traz a operação inteira. Fecha na próxima restauração |
+| ~~P-24~~ | ~~A verificação armada (V-2) nunca rodou.~~ **Fechada em 23/08/2026, etapa E11** — armada às 16:53:30, colhida `concluida` com veredito `APROVADA`. Ver §3.5 |
+| P-25 | **Por que o `arca-check.log` foi substituído, se a receita usa `>>`?** — ver §3.5. Aberta no marco da E11, e é uma previsão deste documento que a execução real desmentiu |
 
 ---
 

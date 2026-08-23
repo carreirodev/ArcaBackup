@@ -19,7 +19,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E8 | Colher o desfecho | III | ✅ | 2026-08-22 21:14 · marco cumprido |
 | E9 | Restauração | IV | ✅ | 2026-08-23 11:50 · marco cumprido |
 | E10 | `arca prepare` | IV | ⬜ | — · **C-13 entregue em 2026-08-23**, ver P-20 |
-| E11 | `arca verify` | IV | ⬜ | — |
+| E11 | `arca verify` | IV | ✅ | 2026-08-23 17:00 · marco cumprido · abriu P-25 |
 
 Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi escrito. As três etapas com marco em hardware (E7, E8 e E9) exigem a execução real para fechar.
 
@@ -31,8 +31,14 @@ que o dispararia. A E4 já tinha entregue o critério dela "cumprido pela metade
 verificável"; a diferença é que lá a outra metade era barata, e aqui ela era o
 marco inteiro.
 
-**Não há mais nenhum 🟨.** As três etapas com marco em hardware fecharam, e as
-três em sessões à parte:
+**Não há nenhum 🟨.** O da E11 durou algumas horas de 23/08 e fechou na mesma
+sessão: V-1 conferiu os 39,7 GB da `2026-08-22_Apps` em 202,8 s e reprovou uma
+pasta montada de propósito, e **V-2 rodou em hardware às 16:53** — armada,
+bootada, `ocs-chkimg` executado sozinho, máquina desligada, colheita
+`concluida` com veredito `APROVADA`.
+
+**As quatro etapas com marco em hardware fecharam, e as quatro em sessões à
+parte:**
 
 - **E7 e E8, em 22/08/2026.** O backup `2026-08-22_Apps` foi armado às
   20:53:48, a máquina bootou pelo dispositivo por boot único, gravou 39,7 GB,
@@ -42,6 +48,11 @@ três em sessões à parte:
   restauração daquela mesma imagem foi armada às 11:10:50, o `ocs-sr` encerrou
   às 11:31:55 do relógio do live, a máquina desligou, e a colheita foi às
   11:50:53. O Windows que colheu veio de dentro da imagem.
+- **E11, em 23/08/2026**, e é a mais barata das quatro: a verificação armada da
+  `2026-08-22_Apps` foi armada às 16:53:30, o `ocs-chkimg` rodou sozinho e a
+  máquina desligou; a colheita saiu `concluida` com veredito `APROVADA`, selo
+  `aefa48f71fc66a46`. **Ela precisou de duas tentativas**, e a primeira ensinou
+  mais do que a segunda — ver *"o terceiro defeito"* na seção da E11.
 
 Os blocos **"o que faltava para o marco, e como cada coisa fechou"** das três
 seções continuam lá, reescritos contra o que aconteceu — apagá-los perderia o
@@ -1355,12 +1366,42 @@ nativa no `System32` desta máquina:
 | Ferramenta | Versão medida | Para quê |
 |---|---|---|
 | `curl.exe` | 8.21.0 | baixar o Clonezilla (PR-1) |
-| `tar.exe` | 10.0.26100 (bsdtar) | extrair o pacote |
-| `certutil.exe -hashfile <arquivo> MD5\|SHA256` | 10.0.26100 | o SHA256 de PR-1 e o MD5 de V-1 |
+| `tar.exe` | ~~10.0.26100 (bsdtar)~~ **bsdtar 3.8.8 / libarchive 3.8.8** | extrair o pacote |
+| `certutil.exe -hashfile <arquivo> MD5\|SHA256` | 10.0.26100.8875 | o SHA256 de PR-1 e o MD5 de V-1 |
 
 As três dependências do projeto continuam três, e o padrão de falar com o
 sistema por processo filho atrás de porta existe desde a E6. **Confirmar antes
 de construir em cima**, e decidir se é porta nova ou se cabe nas que há.
+
+> **A versão do `tar` estava medida na coisa errada, e a E11 corrigiu.** O
+> `10.0.26100` é o **`ProductVersion`** — a versão do Windows que empacota a
+> ferramenta —, e não a do `bsdtar`. Medidos lado a lado em 23/08/2026:
+>
+> ```text
+> tar.exe        FileVersion=3.8.8            ProductVersion=10.0.26100.9267
+> curl.exe       FileVersion=8.21.0           ProductVersion=8.21.0
+> certutil.exe   FileVersion=10.0.26100.8875  ProductVersion=10.0.26100.8875
+> ```
+>
+> O `curl` e o `certutil` coincidem nos dois campos e por isso não denunciaram
+> nada; o `tar` não coincide, e foi ele que mostrou qual campo tinha sido lido.
+> É um número **medido na coisa errada** — o nome que a E6 deu ao `498,7 GB` do
+> §5.2 —, e é o sétimo caso do mesmo padrão neste projeto.
+
+**Confirmado na E11, e a decisão que a medição tirou de cima da mesa.** O
+`certutil` foi medido de verdade: `exit=0`, o hash **sozinho na sua própria
+linha, em minúsculas**, e as outras duas linhas em **português** — `MD5 hash de
+<caminho>:` e `comando concluído com êxito`. Daí as duas regras do leitor:
+julgar pelo **código de saída**, como B-6 já faz, e achar o hash pela **forma**
+— a única linha que é exatamente N dígitos hexadecimais —, nunca pela posição
+nem pelo texto.
+
+Ele entrou na porta [`Sistema`](../src/portas/sistema.rs), ao lado do
+`powercfg`, do `chkdsk` e do `shutdown`: mesma categoria — ferramenta do
+console do Windows, cujo contrato entrega código de saída e texto bruto, e quem
+julga é código puro. **Não é porta nova**, e o argumento que faltava era de
+desempenho: medido, os 39 processos `certutil` não custam nada perto da leitura
+do USB, então um crate de hash não compraria velocidade nenhuma.
 
 #### O `arca resultado` devolve o Windows à frente da ordem de boot (P-20)
 
@@ -1523,9 +1564,199 @@ a quem precisa dele.
 
 ### E11 · `arca verify`
 
-`MD5SUMS` conferido no Windows, em segundos. `--completo` arma boot único que só roda `ocs-chkimg` e desliga — mesmo mecanismo da E7, receita menor.
+`MD5SUMS` conferido no Windows, **sem reiniciar**. `--completo` arma boot único
+que só roda `ocs-chkimg` e desliga — mesmo mecanismo da E7, receita menor.
 
-**Cobre**: D6
+**Cobre**: D6, **V-1**, **V-2**
+
+> **Esta primeira linha dizia "em segundos" até 23/08/2026**, porque V-1 dizia.
+> São **três minutos e vinte e três segundos** para 39,7 GB, e a etapa corrigiu
+> o requisito. Ver [ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md).
+
+#### As três coisas que a etapa mediu antes de escrever
+
+Nenhuma delas era suposição, e as três mudaram o que se construiu.
+
+**1. O formato do `MD5SUMS`, lido do dispositivo antes de o leitor existir.**
+2129 bytes, 39 linhas, LF puro, `<32 hex minúsculos><dois espaços><nome>`, modo
+texto. Preservado em `recursos/capturas/md5sums-2026-08-22_Apps.txt`.
+
+E o achado que quase passou batido: **a ordem do `MD5SUMS` não é alfabética
+pura.** Os catorze `nvme0n1p*` — os 39,7 GB — ficam no **meio**, entre o
+`nvme0n1-mbr` e o `nvme0n1-pt.parted`. Olhando as primeiras e as últimas linhas,
+a conclusão é que ele cobre só os metadados, e V-1 inteiro nasceria sobre isso:
+o comando aprovaria uma imagem tendo lido 2 KB de 39,7 GB. Virou armadilha no
+§11 do PRD e teste em `tests/e11_verificar_a_imagem.rs`.
+
+**2. Quanto V-1 custa, e V-1 estava errado.**
+
+```text
+42.604.877.207 bytes · 39 arquivos · 202,6 s à mão · 200,5 MB/s
+o comando, depois: 199,4 s e 202,8 s
+```
+
+Um arquivo sozinho de 812 MB sai a 202,2 MB/s — a mesma taxa dentro do ruído,
+o que diz que os 39 processos `certutil` não custam nada perto da leitura. **É
+o USB que manda**, e um MD5 em Rust puro leria pelo mesmo cabo. Foi essa
+medição que tirou o único argumento a favor de um crate de hash.
+
+**3. Quanto V-2 custa, pelos `mtime` da operação de 22/08.** O `MD5SUMS`, o
+`clonezilla-img` e o `Info-img-id.txt` levam 18:00:49 — o fim do `savedisk` —,
+e o `arca-check.log` é de 18:06:02: **312 s**, mais um reinício. Os dois
+instantes vieram do mesmo relógio, e por isso a **diferença** entre eles não
+sofre com o deslocamento de 3 h (P-7).
+
+| | lê | tempo | reinícios |
+|---|---|---|---|
+| **V-1** | os 39 MD5 do `MD5SUMS` | 3 min 23 s | 0 |
+| **V-2** | `ocs-chkimg` descomprime | 5 min 12 s | 1 |
+
+#### As três decisões, e nenhuma era óbvia
+
+**A verificação armada é uma terceira `Operacao`, e quem decidiu foi a pasta do
+log.** Toda receita começa truncando o próprio `arca-fim.txt` com um `>`;
+reusar `Backup` faria um `arca verify X --completo` apagar o desfecho de um
+backup de X ainda não colhido. É o defeito que a revisão da E3 pegou entre
+backup e restauração, e o selo não cobre — ele julga um desfecho *encontrado*.
+
+**O `disco` do `estado.json` passou a ser opcional**, porque o `ocs-chkimg` não
+nomeia disco nenhum. O valor ausente é a **string vazia**, e a escolha não é
+arbitrária: `Disco::novo("")` já recusava desde a E3, então o vazio nunca foi um
+nome possível e não pode colidir. Um sentinela como `nenhum` colidiria. A
+coerência entre o comando e o disco é cobrada **nos dois sentidos**.
+
+**A receita acrescenta ao `arca-check.log` com `>>`, e o backup usa `>`.** Lá a
+imagem acabou de nascer; aqui o log é o veredito do backup que a criou. Com
+`>>`, o ADR-0003 vale como está escrito, e a ordem *"toda forma de reprovar
+antes de toda forma de aprovar"* passa a valer entre duas verificações — que é
+exatamente o caso que ele previu.
+
+Ver [ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md).
+
+#### O que a execução real pegou, e os testes não pegavam
+
+O padrão de sempre, pela quinta vez — a E6, a E7, a E9 e a E10 já tinham
+pagado:
+
+- **A coluna do andamento morria no caso normal.** `formato::linha` tem coluna
+  fixa em 33 e deixa o rótulo estourar quando não cabe, o que está certo para
+  um rótulo excepcional. O rótulo aqui é um nome do Clonezilla, e
+  `nvme0n1p3.ntfs-ptcl-img.zst.aa` tem trinta caracteres: **catorze das trinta
+  e nove linhas** saíam com um ponto só. A coluna passou a sair do maior nome
+  da lista.
+- **A tela prometia `3 min 23 s` para qualquer imagem.** O tempo da imagem
+  desta mesa estava escrito na frase, e uma imagem de 1 GB levaria cinco
+  segundos. Nasceu daí o `Plano`, que mede antes de conferir — e ele resolveu
+  as duas coisas de uma vez, porque é dele que sai a largura da coluna.
+
+E a falsificação de rotina pegou o que a escrita não tinha coberto: a mutação
+*"o `estado.json` aceita disco vazio para qualquer comando"* **passava
+despercebida**. Os testes de coerência nasceram daí, e não da escrita.
+
+#### O terceiro defeito, e ele custou uma operação inteira
+
+A primeira tentativa do marco de V-2 **não aconteceu**, e o motivo não estava
+no código: a máquina reiniciou, o menu do Clonezilla apareceu, e quem estava na
+frente da tela viu que não era o Windows e **desligou o computador**.
+
+Não havia defeito nenhum na receita. O `grub.cfg` deste dispositivo tem
+`set timeout="30"`, e o `set default` escolhe **qual** entrada boota sozinha —
+ele **não tira a espera**. Todo boot armado passa por trinta segundos de menu
+visível, depois pelo `toram` copiando o live system para a RAM, e só então
+executa a receita. **A tela do ARCA não dizia nada disso**: ela dizia *"a
+maquina vai reiniciar agora e desligar sozinha ao terminar"*, o que descreve o
+fim e omite o começo.
+
+**E o rastro dos dois casos é o mesmo.** "Desliguei durante o menu" e "o
+Clonezilla descartou a receita e abriu o menu" deixam exatamente nada — nenhum
+`arca-fim.txt` —, e é por isso que C-12 reporta as duas causas em vez de
+escolher uma. O que separou as duas naquele dia foi **ir ao dispositivo
+procurar a pasta do log**: o primeiro passo de toda receita é um `mkdir -p`, e
+a pasta `verificacao-2026-08-22_Apps` não estava lá. A receita nunca começou.
+
+`armar::montar_o_que_vem_pela_frente` nasceu daí, nos três comandos que armam,
+e o número dos trinta segundos sai do `set timeout` do `grub.cfg` capturado —
+com teste que falha se os dois divergirem, porque um aviso que promete uma
+espera mais curta do que a real é pior do que nenhum aviso.
+
+**E a operação perdida rendeu duas medições que nada tinha produzido antes:**
+
+- **C-12 rodou em hardware pela primeira vez.** O `arca resultado` colheu a
+  ausência de desfecho, nomeou as duas causas, desarmou, encerrou o job e saiu
+  com código diferente de zero. Era a linha do §5.5 que mais tinha esperado.
+- **O boot único é consumido mesmo quando o boot falha.** O `arca status` de
+  depois mostrou `Boot unico: nao armado` — o firmware gasta a marca ao
+  **tentar** usá-la. Isso não estava medido, e é o que torna seguro tentar de
+  novo sem desarmar antes.
+
+#### O marco, e o que ele mediu
+
+**V-1 rodou, nos dois desfechos.** A imagem de 39,7 GB inteira, aprovada em
+202,8 s; e uma pasta montada de propósito com um resumo errado e um arquivo
+ausente, reprovada, com a tela saindo inteira antes do erro e código de saída
+diferente de zero.
+
+**V-2 rodou em 23/08/2026, às 16:53:30.** Armada, bootada pelo dispositivo,
+`ocs-chkimg` executado sozinho, máquina desligada, colheita `concluida` com
+veredito `APROVADA`. Três coisas que só o hardware podia dizer:
+
+- **O `ARCA_VERIFY=` era código novo e agora tem original.**
+  `arca-fim-verificacao-2026-08-22_Apps.txt`: cinquenta e um bytes, três
+  linhas, `ARCA_SELO=aefa48f71fc66a46` batendo com o `estado.json` do mesmo
+  job.
+- **A pasta própria provou o que ela existe para provar.** O
+  `backup-2026-08-22_Apps/arca-fim.txt` continua lá, intacto, com o selo
+  `7d2d2f5153625b38` do marco da E7. A decisão 1 deixou de ser argumento e
+  virou medição.
+- **O `estado.json` deu a volta com o campo novo.** `"comando":
+  "verificacao"`, `"disco": ""` — o sentinela — e `"situacao": "colhido"`,
+  lido de volta pelo binário que mora no `ARCABOOT`.
+
+#### E o marco desmentiu uma coisa que esta etapa tinha escrito
+
+**A decisão 3 previa que o `arca-check.log` ficaria com duas marcas.** Ficou com
+uma, e o log do backup de 22/08 sumiu — apesar de a receita usar `>>`, de o
+`--dry-run` tê-la impresso assim minutos antes, e de o ensaio em bash provar que
+`>>` acrescenta.
+
+O que separa append de truncamento sem depender de tamanho: toda execução do
+`ocs-chkimg` abre com a mesma sequência de escapes de terminal. Os dois
+arquivos têm **uma**.
+
+```text
+antes  3832 bytes · 1 marca · 1 abertura
+depois 4759 bytes · 1 marca · 1 abertura   (append daria >7600 e 2 de cada)
+```
+
+**A causa não está determinada, e é P-25.** O `>>` fica, com a razão trocada:
+ele não compra a preservação do log antigo, mas não abre a janela em que o `>`
+— que trunca ao abrir — deixaria uma imagem boa com o log em zero byte. É o
+movimento do ADR-0010: *a defesa fica, e a razão muda para a que sobreviveu à
+medição*.
+
+E vale dizer o que este caso é: **a primeira vez neste projeto em que uma
+receita rodou e o rastro divergiu do que a string manda fazer.** Todos os
+achados anteriores foram de documentação descrevendo o que não tinha rodado;
+este é do outro tipo.
+
+#### O passo que a revisão pegou antes do marco, e ele vale para a próxima etapa
+
+O binário do `ARCABOOT` (§4.1) era o de 23/08 às 13:20 — o da E10 —, e ele
+**não conhecia `Operacao::Verificacao`**: o `operacao_de_texto` daquela versão
+itera `[Backup, Restauracao]` e recusa o resto com `ComandoDesconhecido`.
+
+Armar V-2 com o binário novo e colher com aquele deixaria o `arca resultado`
+recusando o `estado.json` do job que ele mesmo tinha de colher — e a mensagem
+mandaria rodar `arca desarmar`, que resolveria o dispositivo e **perderia o
+desfecho**. É o padrão de sempre — peça nova encaixada em peça antiga que
+ninguém releu ao encaixar —, e desta vez a peça antiga é o executável que mora
+no dispositivo.
+
+**Copiar o `target\release\arca.exe` para `R:\arca\arca.exe` é pré-requisito de
+todo marco que mude o `estado.json`**, e a E10 já tinha registrado a lição: *"um
+conserto que só existisse no `target\release\` não chegaria a quem precisa
+dele"*. Foi copiado antes do marco, e o `--dry-run` rodado **do próprio
+`ARCABOOT`** confirmou que o binário de lá já montava a receita nova.
 
 ---
 
@@ -1546,7 +1777,7 @@ Nenhum requisito do PRD fica sem etapa.
 | E8 | S-4, S-5, D8 — e C-12, que ganhou o comando que o atende |
 | E9 | R-1, R-2, R-3, **R-7**, **R-8**, L-2 — e P-17. R-7 não tinha etapa nenhuma nesta tabela até aqui |
 | E10 | §7.1, **PR-4**, **PR-5** — e **C-13**, que fechou P-20 e saiu na frente do `arca prepare` |
-| E11 | D6 |
+| E11 | D6, **V-1**, **V-2** — e V-1 corrigido contra medição, que a tabela não previa |
 
 ## Riscos que atravessam o plano
 

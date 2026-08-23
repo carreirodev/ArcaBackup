@@ -438,7 +438,7 @@ mod testes {
         let receita = Receita::montar(&Pedido {
             operacao: Operacao::Backup,
             nome: Nome::novo("2026-08-22_Apps").unwrap(),
-            disco: Disco::novo("nvme0n1").unwrap(),
+            disco: Some(Disco::novo("nvme0n1").unwrap()),
             selo: Selo::novo("a3f1c9e07b2d4856").unwrap(),
         })
         .expect("monta");

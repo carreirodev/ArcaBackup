@@ -425,6 +425,16 @@ pub fn montar(colheita: &Colheita) -> String {
             "  Imagem de origem: {} — veredito do backup que a criou, e nao desta operacao\n",
             descrever_veredito(colheita.pasta)
         ),
+        // Numa verificacao armada os dois sinais tem a **mesma fonte**: o
+        // codigo de saida do `ocs-chkimg` decide o `ARCA_VERIFY=` do desfecho
+        // e o `ARCA_VEREDITO=` do log, no mesmo `if`. Num backup eles sao
+        // independentes (§4.3, S-5) e aqui nao sao, e a linha diz isso — quem
+        // lê duas linhas concordando merece saber se sao duas testemunhas ou
+        // uma so falando duas vezes. E o mesmo cuidado do conselho do §6.3.
+        Operacao::Verificacao => format!(
+            "  Veredito: {} — mesmo sinal do desfecho acima, e nao um segundo\n",
+            descrever_veredito(colheita.pasta)
+        ),
     });
 
     saida.push_str(&format!("  Selo: {}\n", colheita.estado.selo));
@@ -710,7 +720,7 @@ mod testes {
             selo: Selo::novo(DO_JOB).unwrap(),
             comando: Operacao::Backup,
             nome: Nome::novo("2026-08-22_Apps").unwrap(),
-            disco: Disco::novo("nvme0n1").unwrap(),
+            disco: Some(Disco::novo("nvme0n1").unwrap()),
             armado_em: MomentoDoArmar::agora(&crate::duplos::RelogioParado::em(
                 "2026-08-22T19:14:03",
             )),
@@ -949,6 +959,84 @@ mod testes {
             !saida.contains("Verificacao:"),
             "nao ha verificacao numa restauracao — a imagem e a origem:\n{saida}"
         );
+    }
+
+    /// A mesma colheita, com o job sendo uma **verificacao armada** (V-2, E11).
+    fn colher_verificacao(desfecho: Encontrado, veredito: Option<Veredito>) -> String {
+        let estado = Estado {
+            comando: Operacao::Verificacao,
+            // O `ocs-chkimg` opera sobre a imagem, e nao sobre disco nenhum.
+            disco: None,
+            ..estado(Situacao::Armado)
+        };
+        let pastas = vec![imagem("2026-08-22_Apps", veredito)];
+        let desarme = desarme();
+        let pasta = pastas.first();
+
+        montar(&Colheita {
+            estado: &estado,
+            desfecho: &desfecho,
+            pasta,
+            desarme: &desarme,
+            ordem: &ordem(),
+            encerramento: &Encerramento::Encerrado,
+            pastas: &pastas,
+            livre_bytes: 176_312_811_520,
+        })
+    }
+
+    #[test]
+    fn a_colheita_de_uma_verificacao_diz_que_os_dois_sinais_sao_um_so() {
+        // A diferenca que separa esta tela das outras duas. Num backup o
+        // desfecho e o veredito sao **independentes** (§4.3, S-5): um vem do
+        // `savedisk` e o outro do `ocs-chkimg`. Aqui os dois saem do **mesmo**
+        // `if`, sobre o mesmo codigo de saida — e quem lê duas linhas
+        // concordando merece saber se sao duas testemunhas ou uma so falando
+        // duas vezes.
+        let saida = colher_verificacao(
+            Encontrado::Arquivo(Julgamento::Concluida),
+            Some(Veredito::Aprovada),
+        );
+
+        assert!(saida.contains("Verificacao 2026-08-22_Apps"), "{saida}");
+        assert!(saida.contains("Desfecho: concluida"), "{saida}");
+        assert!(
+            saida.contains("Veredito: APROVADA — mesmo sinal do desfecho acima, e nao um segundo"),
+            "a linha tem de dizer que os dois sinais tem a mesma fonte:\n{saida}"
+        );
+        assert!(
+            !saida.contains("Imagem de origem:"),
+            "esse rotulo e da restauracao, onde a imagem e a origem:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn uma_verificacao_reprovada_sai_como_falha() {
+        // S-5 vale igual: uma imagem reprovada pelo `ocs-chkimg` e falha, e o
+        // comando sai com codigo diferente de zero depois de imprimir a tela.
+        let saida = colher_verificacao(
+            Encontrado::Arquivo(Julgamento::Concluida),
+            Some(Veredito::Reprovada),
+        );
+
+        assert!(saida.contains("Veredito: REPROVADA"), "{saida}");
+        assert!(saida.contains("FALHA PARCIAL E FALHA TOTAL"), "{saida}");
+    }
+
+    #[test]
+    fn uma_verificacao_nao_ganha_o_conselho_da_restauracao() {
+        // Os tres conselhos do §6.3 falam de coisas que so acontecem numa
+        // restauracao: o `arca.log` destruido, o juiz que falta, a janela do
+        // ADR-0009 sobre um disco recem-escrito. Numa verificacao nenhum deles
+        // e verdade, e um conselho que sai onde nao vale e ruido que ensina
+        // quem lê a pular o texto.
+        let saida = colher_verificacao(
+            Encontrado::Arquivo(Julgamento::Concluida),
+            Some(Veredito::Aprovada),
+        );
+
+        assert!(!saida.contains("A RESTAURACAO TERMINOU"), "{saida}");
+        assert!(!saida.contains("DESTRUIDO"), "{saida}");
     }
 
     #[test]

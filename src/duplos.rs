@@ -683,6 +683,25 @@ pub struct SistemaDeMentira {
     /// A recusa do `shutdown`, quando se quer exercitar o caminho em que o
     /// reinicio falha com o dispositivo ja armado.
     pub recusa_ao_reiniciar: Option<Erro>,
+
+    /// O que o `certutil` responde por arquivo, para V-1 e PR-1.
+    ///
+    /// A chave e o caminho **em minusculas**, porque quem abriria o arquivo e
+    /// o Windows, onde `DISK` e `disk` sao o mesmo. Um caminho que ninguem
+    /// ensinou cai em [`SistemaDeMentira::resumo_padrao`].
+    pub resumos: RefCell<BTreeMap<String, SaidaDeFerramenta>>,
+
+    /// O que responder por um caminho que nao foi ensinado.
+    ///
+    /// O padrao e a resposta do `certutil` para arquivo ausente, medida em
+    /// 23/08/2026 — e nao um resumo plausivel. Um duplo que inventasse hash
+    /// para arquivo que ninguem pôs na bancada faria um teste de verificacao
+    /// passar sem que o arquivo existisse, que e o oposto do que V-1 confere.
+    pub resumo_padrao: SaidaDeFerramenta,
+
+    /// Os caminhos resumidos, na ordem. E o que permite a um teste afirmar
+    /// **quais** arquivos foram lidos, e nao so quantos.
+    pub resumidos: RefCell<Vec<PathBuf>>,
 }
 
 impl Default for SistemaDeMentira {
@@ -696,6 +715,17 @@ impl Default for SistemaDeMentira {
             conferidos: RefCell::new(Vec::new()),
             reinicios: Cell::new(0),
             recusa_ao_reiniciar: None,
+            resumos: RefCell::new(BTreeMap::new()),
+            resumo_padrao: SaidaDeFerramenta {
+                codigo: -2147024894,
+                texto: concat!(
+                    "CertUtil: -hashfile comando FALHOU: 0x80070002",
+                    " (WIN32: 2 ERROR_FILE_NOT_FOUND)\r\n",
+                    "CertUtil: O sistema nao pode encontrar o arquivo especificado.\r\n"
+                )
+                .to_string(),
+            },
+            resumidos: RefCell::new(Vec::new()),
         }
     }
 }
@@ -725,6 +755,46 @@ impl SistemaDeMentira {
         self
     }
 
+    /// Ensina o resumo de um arquivo, na forma em que o `certutil` responde.
+    ///
+    /// Monta as **tres linhas** medidas, e nao so o hash: o que esta sendo
+    /// exercitado do outro lado e o leitor de [`crate::resumo::do_certutil`],
+    /// que acha a linha pela forma no meio das duas frases traduzidas. Um
+    /// duplo que devolvesse so o hash tiraria do teste justamente a parte que
+    /// pode dar errado em producao.
+    pub fn com_resumo(self, caminho: &str, digitos: &str) -> SistemaDeMentira {
+        self.com_resposta_do_certutil(
+            caminho,
+            0,
+            &format!(
+                "MD5 hash de {caminho}:\r\n{digitos}\r\nCertUtil: -hashfile : comando concluido com exito.\r\n"
+            ),
+        )
+    }
+
+    /// Ensina uma resposta crua do `certutil`, para os casos que não são um
+    /// resumo bem-sucedido.
+    pub fn com_resposta_do_certutil(
+        self,
+        caminho: &str,
+        codigo: i32,
+        texto: &str,
+    ) -> SistemaDeMentira {
+        self.resumos.borrow_mut().insert(
+            caminho.to_ascii_lowercase(),
+            SaidaDeFerramenta {
+                codigo,
+                texto: texto.to_string(),
+            },
+        );
+        self
+    }
+
+    /// Os caminhos que passaram pelo `certutil`, na ordem.
+    pub fn resumidos(&self) -> Vec<PathBuf> {
+        self.resumidos.borrow().clone()
+    }
+
     /// Quantas vezes o reinicio foi pedido. Zero e a resposta esperada na
     /// maioria dos testes desta etapa.
     pub fn reinicios(&self) -> usize {
@@ -746,6 +816,32 @@ impl Sistema for SistemaDeMentira {
             Ok(saida) => Ok(saida.clone()),
             Err(erro) => Err(clonar_a_recusa(erro)),
         }
+    }
+
+    fn resumir(
+        &self,
+        caminho: &Path,
+        algoritmo: crate::resumo::Algoritmo,
+    ) -> Resultado<SaidaDeFerramenta> {
+        self.resumidos.borrow_mut().push(caminho.to_path_buf());
+
+        let chave = caminho.to_string_lossy().to_ascii_lowercase();
+        let saida = self
+            .resumos
+            .borrow()
+            .get(&chave)
+            .cloned()
+            .unwrap_or_else(|| self.resumo_padrao.clone());
+
+        // O algoritmo entra no texto da primeira linha, como o `certutil`
+        // faz. Sem isso, um teste de SHA256 leria `MD5 hash de ...` e o duplo
+        // estaria mentindo sobre qual pergunta foi feita.
+        Ok(SaidaDeFerramenta {
+            texto: saida
+                .texto
+                .replace("MD5 hash de", &format!("{} hash de", algoritmo.nome())),
+            ..saida
+        })
     }
 
     fn reiniciar(&self) -> Resultado<()> {

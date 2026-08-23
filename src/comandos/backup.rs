@@ -226,7 +226,7 @@ fn armar_e_reiniciar(
             dispositivo,
             operacao: Operacao::Backup,
             nome,
-            disco,
+            disco: Some(disco),
         },
     )?;
 
@@ -281,9 +281,13 @@ pub fn montar_o_armado(armado: &armar::Armado) -> String {
     let mut saida = String::from("\n");
     saida.push_str(&armar::montar_as_linhas(armado));
 
+    // O que se vê do outro lado do reinício é igual nos três comandos que
+    // armam, e mora em [`armar::montar_o_que_vem_pela_frente`] desde a E11 —
+    // ver lá por que ele existe.
+    saida.push_str(armar::montar_o_que_vem_pela_frente());
+
     saida.push_str(concat!(
-        "\nA maquina vai reiniciar agora e desligar sozinha ao terminar.\n",
-        "AO TERMINAR: remova o SSD antes de religar.\n",
+        "\nAO TERMINAR: remova o SSD antes de religar.\n",
         "\nReiniciando...\n"
     ));
 
@@ -396,7 +400,7 @@ fn ensaio_das_receitas(
     let backup = Receita::montar(&Pedido {
         operacao: Operacao::Backup,
         nome: nome.clone(),
-        disco: o_disco.clone(),
+        disco: Some(o_disco.clone()),
         selo: selo.clone(),
     })
     .map_err(Erro::ReceitaRecusada)?;
@@ -502,7 +506,7 @@ mod testes {
         Receita::montar(&Pedido {
             operacao,
             nome: Nome::novo("2026-08-22_Apps").unwrap(),
-            disco: Disco::novo(DISCO_DE_EXEMPLO).unwrap(),
+            disco: Some(Disco::novo(DISCO_DE_EXEMPLO).unwrap()),
             selo: Selo::de_ensaio(),
         })
         .unwrap()

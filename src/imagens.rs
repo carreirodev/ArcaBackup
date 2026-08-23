@@ -15,7 +15,11 @@ use chrono::{DateTime, Local};
 use std::path::Path;
 
 /// O arquivo que separa imagem de residuo (B-3).
-const MD5SUMS: &str = "MD5SUMS";
+///
+/// Reexportado de [`crate::md5sums`], que e quem sabe o que ha **dentro** dele
+/// desde a E11. Aqui so a existencia importa; la, o conteudo. Um nome so, num
+/// lugar so.
+use crate::md5sums::ARQUIVO as MD5SUMS;
 
 /// Onde o `ocs-chkimg` deixa o veredito, por B-9.
 ///

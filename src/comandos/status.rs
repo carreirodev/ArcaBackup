@@ -205,6 +205,22 @@ fn ler_o_job(
 }
 
 /// O diagnostico inteiro, em texto.
+/// A linha `Disco alvo`, que nem todo job tem.
+///
+/// A verificacao armada da E11 nao nomeia disco nenhum — o `ocs-chkimg` opera
+/// sobre a imagem —, e o campo vem vazio do `estado.json`. Uma linha em branco
+/// ali faria quem lê procurar o que se perdeu; a linha diz o que aconteceu, que
+/// e nao haver disco a nomear.
+fn disco_alvo(estado: &Estado) -> String {
+    match &estado.disco {
+        Some(disco) => disco.to_string(),
+        None => format!(
+            "nenhum · `{}` lê a imagem, e nao um disco",
+            estado.comando.nome()
+        ),
+    }
+}
+
 pub fn montar(diagnostico: &Diagnostico) -> String {
     let mut saida = String::new();
 
@@ -595,7 +611,7 @@ fn secao_do_job(leitura: &Leitura, estado: &EstadoDoJob) -> String {
             // O selo aparece inteiro: e ele que a mensagem de job fantasma vai
             // nomear, e sem os dois lados a vista ninguem confere nada.
             saida.push_str(&linha("Selo", estado.selo.como_texto()));
-            saida.push_str(&linha("Disco alvo", estado.disco.como_texto()));
+            saida.push_str(&linha("Disco alvo", &disco_alvo(estado)));
             saida.push_str(&linha(
                 "Armado em",
                 &format!("{} · informativo, nunca comparado", estado.armado_em),
@@ -608,7 +624,7 @@ fn secao_do_job(leitura: &Leitura, estado: &EstadoDoJob) -> String {
         }
         EstadoDoJob::Colhido { estado } => {
             saida.push_str(&linha("Selo", estado.selo.como_texto()));
-            saida.push_str(&linha("Disco alvo", estado.disco.como_texto()));
+            saida.push_str(&linha("Disco alvo", &disco_alvo(estado)));
             saida.push_str(&linha(
                 "Armado em",
                 &format!("{} · informativo, nunca comparado", estado.armado_em),
@@ -662,7 +678,7 @@ mod testes {
             selo: Selo::novo(DO_JOB).unwrap(),
             comando: Operacao::Backup,
             nome: Nome::novo("2026-08-22_Apps").unwrap(),
-            disco: Disco::novo("nvme0n1").unwrap(),
+            disco: Some(Disco::novo("nvme0n1").unwrap()),
             armado_em: MomentoDoArmar::agora(&RelogioParado::em("2026-08-22T18:14:03")),
             situacao: Situacao::Armado,
         }
@@ -1092,6 +1108,31 @@ mod testes {
     }
 
     // ─────────────────────── o job pendente da E5 ───────────────────────
+
+    #[test]
+    fn um_job_de_verificacao_diz_que_nao_ha_disco_em_vez_de_deixar_em_branco() {
+        // A E11 trouxe uma operacao que nao nomeia disco: o `ocs-chkimg` opera
+        // sobre a imagem. Uma linha `Disco alvo .....` seguida de nada faria
+        // quem lê procurar o que se perdeu — e o que aconteceu foi nao haver
+        // disco a nomear, que e outra coisa.
+        let saida = com_estado(EstadoDoJob::Pendente {
+            estado: crate::estado::Estado {
+                comando: crate::receita::Operacao::Verificacao,
+                disco: None,
+                ..estado_gravado()
+            },
+            desfecho: Encontrado::SemArquivo,
+        });
+
+        assert!(
+            saida.contains("Disco alvo ...................... nenhum · `verificacao` lê a imagem"),
+            "{saida}"
+        );
+        assert!(
+            saida.contains("verificacao-2026-08-22_Apps"),
+            "a pasta do desfecho tem de levar a operacao:\n{saida}"
+        );
+    }
 
     #[test]
     fn o_job_pendente_mostra_o_selo_o_alvo_e_o_momento() {

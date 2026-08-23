@@ -28,6 +28,7 @@ pub mod formato;
 pub mod gpt;
 pub mod grub;
 pub mod imagens;
+pub mod md5sums;
 pub mod menuentry;
 pub mod nome;
 pub mod ordem;
@@ -35,5 +36,7 @@ pub mod portas;
 pub mod prevoo;
 pub mod receita;
 pub mod registro;
+pub mod resumo;
+pub mod verificacao;
 
 pub use erro::{Erro, Resultado};

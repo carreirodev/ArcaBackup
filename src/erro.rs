@@ -46,6 +46,24 @@ pub enum Erro {
     #[error("a restauracao foi recusada: {0}")]
     RestauracaoRecusada(crate::comandos::restore::RecusaDaRestauracao),
 
+    /// V-1 e V-2 recusam antes de conferir nada e antes de armar nada: a
+    /// imagem nao existe, e residuo (L-2), ou o `MD5SUMS` dela nao serve.
+    #[error("a verificacao foi recusada: {0}")]
+    VerificacaoRecusada(crate::comandos::verify::RecusaDaVerificacao),
+
+    /// V-1 conferiu e a imagem nao passou (S-5).
+    ///
+    /// **Nao e uma falha do comando** — ele fez exatamente o que se pediu, e a
+    /// resposta e ruim. O erro existe pelo mesmo motivo que o `arca resultado`
+    /// sai com codigo diferente de zero num desfecho ruim: quem chamou o ARCA
+    /// de um script nao pode lê uma imagem reprovada como exito. A tela
+    /// inteira ja foi impressa quando isto sobe, com cada arquivo que nao
+    /// bateu.
+    #[error(
+        "a imagem `{nome}` NAO passou na conferencia: {quantos} arquivos nao bateram com o `MD5SUMS`. O detalhe de cada um esta na tela acima"
+    )]
+    ImagemReprovada { nome: String, quantos: usize },
+
     /// A enumeracao de discos nao achou o disco onde o Windows mora, ou achou
     /// so o proprio dispositivo.
     ///

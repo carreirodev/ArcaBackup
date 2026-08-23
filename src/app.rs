@@ -69,7 +69,13 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
             return comandos::restore::executar(contexto, nome.as_deref(), *destino);
         }
 
-        Comando::Verify { .. } => ("verify", "E11"),
+        // V-1 lê os `MD5SUMS` aqui mesmo; `--completo` arma o boot unico que
+        // so roda o `ocs-chkimg` (V-2). Os dois recusam residuo antes de
+        // qualquer coisa (L-2), e o segundo desarma primeiro (C-1).
+        Comando::Verify { nome, completo } => {
+            return comandos::verify::executar(contexto, nome, *completo);
+        }
+
         Comando::Prepare { .. } => ("prepare", "E10"),
     };
 
@@ -142,19 +148,18 @@ mod testes {
         let bancada = Bancada::nova("despacho");
         let contexto = bancada.contexto();
 
-        for (argumentos, etapa_esperada) in [
-            (vec!["arca", "verify", "n"], "E11"),
-            (vec!["arca", "prepare"], "E10"),
-        ] {
-            let cli = Cli::parse_from(&argumentos);
-            let erro = executar(&cli, &contexto).unwrap_err();
+        // Sobrou um. O `verify` saiu desta lista na E11, e o `prepare` sai na
+        // E10 — que vem **depois** dela nesta sessao, porque a E11 roda no
+        // dispositivo que ja existe e a E10 precisa de um segundo, que ela
+        // destroi de proposito.
+        let erro = executar(&Cli::parse_from(["arca", "prepare"]), &contexto).unwrap_err();
 
-            match erro {
-                Erro::AindaNaoImplementado { etapa, .. } => {
-                    assert_eq!(etapa, etapa_esperada, "para {argumentos:?}")
-                }
-                outro => panic!("esperava etapa nomeada, veio {outro}"),
+        match erro {
+            Erro::AindaNaoImplementado { comando, etapa } => {
+                assert_eq!(comando, "prepare");
+                assert_eq!(etapa, "E10");
             }
+            outro => panic!("esperava etapa nomeada, veio {outro}"),
         }
     }
 
@@ -163,10 +168,12 @@ mod testes {
         // `list` e `status` desde a E1 e a E2; `backup` entrou na E6, quando
         // deixou de responder "armar e a E7" para rodar o pre-voo do §5.2, e
         // passou a armar de verdade na **E7**. O `resultado` entrou na **E8**,
-        // e o `restore` na **E9**.
+        // o `restore` na **E9** e o `verify` na **E11**.
         //
-        // Sem dispositivo conectado, os cinco devolvem a recusa da descoberta
-        // — e nunca `AindaNaoImplementado`.
+        // Sem dispositivo conectado, os seis devolvem a recusa da descoberta
+        // — e nunca `AindaNaoImplementado`. O `verify` esta aqui nas duas
+        // formas: sem `--completo` ele so lê, e com ele arma, e as duas
+        // precisam do dispositivo antes de qualquer outra coisa.
         let bancada = Bancada::nova("construidos");
         let contexto = bancada.contexto();
 
@@ -176,6 +183,8 @@ mod testes {
             vec!["arca", "backup", "2026-08-22_Apps"],
             vec!["arca", "resultado"],
             vec!["arca", "restore"],
+            vec!["arca", "verify", "2026-08-22_Apps"],
+            vec!["arca", "verify", "2026-08-22_Apps", "--completo"],
         ] {
             let erro = executar(&Cli::parse_from(&argumentos), &contexto).unwrap_err();
             assert!(

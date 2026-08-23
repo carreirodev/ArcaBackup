@@ -509,6 +509,99 @@ alguém precisa dele.
 que funciona, medida uma vez. Um GPT+ESP provavelmente também bootaria; o ponto
 é que ninguém mediu, e a E10 não é onde se descobre.
 
+## `md5sums-2026-08-22_Apps.txt` e `verificacao-md5-medida-2026-08-23.txt`
+
+Copiados e medidos em **23/08/2026**, na etapa E11, com o dispositivo ARCA
+conectado — e nesta sessão ele veio em **`D:`**, e não no `E:` que todas as
+outras capturas mostram. A letra muda de uma conexão para outra e o rótulo não,
+que é o que B-1 e S-3 dizem; é a primeira vez que este diretório tem os dois
+valores para prová-lo.
+
+**O `md5sums-2026-08-22_Apps.txt` é cópia byte a byte** do
+`D:\2026-08-22_Apps\MD5SUMS`, escrito pelo Clonezilla em 22/08 às 18:00:49 do
+relógio do Windows (21:00:49 do relógio do live — P-7). 2129 bytes, 39 linhas,
+LF puro. É o **oráculo do parser** de `src/md5sums.rs`: nenhum teste daquele
+módulo pode ser ajustado para passar, porque o alvo é este arquivo.
+
+O `.gitattributes` marca `recursos/capturas/** -text` justamente para que o LF
+sobreviva ao git, e há um teste que falha se um CR aparecer aqui.
+
+**O `verificacao-md5-medida-2026-08-23.txt` é medição, e não cópia.** Ele
+registra o que nenhum arquivo do dispositivo diz: quanto V-1 custa, quanto V-2
+custou, a forma exata da resposta do `certutil` e a versão das três ferramentas
+do `System32`.
+
+Dois achados dele valem mais do que os números:
+
+**A ordem do `MD5SUMS` não é alfabética pura.** Os catorze `nvme0n1p*` — os
+39,7 GB — ficam no **meio**, entre o `nvme0n1-mbr` e o `nvme0n1-pt.parted`. Quem
+olhar as primeiras e as últimas linhas conclui que ele cobre só os metadados, e
+V-1 nasceria aprovando imagens tendo lido 2 KB de 39,7 GB. É a armadilha *"ler
+as pontas de uma lista e concluir o que há no meio"*, no §11 do PRD.
+
+**Quatro arquivos da pasta ficam fora do `MD5SUMS`, e cada um tem hora.** O
+`MD5SUMS`, o `clonezilla-img` e o `Info-img-id.txt` levam o **mesmo mtime** —
+18:00:49, o fim do `savedisk` —, e o `arca-check.log` é de 18:06:02, escrito
+cinco minutos depois pelo `ocs-chkimg`. Não é falta: é a hora em que cada um
+nasceu, e é isso que faz `arca verify` contar esses arquivos sem chamá-los de
+problema.
+
+**O que estes dois arquivos não são: prova de que V-2 funciona.** O que está
+medido neles é V-1, que roda no Windows, e o tempo de V-2 sai de `mtime` de uma
+operação de 22/08 disparada por um `arca backup` — e não por um
+`arca verify --completo`. **Quem prova V-2 são os três arquivos abaixo.**
+
+## Os três do marco de V-2, em 23/08/2026
+
+`arca-fim-verificacao-2026-08-22_Apps.txt`,
+`estado-verificacao-2026-08-22_Apps.json` e
+`arca-check-2026-08-22_Apps-pos-verificacao.log`. Copiados do dispositivo logo
+depois da colheita, com a máquina ainda na sessão que a colheu.
+
+**O desfecho é o original do `ARCA_VERIFY=`**, que era código novo desde a
+escrita da E11 e não tinha rodado:
+
+```text
+ARCA_SELO=aefa48f71fc66a46
+ARCA_VERIFY=OK
+ARCA_FIM
+```
+
+Cinquenta e um bytes, três linhas, e o selo bate com o do `estado.json` do mesmo
+job — conferido a olho, como o do marco da E8.
+
+**O `estado.json` é o original do campo `disco` vazio.** `"comando":
+"verificacao"` com `"disco": ""` é o sentinela que a E11 escolheu, e ele deu a
+volta pelo binário que mora no `ARCABOOT`:
+
+```json
+{ "selo": "aefa48f71fc66a46", "comando": "verificacao",
+  "nome": "2026-08-22_Apps", "disco": "", "armado_em": "…", "situacao": "colhido" }
+```
+
+**E o `arca-check.log` de depois é evidência de uma previsão que falhou.** A
+E11 escreveu que o `>>` deixaria **duas** marcas `ARCA_VEREDITO=` no arquivo —
+o caso que o ADR-0003 previu em 22/08. Ficou **uma**, e o log do backup sumiu.
+
+O que separa append de truncamento sem depender de tamanho: toda execução do
+`ocs-chkimg` abre com a mesma sequência de escapes de terminal
+(`ESC ) 0 ESC [ 1 ; 2 4 r`). Comparando os dois arquivos:
+
+```text
+arca-check-2026-08-22_Apps.log ............. 3832 bytes · 1 marca · 1 abertura
+arca-check-…-pos-verificacao.log ........... 4759 bytes · 1 marca · 1 abertura
+                                  (append daria >7600 bytes e 2 de cada)
+```
+
+**Por isso os dois ficam lado a lado, e o antigo não é substituído.** Ele é a
+única cópia do veredito que o backup de 22/08 escreveu, e o dispositivo já não
+o tem. É P-25, e quem for fechá-la precisa dos dois arquivos para comparar.
+
+**O que eles não são: a causa.** Nenhum deles diz **por que** o arquivo foi
+substituído. A receita tinha `>>` — o `--dry-run` a imprimiu assim minutos
+antes de armar —, e o ensaio em bash prova que `>>` acrescenta. O que aconteceu
+entre o redirecionamento e o disco não está medido.
+
 ## O que nenhuma delas contém
 
 **Nenhum `bootsequence`.** As capturas de `bcdedit` deste diretório continuam

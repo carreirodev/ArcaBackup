@@ -45,7 +45,7 @@ fn pedido_do_marco() -> Pedido {
     Pedido {
         operacao: Operacao::Backup,
         nome: Nome::novo("2026-08-22_Apps").expect("nome valido"),
-        disco: Disco::novo("nvme0n1").expect("disco valido"),
+        disco: Some(Disco::novo("nvme0n1").expect("disco valido")),
         selo: Selo::novo("7d2d2f5153625b38").expect("o selo que o arca-fim.txt devolveu"),
     }
 }

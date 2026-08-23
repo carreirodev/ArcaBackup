@@ -408,7 +408,7 @@ fn a_receita_da_restauracao_escreve_o_marcador_que_o_original_traz() {
     let pedido = Pedido {
         operacao: Operacao::Restauracao,
         nome: Nome::novo("2026-08-22_Apps").expect("o nome do marco passa por B-2"),
-        disco: Disco::novo("nvme0n1").expect("disco valido"),
+        disco: Some(Disco::novo("nvme0n1").expect("disco valido")),
         selo: Selo::novo("ce04819cf0ee96f7").expect("o selo do marco"),
     };
     let receita = Receita::montar(&pedido).expect("a receita do marco continua valida");

@@ -766,15 +766,11 @@ pub fn montar_cabecalho(cabecalho: &Cabecalho) -> String {
         crate::formato::gigabytes(cabecalho.dispositivo.vault.livre_bytes)
     );
 
-    saida.push_str(&linha(
-        "Desarmando receita anterior",
-        &match cabecalho.desarme {
-            Some(desarme) if desarme.havia_job() => {
-                format!("ok · havia receita armada · {}", cabecalho.caminho_do_grub)
-            }
-            Some(_) => format!("ok · ja estava inerte · {}", cabecalho.caminho_do_grub),
-            None => format!("nao, e ensaio · {}", cabecalho.caminho_do_grub),
-        },
+    // A montagem mora em [`crate::desarme::linha_do_desarme`] desde a E11 — ver
+    // o comentario la para por que os tres comandos que armam a compartilham.
+    saida.push_str(&crate::desarme::linha_do_desarme(
+        cabecalho.desarme,
+        cabecalho.caminho_do_grub,
     ));
 
     saida
@@ -942,10 +938,14 @@ pub fn montar_o_armado(armado: &armar::Armado, ordem: OrdemDeBoot) -> String {
     let mut saida = String::from("\n");
     saida.push_str(&armar::montar_as_linhas(armado));
 
-    saida.push_str(concat!(
-        "\nA maquina vai reiniciar agora e desligar sozinha ao terminar.\n",
-        "AO TERMINAR: remova o SSD antes de religar.\n"
-    ));
+    // O que se vê do outro lado do reinício é igual nos três comandos que
+    // armam, e mora em [`armar::montar_o_que_vem_pela_frente`] desde a E11 —
+    // ver lá por que ele existe. Aqui ele vale mais do que nos outros dois:
+    // desligar durante o menu numa restauração é desligar antes de a receita
+    // começar, e a máquina fica com o disco intacto e o job pendente.
+    saida.push_str(armar::montar_o_que_vem_pela_frente());
+
+    saida.push_str("\nAO TERMINAR: remova o SSD antes de religar.\n");
 
     saida.push_str(match ordem {
         OrdemDeBoot::DispositivoEmPrimeiro => concat!(
@@ -1079,7 +1079,7 @@ pub fn executar(contexto: &Contexto, nome_pedido: Option<&str>, destino: Option<
             dispositivo: &dispositivo,
             operacao: Operacao::Restauracao,
             nome: &nome,
-            disco: &destino.disco,
+            disco: Some(&destino.disco),
         },
     )?;
 
@@ -1286,7 +1286,7 @@ fn ensaio_da_receita(contexto: &Contexto, nome: &Nome, destino: &Destino) -> Res
     let receita = Receita::montar(&Pedido {
         operacao: Operacao::Restauracao,
         nome: nome.clone(),
-        disco: destino.disco.clone(),
+        disco: Some(destino.disco.clone()),
         selo: Selo::de_ensaio(),
     })
     .map_err(Erro::ReceitaRecusada)?;

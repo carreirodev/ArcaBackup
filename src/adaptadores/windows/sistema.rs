@@ -13,6 +13,8 @@
 
 use crate::erro::{Erro, Resultado};
 use crate::portas::{SaidaDeFerramenta, Sistema};
+use crate::resumo::Algoritmo;
+use std::path::Path;
 use std::process::Command;
 
 use super::texto::{de_pagina_de_codigo, pagina_do_console, para_utf16};
@@ -56,6 +58,37 @@ impl Sistema for SistemaDoWindows {
         // Transforma-los em erro aqui faria o pre-voo inteiro parar por causa
         // de um disco que acusou alguma coisa — que e justamente o caso em que
         // B-6 quer falar com o usuario.
+        Ok(SaidaDeFerramenta {
+            codigo: saida.status.code().unwrap_or(-1),
+            texto,
+        })
+    }
+
+    fn resumir(&self, caminho: &Path, algoritmo: Algoritmo) -> Resultado<SaidaDeFerramenta> {
+        // `-hashfile <caminho> <ALGORITMO>`, na ordem medida em 23/08/2026 e
+        // preservada em `recursos/capturas/verificacao-md5-medida-2026-08-23.txt`.
+        let saida = Command::new("certutil")
+            .arg("-hashfile")
+            .arg(caminho)
+            .arg(algoritmo.como_certutil_o_chama())
+            .output()
+            .map_err(|origem| Erro::Ferramenta {
+                ferramenta: "certutil",
+                origem,
+            })?;
+
+        // A mesma decodificacao do `chkdsk`: a resposta vem na pagina de
+        // codigo do console, e nao em UTF-8. Medido nesta maquina, em
+        // portugues: `MD5 hash de ...:` e `comando concluido com exito`.
+        let pagina = pagina_do_console();
+        let mut texto = de_pagina_de_codigo(&saida.stdout, pagina);
+        if !saida.stderr.is_empty() {
+            texto.push_str(&de_pagina_de_codigo(&saida.stderr, pagina));
+        }
+
+        // Codigo diferente de zero e **resposta**, como no `chkdsk` e ao
+        // contrario do `shutdown`. Ver a doc da porta: um arquivo que sumiu e
+        // uma linha da tela de V-1, e nao o fim do comando.
         Ok(SaidaDeFerramenta {
             codigo: saida.status.code().unwrap_or(-1),
             texto,

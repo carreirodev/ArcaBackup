@@ -316,16 +316,13 @@ pub fn montar_cabecalho(cabecalho: &Cabecalho) -> String {
     // Esta linha e a razao de o cabecalho existir separado: o desarmar ja
     // aconteceu quando ela e impressa, e uma recusa do julgamento nao pode
     // engolir a noticia de que ele aconteceu.
-    saida.push_str(&linha(
-        "Desarmando receita anterior",
-        &match cabecalho.desarme {
-            Some(desarme) if desarme.havia_job() => {
-                format!("ok · havia receita armada · {}", cabecalho.caminho_do_grub)
-            }
-            Some(_) => format!("ok · ja estava inerte · {}", cabecalho.caminho_do_grub),
-            // No ensaio nada foi desarmado, e a linha nao pode dizer "ok".
-            None => format!("nao, e ensaio · {}", cabecalho.caminho_do_grub),
-        },
+    //
+    // A montagem mora em [`crate::desarme::linha_do_desarme`] desde a E11, onde
+    // um terceiro comando passou a arma — os tres imprimem a mesma linha, e
+    // tres copias divergiriam.
+    saida.push_str(&crate::desarme::linha_do_desarme(
+        cabecalho.desarme,
+        cabecalho.caminho_do_grub,
     ));
 
     saida

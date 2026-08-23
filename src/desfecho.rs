@@ -517,12 +517,33 @@ mod testes {
     fn arca_fim_que_a_receita_produziria(receita: &str, desfecho: &str) -> String {
         let mut linhas = Vec::new();
 
+        // O ramo de falha do `if` escreve no mesmo arquivo; aqui se monta o
+        // caminho de exito, que e o unico em que os tres `echo` correm.
+        //
+        // # Um `else` pode ter mais de um comando, e ate a E11 nao tinha
+        //
+        // A primeira versao pulava so o passo que **comeca** com `else `, o
+        // que bastava enquanto cada ramo tinha um comando so. A receita de
+        // verificacao tem dois — o `ARCA_VEREDITO=` no `arca-check.log` e o
+        // `ARCA_VERIFY=` no `arca-fim.txt` —, e o segundo entrava no caminho de
+        // exito como se fosse dele. O teste falou, e o defeito era daqui.
+        //
+        // Entao acompanha-se o ramo: liga em `else `, desliga no `fi` que o
+        // fecha — que pode vir como passo proprio ou grudado no fim do
+        // anterior, como em `... >> arquivo; fi`.
+        let mut no_ramo_de_falha = false;
+
         for passo in receita.split("; ") {
             let passo = passo.trim().trim_start_matches("then ");
+            let fecha_o_ramo = passo == "fi" || passo.ends_with("; fi") || passo.ends_with(" fi");
 
-            // O ramo de falha do `if` escreve no mesmo arquivo; aqui se monta
-            // o caminho de exito, que e o unico em que os tres `echo` correm.
             if passo.starts_with("else ") {
+                no_ramo_de_falha = true;
+            }
+            if no_ramo_de_falha {
+                if fecha_o_ramo {
+                    no_ramo_de_falha = false;
+                }
                 continue;
             }
 
@@ -563,14 +584,27 @@ mod testes {
         use crate::nome::Nome;
         use crate::receita::{Disco, Pedido, Receita};
 
-        for operacao in [Operacao::Backup, Operacao::Restauracao] {
+        // As **tres**, e nao duas: a `Verificacao` entrou na E11 e escreve
+        // `ARCA_VERIFY=`, que este modulo lê pelo **sufixo** — `=OK` ou
+        // `=FALHOU` — e nao pelo marcador inteiro. O comentario de [`ler`] ja
+        // dizia que "um terceiro amanha continuaria a ser lido"; este laco e o
+        // que cobra que a promessa valha.
+        for operacao in [
+            Operacao::Backup,
+            Operacao::Restauracao,
+            Operacao::Verificacao,
+        ] {
             let nome = Nome::novo("2026-08-22_Apps").unwrap();
             let esperado = selo(DO_JOB);
 
             let receita = Receita::montar(&Pedido {
                 operacao,
                 nome: nome.clone(),
-                disco: Disco::novo("nvme0n1").unwrap(),
+                // So as duas primeiras nomeiam disco; o `ocs-chkimg` opera
+                // sobre a imagem, e `Receita::montar` recusa a incoerencia.
+                disco: operacao
+                    .nomeia_disco()
+                    .then(|| Disco::novo("nvme0n1").unwrap()),
                 selo: esperado.clone(),
             })
             .unwrap();

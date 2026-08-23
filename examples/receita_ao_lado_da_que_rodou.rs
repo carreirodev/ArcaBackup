@@ -31,7 +31,7 @@ fn gerar(operacao: Operacao, nome: &str) -> Receita {
     Receita::montar(&Pedido {
         operacao,
         nome: Nome::novo(nome).expect("nome valido"),
-        disco: Disco::novo("nvme0n1").expect("disco valido"),
+        disco: Some(Disco::novo("nvme0n1").expect("disco valido")),
         selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
     })
     .expect("a receita passa por C-2")

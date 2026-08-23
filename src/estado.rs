@@ -214,7 +214,29 @@ pub struct Estado {
     pub nome: Nome,
 
     /// O disco que a receita nomeia, com o nome que o Linux lhe da.
-    pub disco: Disco,
+    ///
+    /// # `None` na verificacao, e como isso cabe no arquivo
+    ///
+    /// A E11 trouxe uma operacao que **nao nomeia disco nenhum**: o
+    /// `ocs-chkimg` opera sobre a imagem. O campo continua obrigatorio no JSON
+    /// — o leitor recusa chave faltando, e afrouxar isso para um campo so
+    /// tiraria a propriedade que torna o leitor confiavel —, e o valor
+    /// ausente e a **string vazia**.
+    ///
+    /// A escolha nao e arbitraria: `Disco::novo("")` ja recusava, com
+    /// [`crate::receita::RecusaDaReceita::DiscoVazio`], desde a E3. O vazio
+    /// nunca foi um nome de disco possivel, entao usa-lo para dizer "nenhum"
+    /// **nao pode colidir** com nome nenhum que o Linux de. Um sentinela como
+    /// `nenhum` colidiria: `[a-z][a-z0-9]*` o aceitaria.
+    ///
+    /// E a premissa do [ADR-0006](../docs/adr/0006-o-selo-e-o-estado-sem-dependencia-nova.md)
+    /// continua de pe — a string vazia nao alcanca `"`, `\`, controle nem
+    /// nao-ASCII, e por isso escrever o JSON a mao continua defensavel.
+    ///
+    /// O leitor cobra a **coerencia** com o comando: `verificacao` exige vazio,
+    /// e as outras duas exigem nome. Aceitar as quatro combinacoes deixaria
+    /// passar um `estado.json` que arma `restauracao` sem dizer em que disco.
+    pub disco: Option<Disco>,
 
     pub armado_em: MomentoDoArmar,
 
@@ -243,7 +265,8 @@ impl Estado {
             self.selo.como_texto(),
             self.comando.nome(),
             self.nome.como_texto(),
-            self.disco.como_texto(),
+            // O vazio e o "nenhum disco" da verificacao — ver o campo.
+            self.disco.as_ref().map_or("", Disco::como_texto),
             self.armado_em.como_texto(),
             self.situacao.nome(),
         ];
@@ -291,15 +314,36 @@ impl Estado {
         let armado_em = tomar(4)?;
         let situacao = tomar(5)?;
 
+        // Cada campo volta pelo **mesmo** validador que o julgou na ida. Sem
+        // isso, um `estado.json` mexido a mao entregaria um `Selo` que
+        // `Selo::novo` teria recusado, e o resto do sistema confia em ter um
+        // `Selo` em maos.
+        let comando = operacao_de_texto(&comando)?;
+
+        // A coerencia entre o comando e o disco, nos **dois** sentidos. Um
+        // `estado.json` que dissesse `restauracao` com disco vazio armaria uma
+        // operacao destrutiva sem dizer sobre o que; um que dissesse
+        // `verificacao` com disco nomeado carregaria um valor que nenhuma
+        // receita usa, e que ninguem conferiria.
+        let disco = match (comando.nomeia_disco(), disco.is_empty()) {
+            (true, false) => Some(
+                Disco::novo(&disco).map_err(|_| RecusaDoEstado::DiscoInvalido { tem: disco })?,
+            ),
+            (false, true) => None,
+            (nomeia, _) => {
+                return Err(RecusaDoEstado::DiscoIncoerente {
+                    comando: comando.nome(),
+                    tem: disco,
+                    nomeia_disco: nomeia,
+                });
+            }
+        };
+
         Ok(Estado {
-            // Cada campo volta pelo **mesmo** validador que o julgou na ida.
-            // Sem isso, um `estado.json` mexido a mao entregaria um `Selo` que
-            // `Selo::novo` teria recusado, e o resto do sistema confia em ter
-            // um `Selo` em maos.
             selo: Selo::novo(&selo).map_err(|_| RecusaDoEstado::SeloInvalido { tem: selo })?,
-            comando: operacao_de_texto(&comando)?,
+            comando,
             nome: Nome::novo(&nome).map_err(RecusaDoEstado::NomeInvalido)?,
-            disco: Disco::novo(&disco).map_err(|_| RecusaDoEstado::DiscoInvalido { tem: disco })?,
+            disco,
             armado_em: MomentoDoArmar::de_texto(&armado_em)?,
             situacao: situacao_de_texto(&situacao)?,
         })
@@ -482,7 +526,11 @@ fn ler_objeto(texto: &str) -> Result<Vec<(String, String)>, RecusaDoEstado> {
 }
 
 fn operacao_de_texto(bruto: &str) -> Result<Operacao, RecusaDoEstado> {
-    for operacao in [Operacao::Backup, Operacao::Restauracao] {
+    for operacao in [
+        Operacao::Backup,
+        Operacao::Restauracao,
+        Operacao::Verificacao,
+    ] {
         if operacao.nome() == bruto {
             return Ok(operacao);
         }
@@ -531,6 +579,15 @@ pub enum RecusaDoEstado {
     NomeInvalido(crate::nome::Recusa),
     DiscoInvalido {
         tem: String,
+    },
+
+    /// O comando e o disco nao combinam: uma `verificacao` com disco nomeado,
+    /// ou um `backup`/`restauracao` sem. Ver o campo
+    /// [`Estado::disco`].
+    DiscoIncoerente {
+        comando: &'static str,
+        tem: String,
+        nomeia_disco: bool,
     },
     MomentoInvalido {
         tem: String,
@@ -592,7 +649,19 @@ impl fmt::Display for RecusaDoEstado {
             ),
             RecusaDoEstado::ComandoDesconhecido { tem } => write!(
                 f,
-                "`{tem}` nao e um comando do ARCA: valem `backup` e `restauracao`"
+                "`{tem}` nao e um comando do ARCA: valem `backup`, `restauracao` e `verificacao`"
+            ),
+            RecusaDoEstado::DiscoIncoerente {
+                comando,
+                nomeia_disco: true,
+                ..
+            } => write!(
+                f,
+                "o estado diz `{comando}`, que nomeia um disco na receita, e o campo `disco` esta vazio. Nao se arma uma operacao sobre um disco que o arquivo nao diz qual e"
+            ),
+            RecusaDoEstado::DiscoIncoerente { comando, tem, .. } => write!(
+                f,
+                "o estado diz `{comando}`, que nao nomeia disco nenhum na receita, e o campo `disco` tras `{tem}`. Um disco guardado por uma operacao que nao o usa e um valor que ninguem confere"
             ),
             RecusaDoEstado::NomeInvalido(recusa) => {
                 write!(f, "o nome gravado nao passa por B-2: {recusa}")
@@ -630,9 +699,138 @@ mod testes {
             selo: Selo::novo("a3f1c9e07b2d4856").unwrap(),
             comando: Operacao::Backup,
             nome: Nome::novo("2026-08-22_Apps").unwrap(),
-            disco: Disco::novo("nvme0n1").unwrap(),
+            disco: Some(Disco::novo("nvme0n1").unwrap()),
             armado_em: MomentoDoArmar::agora(&RelogioParado::em("2026-08-22T18:14:03")),
             situacao: Situacao::Armado,
+        }
+    }
+
+    /// O estado de uma verificacao armada (E11): sem disco, porque o
+    /// `ocs-chkimg` opera sobre a imagem.
+    fn estado_de_verificacao() -> Estado {
+        Estado {
+            comando: Operacao::Verificacao,
+            disco: None,
+            ..estado()
+        }
+    }
+
+    // ────────── a terceira operacao, e a coerencia com o disco ──────────
+
+    #[test]
+    fn a_verificacao_da_a_volta_com_o_disco_vazio() {
+        let original = estado_de_verificacao();
+        let volta = Estado::de_json(&original.como_json().unwrap()).unwrap();
+
+        assert_eq!(volta, original);
+        assert_eq!(volta.comando, Operacao::Verificacao);
+        assert_eq!(volta.disco, None);
+    }
+
+    #[test]
+    fn o_disco_vazio_e_a_string_vazia_no_arquivo() {
+        // A escolha nao e arbitraria: `Disco::novo("")` ja recusava desde a
+        // E3, entao o vazio nunca foi um nome de disco possivel e nao pode
+        // colidir com nenhum. Um sentinela como `nenhum` colidiria —
+        // `[a-z][a-z0-9]*` o aceitaria.
+        let json = estado_de_verificacao().como_json().unwrap();
+
+        assert!(json.contains("\"comando\": \"verificacao\""), "{json}");
+        assert!(json.contains("\"disco\": \"\""), "{json}");
+        assert!(
+            Disco::novo("").is_err(),
+            "se `Disco::novo` passar a aceitar vazio, o sentinela colide"
+        );
+    }
+
+    #[test]
+    fn um_estado_de_verificacao_com_disco_e_recusado() {
+        // **A mutacao que a falsificacao pegou faltando.** Um `estado.json`
+        // que dissesse `verificacao` com disco nomeado carregaria um valor que
+        // nenhuma receita usa, e que ninguem conferiria.
+        let json = estado_de_verificacao()
+            .como_json()
+            .unwrap()
+            .replace("\"disco\": \"\"", "\"disco\": \"nvme0n1\"");
+
+        match Estado::de_json(&json).unwrap_err() {
+            RecusaDoEstado::DiscoIncoerente {
+                comando,
+                tem,
+                nomeia_disco,
+            } => {
+                assert_eq!(comando, "verificacao");
+                assert_eq!(tem, "nvme0n1");
+                assert!(!nomeia_disco);
+            }
+            outro => panic!("esperava disco incoerente, veio {outro}"),
+        }
+    }
+
+    #[test]
+    fn um_backup_ou_restauracao_sem_disco_e_recusado() {
+        // O outro sentido, e o que mais dói: um `estado.json` que dissesse
+        // `restauracao` com disco vazio armaria uma operacao destrutiva sem
+        // dizer sobre que disco. "Nao ha disco" nunca pode virar "tanto faz".
+        for operacao in [Operacao::Backup, Operacao::Restauracao] {
+            let json = Estado {
+                comando: operacao,
+                ..estado()
+            }
+            .como_json()
+            .unwrap()
+            .replace("\"disco\": \"nvme0n1\"", "\"disco\": \"\"");
+
+            match Estado::de_json(&json).unwrap_err() {
+                RecusaDoEstado::DiscoIncoerente {
+                    comando,
+                    nomeia_disco,
+                    ..
+                } => {
+                    assert_eq!(comando, operacao.nome());
+                    assert!(nomeia_disco, "{} nomeia disco", operacao.nome());
+                }
+                outro => panic!("{}: esperava incoerencia, veio {outro}", operacao.nome()),
+            }
+        }
+    }
+
+    #[test]
+    fn as_tres_operacoes_dao_a_volta_pelo_nome() {
+        // O leitor conhece as tres, e nao duas. Um `estado.json` escrito por
+        // esta versao e lido por ela tem de voltar igual — inclusive o
+        // `verificacao`, que a E11 acrescentou.
+        for operacao in [
+            Operacao::Backup,
+            Operacao::Restauracao,
+            Operacao::Verificacao,
+        ] {
+            let original = Estado {
+                comando: operacao,
+                disco: operacao
+                    .nomeia_disco()
+                    .then(|| Disco::novo("nvme0n1").unwrap()),
+                ..estado()
+            };
+            let volta = Estado::de_json(&original.como_json().unwrap())
+                .unwrap_or_else(|erro| panic!("{}: {erro}", operacao.nome()));
+
+            assert_eq!(volta, original, "{}", operacao.nome());
+        }
+    }
+
+    #[test]
+    fn a_recusa_de_comando_desconhecido_lista_as_tres() {
+        // A mensagem tem de acompanhar o enum: um usuario que abra o arquivo e
+        // veja `valem backup e restauracao` concluiria que `verificacao` e
+        // corrupcao.
+        let recusa = RecusaDoEstado::ComandoDesconhecido {
+            tem: "arrumacao".to_string(),
+        }
+        .to_string();
+
+        for nome in ["backup", "restauracao", "verificacao"] {
+            assert!(recusa.contains(nome), "a mensagem nao cita `{nome}`: {recusa}");
         }
     }
 
@@ -722,7 +920,7 @@ mod testes {
         assert_eq!(volta.selo.como_texto(), "a3f1c9e07b2d4856");
         assert_eq!(volta.comando, Operacao::Backup);
         assert_eq!(volta.nome.como_texto(), "2026-08-22_Apps");
-        assert_eq!(volta.disco.como_texto(), "nvme0n1");
+        assert_eq!(volta.disco.as_ref().map(Disco::como_texto), Some("nvme0n1"));
     }
 
     #[test]
@@ -1048,7 +1246,7 @@ mod testes {
         let receita = Receita::montar(&Pedido {
             operacao: Operacao::Backup,
             nome: nome.clone(),
-            disco: Disco::novo("nvme0n1").unwrap(),
+            disco: Some(Disco::novo("nvme0n1").unwrap()),
             selo: Selo::de_ensaio(),
         })
         .unwrap();

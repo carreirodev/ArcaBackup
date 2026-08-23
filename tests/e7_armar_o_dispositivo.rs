@@ -87,7 +87,7 @@ fn receita() -> Receita {
     Receita::montar(&Pedido {
         operacao: Operacao::Backup,
         nome: Nome::novo("2026-08-22_Apps").expect("nome valido"),
-        disco: Disco::novo("nvme0n1").expect("disco valido"),
+        disco: Some(Disco::novo("nvme0n1").expect("disco valido")),
         selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
     })
     .expect("a receita e valida por C-2")
@@ -387,4 +387,37 @@ fn o_grub_cfg_do_dispositivo_continua_inerte_e_igual_a_captura() {
          o armou, `arca desarmar` o devolve; se foi outra coisa, a copia precisa ser refeita antes \
          de continuar valendo como evidencia"
     );
+}
+
+/// Os três comandos que armam avisam o que vai aparecer depois do reinício.
+///
+/// Nasceu de uma operação real desligada no meio, em 23/08/2026: o menu do
+/// Clonezilla apareceu, quem estava na frente da tela viu que não era o
+/// Windows e desligou. **Não havia defeito** — o `grub.cfg` tem
+/// `set timeout="30"`, e o `set default` escolhe qual entrada boota sem tirar
+/// a espera. O que faltava era a tela dizer isso.
+///
+/// O teste mora aqui, e não em cada comando, porque a invariante é sobre os
+/// **três**: quem acrescentar um quarto comando que arma vai encontrá-lo.
+#[test]
+fn todo_comando_que_arma_avisa_o_que_vem_depois_do_reinicio() {
+    let aviso = arca::armar::montar_o_que_vem_pela_frente();
+
+    // O oráculo é o código-fonte de cada comando: o que se cobra é que os três
+    // chamem a mesma função, e não que tenham textos parecidos. Duas cópias
+    // divergiriam na primeira mudança, e a que divergisse passaria a prometer
+    // uma espera que não é a que existe.
+    for (comando, fonte) in [
+        ("backup", include_str!("../src/comandos/backup.rs")),
+        ("restore", include_str!("../src/comandos/restore.rs")),
+        ("verify", include_str!("../src/comandos/verify.rs")),
+    ] {
+        assert!(
+            fonte.contains("montar_o_que_vem_pela_frente()"),
+            "`arca {comando}` arma e nao avisa o que vai aparecer na tela"
+        );
+    }
+
+    assert!(aviso.contains("30 SEGUNDOS"));
+    assert!(aviso.contains("NAO DESLIGUE"));
 }

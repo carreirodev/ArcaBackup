@@ -1,0 +1,142 @@
+# A verificacao de V-1 medida em hardware, e a forma do `certutil`
+# Medido em 2026-08-23 na maquina desta mesa, com o dispositivo ARCA
+# conectado. E o original contra o qual a etapa E11 foi escrita.
+#
+# ATENCAO A LETRA: nesta sessao o `ARCAVAULT` estava em **D:**, e nao no `E:`
+# que todas as telas do PRD mostram. A letra muda de uma conexao para outra e o
+# rotulo nao (B-1, S-3) — este arquivo e a primeira evidencia disso no
+# repositorio.
+
+
+## 1. Quanto V-1 custa, medido na `2026-08-22_Apps` inteira
+
+O que o `arca verify` faz: para cada uma das 39 linhas do `MD5SUMS`, somar o
+arquivo e comparar. Sem reiniciar.
+
+    arquivos conferidos . 39
+    bytes lidos ......... 42.604.877.207  (39,7 GB)
+    batem ............... 39
+    nao batem ........... 0
+    ausentes ............ 0
+    TEMPO ............... 202,6 s   (200,5 MB/s)
+
+Um arquivo sozinho, para separar a taxa do custo de processo:
+
+    nvme0n1p4.ntfs-ptcl-img.zst.aa . 812.093.821 bytes em 3,83 s = 202,2 MB/s
+
+As duas taxas sao a mesma dentro do ruido, o que diz que os 39 processos
+`certutil` nao custam nada perto da leitura: quem manda e o USB.
+
+**202,6 s sao 3 min 23 s, e V-1 promete "em segundos".** O requisito esta
+errado, e a E11 o corrige.
+
+
+## 2. O outro lado da comparacao: quanto V-2 custou
+
+Nao ha cronometro do `ocs-chkimg`, e ha os mtimes dos arquivos que a operacao
+de 22/08 deixou na pasta da imagem:
+
+    18:00:49   2129 MD5SUMS          <- o `savedisk` termina e escreve os tres
+    18:00:49   9521 clonezilla-img
+    18:00:49    236 Info-img-id.txt
+    18:06:02   3832 arca-check.log   <- o `ocs-chkimg` termina
+
+    ocs-chkimg levou: 312 s (05m 12s)
+
+Os mtimes sao lidos do Windows e estao 3 h atras do relogio do live (P-7); a
+**diferenca** entre dois deles nao sofre com isso, porque os dois vieram do
+mesmo relogio. E o que se compara aqui e uma diferenca.
+
+    | verificacao        | le                        | tempo   | reinicios |
+    |--------------------|---------------------------|---------|-----------|
+    | V-1  `arca verify` | os 39 MD5 do `MD5SUMS`    | 3m 23s  | 0         |
+    | V-2  `--completo`  | `ocs-chkimg` descomprime  | 5m 12s  | 1         |
+
+
+## 3. A forma do `MD5SUMS`, medida em bytes
+
+    2129 bytes, 39 linhas
+    LF (0x0A): 39     CR (0x0D): 0      ultimo byte: 0x0a
+    linha: <32 hex minusculos><dois espacos><nome do arquivo>
+    zero linhas em modo binario do `md5sum` (o que traria ` *` em vez de `  `)
+
+Sem cabecalho, sem comentario, sem linha em branco. Escrito pelo Linux, e por
+isso LF puro — ao contrario do `bcdedit`, que escreve CRLF.
+
+As tres primeiras linhas, como estao no arquivo:
+
+    bf6850d736dc6b480994de0cee9c0f63  blkdev.json
+    cee6e84e46cf5e1971efb6aac331eb18  blkdev.list
+    cde7881f435ae7f94fcfbc3e5efb40be  blkid.list
+
+O arquivo inteiro esta preservado ao lado, em `md5sums-2026-08-22_Apps.txt`.
+
+
+## 4. Os quatro arquivos que a pasta tem e o `MD5SUMS` nao lista
+
+A pasta tem 43 arquivos e o `MD5SUMS` tem 39 linhas. Nenhuma linha do
+`MD5SUMS` aponta para arquivo ausente. Os quatro que sobram sao:
+
+    MD5SUMS            ele mesmo
+    clonezilla-img     mtime 18:00:49, o mesmo segundo do MD5SUMS
+    Info-img-id.txt    mtime 18:00:49, idem
+    arca-check.log     mtime 18:06:02, escrito 5 min DEPOIS, pelo ocs-chkimg
+
+**Nao e falta: e a hora em que cada um nasceu.** O `MD5SUMS` e escrito no fim
+do `savedisk`, junto do `clonezilla-img` e do `Info-img-id.txt` — que naquele
+instante ainda estavam abertos —, e o `arca-check.log` de B-9 so existe depois.
+
+Consequencia para a E11: **arquivo na pasta e fora do `MD5SUMS` e normal, e
+nao pode ser relatado como falha.** O inverso — listado no `MD5SUMS` e ausente
+da pasta — e falha de verdade.
+
+
+## 5. A forma da saida do `certutil -hashfile`
+
+Sucesso, tres linhas:
+
+    [0] <MD5 hash de D:\2026-08-22_Apps\disk:>
+    [1] <abfcd722bf8588a8377df1f5df0726b3>
+    [2] <CertUtil: -hashfile : comando concluido com exito.>
+    exit=0
+
+SHA256, mesma forma, 64 digitos:
+
+    [0] <SHA256 hash de D:\2026-08-22_Apps\disk:>
+    [1] <1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10>
+    [2] <CertUtil: -hashfile : comando concluido com exito.>
+
+Arquivo inexistente, duas linhas e nenhuma delas e hash:
+
+    <CertUtil: -hashfile comando FALHOU: 0x80070002 (WIN32: 2 ERROR_FILE_NOT_FOUND)>
+    <CertUtil: O sistema nao pode encontrar o arquivo especificado.>
+    exit=-2147024894
+
+**As linhas 0 e 2 vem traduzidas**, como o `chkdsk` de B-6 e o `powercfg` de
+B-5. O hash sai em minusculas, sozinho na sua linha, sem espaco nenhum — o
+mesmo alfabeto do `MD5SUMS`.
+
+Dai as duas regras do leitor: **julgar pelo codigo de saida**, nunca pelo
+texto; e achar o hash pela **forma** — a unica linha que e exatamente N
+digitos hexadecimais —, nunca pela posicao. Posicao e idioma sao as duas
+coisas que este projeto ja aprendeu a nao parsear.
+
+
+## 6. As tres ferramentas do System32, e uma medicao que estava errada
+
+    curl.exe      curl 8.21.0 (Windows) libcurl/8.21.0    Release-Date: 2026-06-24
+    tar.exe       bsdtar 3.8.8 - libarchive 3.8.8
+    certutil.exe  10.0.26100.8875
+
+O plano de etapas registrava o `tar.exe` como **`10.0.26100 (bsdtar)`**, e
+esse numero e o `ProductVersion` — a versao do Windows que o empacota. Medido
+lado a lado:
+
+    tar.exe        FileVersion=3.8.8                ProductVersion=10.0.26100.9267
+    curl.exe       FileVersion=8.21.0               ProductVersion=8.21.0
+    certutil.exe   FileVersion=10.0.26100.8875      ProductVersion=10.0.26100.8875
+
+O `curl` e o `certutil` coincidem nos dois campos e por isso nao denunciaram
+nada; o `tar` nao coincide, e foi ele que mostrou qual campo tinha sido lido.
+E um numero **medido na coisa errada**, que e o nome que a E6 deu ao
+`498,7 GB` do §5.2.
