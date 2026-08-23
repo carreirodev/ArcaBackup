@@ -1091,16 +1091,39 @@ Conferido pelos dois lados: o `grub.cfg` e o `estado.json` saíram com o mesmo
 SHA256 e o mesmo conteúdo de antes. É o análogo do que a E7 fez com o
 `bootsequence` — exercitar tudo que não custa um reinício.
 
-**O que falta é o reinício**, e ele apaga o disco desta máquina. Falta:
+**O que falta é o reinício**, e ele apaga o disco desta máquina.
 
-1. Escolher **qual imagem restaurar** — e isso decide o que se perde.
-2. `arca restore`, a confirmação digitada, e a máquina reiniciando.
-3. Do outro lado: as cinco linhas do armar (§6.1), que só existem numa execução
+**A imagem é a `2026-08-22_Apps`**, decidida em 23/08/2026. Três razões, e a
+terceira é a que importa para o projeto:
+
+1. É a mais recente, e o que ela perde é quase nada: um atalho no Desktop
+   (`Powershell Admin.lnk`, de 22/08 às 21:17) e três commits — `d45bfa7`,
+   `69034b7` e o desta etapa —, **os três no `origin`**. Fora do
+   `Repository` e do Desktop, nada no perfil mudou depois de 22/08 21:00; e
+   dentro dele, dos 718 MB que mudaram, 717,8 MB são `target\` e `.git\`.
+2. Já foi exercitada: o `--dry-run` e o caminho real até uma linha antes do
+   ponto sem volta rodaram com ela hoje.
+3. **É a única imagem que o ARCA gravou.** O `Info-saved-by-cmd.txt` dela traz
+   o `ocs-sr` de B-8 na ordem de B-8, escrito pelo próprio Clonezilla.
+   Restaurá-la fecha o ciclo com uma imagem que o próprio ARCA produziu — e é
+   a diferença entre provar o mecanismo e provar o mecanismo sobre si mesmo.
+
+E o binário do `ARCABOOT` foi atualizado para o desta etapa. Não é zelo: o
+`arca.exe` de `target\release\` mora no `C:`, e a restauração o devolve à
+versão de 22/08 — que colheria a restauração com a tela do backup, chamando o
+veredito da imagem de origem de "Verificacao". É §4.1 sendo usada pela primeira
+vez para o que ela existe.
+
+Falta então:
+
+1. `arca restore 2026-08-22_Apps`, a confirmação digitada, e a máquina
+   reiniciando.
+2. Do outro lado: as cinco linhas do armar (§6.1), que só existem numa execução
    real, e o `arca-restore.log` que a receita redireciona — **nenhum dos dois
    tem original**, como o `arca-fim.txt` não tinha antes da E7.
-4. `arca resultado` colhendo uma restauração: a tela do §6.3, também sem
+3. `arca resultado` colhendo uma restauração: a tela do §6.3, também sem
    original.
-5. E as duas leituras que respondem §3.4 pelo lado do ARCA: o `bcdedit`
+4. E as duas leituras que respondem §3.4 pelo lado do ARCA: o `bcdedit`
    **antes** de armar e **depois** de religar, para comparar com o
    `efi-nvram.dat` que a restauração não escreve — ela não é um `savedisk`.
 

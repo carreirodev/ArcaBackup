@@ -390,6 +390,18 @@ boot — e a tabela acima não carrega isso.
 | `nvram-live-restauracao-2026-08-21.txt` | `E:\ARCA-LOGS\2026-08-21_WindowsCompleto\nvram-antes.txt`, 2299 bytes | `6697a7cf…` | A NVRAM durante a **restauração** de 21/08, uma hora e meia depois: `0001,0000`, e a entrada como `ARCA` com `BCDOBJECT` |
 | `nvram-live-restauracao-2026-08-20-R2.txt` | `E:\ARCA-LOGS\R2\nvram-depois.txt`, 2305 bytes | `53fefaea…` | Um boot pelo dispositivo em que a entrada **não** foi reescrita: `Clonezilla`, caminho em minúsculas, `BCDOBJECT` presente. É o que descarta a primeira metade de P-19 |
 
+E uma quinta, tirada **antes** do marco em vez de depois:
+
+| Arquivo | O que é | SHA256 | O que prova |
+|---|---|---|---|
+| `bcdedit-enum-firmware-2026-08-23-antes-da-restauracao.txt` | `bcdedit /enum firmware`, 23/08/2026, 1713 bytes | `7bdae900…` | O firmware **antes** da restauração da E9: três entradas, `displayorder` com `{f4057bd0}` em primeiro, e **nenhum `bootsequence`** |
+
+Ela existe porque o §3.4 diz que `-iefi` não toca na NVRAM, e a evidência disso
+é um **par** — antes e depois do mesmo evento. As três restaurações que
+sustentam aquela seção foram feitas à mão, e o par delas foi escrito de dentro
+do live; esta é a primeira metade do par pelo lado do **Windows**, de uma
+restauração que o ARCA vai disparar. A outra metade se tira depois de religar.
+
 **As três de NVRAM só significam alguma coisa juntas**, e é por isso que estão
 aqui as três. Uma delas sozinha diz uma ordem de boot; as três em sequência
 dizem que a entrada foi reescrita entre 20/08 e 21/08 12:51, voltou à forma do
