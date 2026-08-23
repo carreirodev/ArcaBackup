@@ -18,7 +18,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E7 | Armar e disparar | III | ✅ | 2026-08-22 21:06 · marco cumprido |
 | E8 | Colher o desfecho | III | ✅ | 2026-08-22 21:14 · marco cumprido |
 | E9 | Restauração | IV | ✅ | 2026-08-23 11:50 · marco cumprido |
-| E10 | `arca prepare` | IV | ⬜ | — |
+| E10 | `arca prepare` | IV | ⬜ | — · **C-13 entregue em 2026-08-23**, ver P-20 |
 | E11 | `arca verify` | IV | ⬜ | — |
 
 Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi escrito. As três etapas com marco em hardware (E7, E8 e E9) exigem a execução real para fechar.
@@ -1236,9 +1236,24 @@ Exige a FAT32 vazia de ≥ 1 GB já criada — o ARCA não particiona (§7.1). B
 
 Fica tarde de propósito: o dispositivo atual já existe, preparado à mão. Esta etapa serve ao **segundo** dispositivo.
 
-**Cobre**: §7.1 — e **P-20**, decidida abaixo.
+**Cobre**: §7.1 — e **P-20, que fechou antes do resto da etapa** e virou C-13.
 
 #### O `arca resultado` devolve o Windows à frente da ordem de boot (P-20)
+
+**Entregue em 23/08/2026, e é a única parte da E10 que existe em código.** O
+`arca prepare` continua ⬜; isto saiu na frente porque o incômodo era diário e
+não dependia dele. Ver
+[ADR-0013](../docs/adr/0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md), que
+supersede a decisão do ADR-0009.
+
+O que ficou, em uma frase: **`/set {fwbootmgr} displayorder {bootmgr}
+/addfirst`, incondicional, nos três caminhos do `arca resultado`, com releitura
+de C-3 sobre a pós-condição e linha própria na tela.** Nada é removido — as
+entradas do dispositivo ficam na ordem, atrás do Windows.
+
+O texto abaixo é o pedido como ele foi registrado em 22/08, e o que aconteceu
+com cada ponto dele está no bloco **"como cada coisa foi decidida"**, no fim
+desta seção.
 
 Pedido em 22/08/2026, depois do marco da E8, e a razão é operacional: com o
 dispositivo em primeiro no `displayorder`, **ligar a máquina com o SSD
@@ -1317,6 +1332,71 @@ duas aconteceu, e foi por isso que `arca resultado` **não** desarma quando não
 há job. A saída tem de dizer as duas coisas em linhas separadas, ou isto é um
 comando próprio.
 
+#### Como cada coisa foi decidida, em 23/08/2026
+
+**O requisito veio mais estreito do que o pedido de 22/08, e o recorte é o que
+tornou a solução pequena.** *"Depois do boot inicial após um backup ou
+restauração eu não me incomodo de ter que retirar o SSD. Mas depois disso, eu
+me incomodo."* Então **C-9 fica inteiro** — remover o SSD antes de religar
+continua sendo o que a tela pede logo depois de armar, e continua sendo a
+defesa da janela em que o `grub.cfg` está armado. O que se conserta é o estado
+**permanente**, dali em diante.
+
+**Medido à mão antes de virar código**, como a E7 fez com o `bootsequence`, e a
+NVRAM conferida byte a byte contra o estado inicial no fim:
+
+| Comando | Exit | Efeito | Releitura |
+|---|---|---|---|
+| `displayorder {ARCA} /addfirst` | 0 | ARCA ao topo | confirma |
+| `displayorder {bootmgr} /addfirst` | 0 | Windows ao topo, **ARCA fica em segundo** | confirma |
+| idem, já consertado | 0 | nada muda | confirma |
+| `displayorder {ARCA} /remove` | 0 | sai da ordem, **o objeto sobrevive** | confirma |
+
+Os quatro respondem *"A operação foi concluída com êxito"* — o texto em que
+este projeto não confia desde a E2. Quem responde é a releitura, e ela pergunta
+a pós-condição que importa: *o primeiro da ordem é o `{bootmgr}`?*
+
+**`/addfirst`, e não `/remove`, e o motivo não é o óbvio.** O `/remove` faria a
+ordem voltar literalmente ao que era antes de o ARCA existir, que é o que o
+pedido descreve. Ficou de fora pelo modo de falha: ele precisa acertar **quais**
+entradas tirar, e *"quais levam ao dispositivo"* é a pergunta que a revisão do
+marco da E8 já pegou respondida errado — a linha do `arca status` procurava
+pela entrada **chamada** `ARCA`, enquanto quem levava ao dispositivo era a
+`{687478f2}` `UEFI OS`, que o firmware criou e que nome nenhum encontra. Um
+alvo fixo não faz essa pergunta, e vale para todas as entradas de uma vez,
+inclusive as que o firmware criar depois.
+
+**As três objeções do bloco acima, uma a uma.** A do ADR-0009 — *"a entrada foi
+posta pelo Windows, e desfazer isso é mexer numa decisão de outro dono"* —
+deixou de morder, porque nada é desfeito: a entrada continua na ordem. A da
+NVRAM de boot continua de pé e virou a releitura obrigatória de C-3. E a
+terceira, *"o conserto não é permanente"*, era argumento a favor desde sempre:
+é limpeza recorrente, e a colheita é onde ela cabe.
+
+**A pergunta de desenho foi respondida pelas duas metades.** Entra no
+`arca resultado`, em **linha própria** — `Ordem de boot`, com o mesmo rótulo do
+`arca status` —, e o parágrafo de conselho só aparece quando houve conserto. E
+acontece nos **três** caminhos do comando, inclusive os dois que não desarmam:
+a ordem permanente é estado da NVRAM, e não do job. Desarmar desfaz uma
+intenção do ARCA, e sem job não houve intenção; a ordem está suja ou não está.
+
+**O que a execução real pegou, e os testes não pegavam.** Dois defeitos, numa
+versão com a suíte verde:
+
+- **A linha saía com o GUID onde promete um nome.** O código lia
+  `/enum {fwbootmgr}`, como o `desarme` faz, e aquele alvo devolve o bloco do
+  gerenciador **sem as entradas** — a ordem vinha certa e a descrição nunca era
+  achada. A raiz estava no duplo, que respondia a mesma coisa aos dois alvos; o
+  `bcdedit` não os junta.
+- **O conselho não saía no caminho "já colhido".** A linha estava nos três
+  caminhos e o parágrafo em dois, e o teste que devia pegar cobrava só a linha
+  — o caso fácil do que ele existia para cobrir. É a lição da revisão da E4
+  outra vez.
+
+**O binário do `ARCABOOT` foi atualizado** (§4.1): é ele que se roda depois de
+uma operação, e um conserto que só existisse no `target\release\` não chegaria
+a quem precisa dele.
+
 ### E11 · `arca verify`
 
 `MD5SUMS` conferido no Windows, em segundos. `--completo` arma boot único que só roda `ocs-chkimg` e desliga — mesmo mecanismo da E7, receita menor.
@@ -1341,7 +1421,7 @@ Nenhum requisito do PRD fica sem etapa.
 | E7 | C-4, C-5, C-9, S-2 — e a segunda metade de C-6, que até aqui só era relatada por leitura |
 | E8 | S-4, S-5, D8 — e C-12, que ganhou o comando que o atende |
 | E9 | R-1, R-2, R-3, **R-7**, **R-8**, L-2 — e P-17. R-7 não tinha etapa nenhuma nesta tabela até aqui |
-| E10 | §7.1 |
+| E10 | §7.1 — e **C-13**, que fechou P-20 e saiu na frente do `arca prepare` |
 | E11 | D6 |
 
 ## Riscos que atravessam o plano

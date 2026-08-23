@@ -7,8 +7,8 @@
 
 use crate::erro::{Erro, Resultado, erro_de_arquivo};
 use crate::portas::{
-    Arquivos, Console, DiscoFisico, Discos, Entrada, Entropia, Firmware, Medida, Privilegios, Relogio,
-    SaidaDeFerramenta, Sistema, TipoDeMidia, Volume,
+    Arquivos, Console, DiscoFisico, Discos, Entrada, Entropia, Firmware, Medida, Privilegios,
+    Relogio, SaidaDeFerramenta, Sistema, TipoDeMidia, Volume,
 };
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use std::cell::{Cell, RefCell};
@@ -219,6 +219,29 @@ impl FirmwareDeMentira {
         !self.executados.borrow().is_empty()
     }
 
+    /// O que se mandou o `bcdedit` executar, na ordem.
+    ///
+    /// Existe para cobrar que a escrita **aconteceu** — que e o que separa
+    /// "nao precisava" de "nao fez", e o que uma leitura do modelo depois nao
+    /// distingue: uma ordem ja certa fica igual nos dois casos.
+    pub fn executados(&self) -> Vec<Vec<String>> {
+        self.executados.borrow().clone()
+    }
+
+    /// A ordem permanente como o modelo a tem agora.
+    ///
+    /// So responde com [`FirmwareDeMentira::modelando_o_fwbootmgr`] ligado —
+    /// sem modelo nao ha estado a inspecionar, e devolver uma lista vazia
+    /// faria um teste passar por engano.
+    pub fn ordem_permanente(&self) -> Vec<String> {
+        self.fwbootmgr
+            .as_ref()
+            .expect("`ordem_permanente` exige `modelando_o_fwbootmgr`")
+            .borrow()
+            .ordem_permanente
+            .clone()
+    }
+
     /// Aplica ao modelo o que o `bcdedit` faria, e diz se a chamada teria
     /// saido com codigo zero.
     ///
@@ -237,8 +260,7 @@ impl FirmwareDeMentira {
         let modelo = self.fwbootmgr.as_ref()?;
         match argumentos {
             ["/set", "{fwbootmgr}", "bootsequence", entradas @ ..] => {
-                modelo.borrow_mut().bootsequence =
-                    entradas.iter().map(|e| e.to_string()).collect();
+                modelo.borrow_mut().bootsequence = entradas.iter().map(|e| e.to_string()).collect();
                 Some(true)
             }
             ["/deletevalue", "{fwbootmgr}", "bootsequence"] => {
@@ -249,6 +271,25 @@ impl FirmwareDeMentira {
                 // muda nada. E o caso normal, e e ele que um desarmar ingenuo
                 // transformaria em falha.
                 Some(havia)
+            }
+            // Medido a mao em 23/08/2026, e o help do `bcdedit` diz a mesma
+            // coisa: **move para o topo se ja estiver na lista, e insere se
+            // nao estiver.** Nada sai da ordem, e a chamada sai com codigo 0
+            // inclusive quando nao muda nada — que e o caso idempotente de
+            // C-13.
+            [
+                "/set",
+                "{fwbootmgr}",
+                "displayorder",
+                identificador,
+                "/addfirst",
+            ] => {
+                let mut modelo = modelo.borrow_mut();
+                modelo
+                    .ordem_permanente
+                    .retain(|id| !id.eq_ignore_ascii_case(identificador));
+                modelo.ordem_permanente.insert(0, identificador.to_string());
+                Some(true)
             }
             // Escrita em outro alvo — a descricao de C-4, o `device` de C-6.
             // O modelo so conhece o `{fwbootmgr}`.
@@ -263,10 +304,23 @@ impl Firmware for FirmwareDeMentira {
             return Err(clonar_a_recusa(recusa));
         }
 
-        if alvo == "{fwbootmgr}"
-            && let Some(modelo) = &self.fwbootmgr
-        {
-            return Ok(modelo.borrow().como_o_bcdedit_escreve());
+        // **Os dois alvos nao respondem a mesma coisa, e o duplo os tratava
+        // como se respondessem.** Medido em 23/08/2026, rodando o comando de
+        // verdade: `/enum {fwbootmgr}` devolve o bloco do gerenciador
+        // **sozinho**, e `/enum firmware` devolve o gerenciador **e** as
+        // entradas. Com os dois iguais aqui, `crate::ordem` passava nos testes
+        // lendo o alvo errado e saia com um GUID onde a tela promete um nome.
+        if let Some(modelo) = &self.fwbootmgr {
+            if alvo == "{fwbootmgr}" {
+                return Ok(modelo.borrow().como_o_bcdedit_escreve());
+            }
+            if alvo == "firmware" {
+                let mut saida = modelo.borrow().como_o_bcdedit_escreve();
+                if let Some(entradas) = self.respostas.get(alvo) {
+                    saida.push_str(entradas);
+                }
+                return Ok(saida);
+            }
         }
 
         if self.ja_escreveu() {

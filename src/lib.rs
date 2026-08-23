@@ -30,6 +30,7 @@ pub mod grub;
 pub mod imagens;
 pub mod menuentry;
 pub mod nome;
+pub mod ordem;
 pub mod portas;
 pub mod prevoo;
 pub mod receita;

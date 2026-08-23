@@ -103,6 +103,17 @@ de sequência, não desenho — e o aviso de C-9, "remova o SSD antes de religar
 
 ## A decisão: o ARCA avisa, e não conserta
 
+> **Esta decisão foi superseda em 23/08/2026 pelo
+> [ADR-0013](0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md).** As medições
+> deste ADR continuam todas de pé — é só o que se faz com elas que muda: ao
+> colher, o ARCA passa a pôr o `{bootmgr}` no topo da ordem (C-13). A revisão
+> aconteceu do jeito que o box abaixo pedia, com a forma do comando medida à
+> mão antes de virar código.
+>
+> O que **não** mudou: o `arca status` continua avisando e não consertando, e
+> C-9 continua sendo a defesa da janela entre o fim da receita e a colheita — o
+> conserto vem depois dela.
+
 Três saídas, e duas se descartam rápido.
 
 **Devolver a ordem** — o ARCA tirar a entrada do `displayorder` ao colher —

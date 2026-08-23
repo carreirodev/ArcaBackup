@@ -49,10 +49,11 @@ use crate::desfecho::{Encontrado, Julgamento};
 use crate::dispositivo::{self, Dispositivo};
 use crate::erro::{Erro, Resultado};
 use crate::estado::{self, Estado, Situacao};
-use crate::receita::Operacao;
 use crate::formato::{dia_e_mes, linha, tamanho};
 use crate::imagens::{self, Pasta, Veredito};
+use crate::ordem::{self, OrdemDevolvida};
 use crate::portas::Arquivos;
+use crate::receita::Operacao;
 use std::path::Path;
 
 use super::list;
@@ -100,8 +101,56 @@ pub struct Colheita<'a> {
 
     pub desarme: &'a Desarme,
     pub encerramento: &'a Encerramento,
+
+    /// O conserto de C-13, que e independente de tudo acima.
+    ///
+    /// Vem em linha propria na tela pelo motivo que a E8 registrou: misturar
+    /// "colhi" com "arrumei" tira de quem lê a informacao de qual das duas
+    /// aconteceu.
+    pub ordem: &'a OrdemDevolvida,
+
     pub pastas: &'a [Pasta],
     pub livre_bytes: u64,
+}
+
+/// A linha `Ordem de boot`, comum aos tres caminhos do `arca resultado`.
+///
+/// O rotulo e o mesmo que o `arca status` usa desde o ADR-0009, e de
+/// proposito: e a mesma coisa, e quem viu o aviso la tem de reconhecer o
+/// conserto aqui.
+fn linha_da_ordem(ordem: &OrdemDevolvida) -> String {
+    linha(
+        "Ordem de boot",
+        &match ordem {
+            OrdemDevolvida::JaEstavaNaFrente => "ok · o Windows ja era o primeiro".to_string(),
+            OrdemDevolvida::Devolvida { estava_na_frente } => {
+                format!("devolvida · o Windows voltou ao topo, na frente de {estava_na_frente}")
+            }
+            OrdemDevolvida::NaoHaviaOrdem => {
+                "devolvida · nao havia ordem nenhuma, e agora ela leva ao Windows".to_string()
+            }
+        },
+    )
+}
+
+/// O que o conserto de C-13 significa para quem lê, e so quando houve
+/// conserto.
+///
+/// Dizer isto sempre treinaria quem lê a pular a linha, e ela e a resposta a
+/// um incomodo concreto: ate a E9 a maquina passava a bootar no dispositivo a
+/// cada religada depois de um backup, e nao era assim antes de o ARCA existir.
+fn conselho_da_ordem(ordem: &OrdemDevolvida) -> String {
+    if !ordem.houve_conserto() {
+        return String::new();
+    }
+    concat!(
+        "\n  O ciclo de boot pelo dispositivo tinha posto a entrada dele na frente da\n",
+        "  ordem permanente, e com ela ali toda religada com o SSD conectado bootava\n",
+        "  no dispositivo — sem boot unico nenhum. Isso acabou de ser desfeito: daqui\n",
+        "  em diante a maquina liga no Windows, com o SSD conectado ou sem ele.\n",
+        "  Nenhuma entrada foi removida; o Windows so voltou a ser a primeira (C-13).\n"
+    )
+    .to_string()
 }
 
 pub fn executar(contexto: &Contexto) -> Resultado<()> {
@@ -125,11 +174,8 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
         return ja_colhido(contexto, &dispositivo, &estado_do_job);
     }
 
-    let onde = estado::caminho_do_desfecho(
-        &raiz_do_vault,
-        estado_do_job.comando,
-        &estado_do_job.nome,
-    );
+    let onde =
+        estado::caminho_do_desfecho(&raiz_do_vault, estado_do_job.comando, &estado_do_job.nome);
     let desfecho = ler_o_desfecho(contexto.arquivos, &onde, &estado_do_job);
 
     // Desarmar acontece **depois** de lê o desfecho e antes de encerrar o
@@ -142,15 +188,24 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
         &dispositivo.caminho_do_grub()?,
     )?;
 
+    // C-13, e **depois** do desarme de propósito. O desarme relê a ordem
+    // permanente para conferir que ele próprio não a tocou (C-5); consertá-la
+    // antes faria aquela conferência correr sobre um valor que este comando
+    // acabou de mudar, e a checagem que existe para pegar um `bcdedit` que
+    // mexeu no que não devia passaria a comparar duas coisas minhas.
+    let ordem = ordem::devolver_o_windows(contexto.firmware)?;
+
     // A listagem **antes** de encerrar o job, e nao depois. Se a enumeracao do
     // `ARCAVAULT` falhar — um setor ruim, o dispositivo removido no meio —, o
     // erro sobe com o job ainda pendente, e a colheita pode ser tentada de
     // novo. Na ordem inversa, o job sairia encerrado e ninguem teria visto o
     // desfecho: o ARCA teria lido o resultado do backup e o perdido.
     let pastas = imagens::enumerar(contexto.arquivos, &raiz_do_vault)?;
-    let pasta = pastas
-        .iter()
-        .find(|pasta| pasta.nome.eq_ignore_ascii_case(estado_do_job.nome.como_texto()));
+    let pasta = pastas.iter().find(|pasta| {
+        pasta
+            .nome
+            .eq_ignore_ascii_case(estado_do_job.nome.como_texto())
+    });
 
     // O job so se encerra quando houve veredito sobre ele. Ver o cabecalho e
     // [`Encerramento`] — a gravacao acontece antes de imprimir, e o que ela
@@ -188,6 +243,7 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
             desfecho: &desfecho,
             pasta,
             desarme: &desarme,
+            ordem: &ordem,
             encerramento: &encerramento,
             pastas: &pastas,
             livre_bytes: dispositivo.vault.livre_bytes,
@@ -391,11 +447,13 @@ pub fn montar(colheita: &Colheita) -> String {
             }
         },
     ));
+    saida.push_str(&linha_da_ordem(colheita.ordem));
 
     saida.push('\n');
     saida.push_str(&list::montar(colheita.pastas, colheita.livre_bytes));
 
     saida.push_str(&conselho(colheita));
+    saida.push_str(&conselho_da_ordem(colheita.ordem));
     saida
 }
 
@@ -539,34 +597,48 @@ fn nada_a_colher(contexto: &Contexto, dispositivo: &Dispositivo) -> Resultado<()
     let raiz_do_vault = dispositivo.raiz_do_vault()?;
     let pastas = imagens::enumerar(contexto.arquivos, &raiz_do_vault)?;
 
+    // C-13 acontece **mesmo sem job**, e a razao é que ele não fala de job: a
+    // ordem permanente é estado da NVRAM, e ela está suja ou não está,
+    // independentemente de alguém ter armado alguma coisa. É a diferença para
+    // o desarmar do parágrafo acima — aquele desfaz uma intenção do ARCA, e
+    // sem job não houve intenção nenhuma.
+    let ordem = ordem::devolver_o_windows(contexto.firmware)?;
+
     contexto.registro.info("resultado · nao ha job a colher");
 
     print!(
         "{}",
-        montar_sem_job(&pastas, dispositivo.vault.livre_bytes)
+        montar_sem_job(&pastas, dispositivo.vault.livre_bytes, &ordem)
     );
     Ok(())
 }
 
-pub fn montar_sem_job(pastas: &[Pasta], livre_bytes: u64) -> String {
+pub fn montar_sem_job(pastas: &[Pasta], livre_bytes: u64, ordem: &OrdemDevolvida) -> String {
     let mut saida = String::from("Nao ha job a colher.\n\n");
+    saida.push_str(&linha_da_ordem(ordem));
+    saida.push('\n');
     saida.push_str(&list::montar(pastas, livre_bytes));
     saida.push_str(concat!(
         "\n  Nao ha `estado.json` no ARCABOOT, entao nenhum job foi armado por este\n",
         "  dispositivo — ou o ultimo ja foi colhido e o arquivo foi levado junto de\n",
         "  uma preparacao. Nada foi desarmado: para isso ha `arca desarmar`.\n"
     ));
+    saida.push_str(&conselho_da_ordem(ordem));
     saida
 }
 
 /// O job ja foi colhido antes. Nao se colhe duas vezes.
-fn ja_colhido(
-    contexto: &Contexto,
-    dispositivo: &Dispositivo,
-    estado: &Estado,
-) -> Resultado<()> {
+fn ja_colhido(contexto: &Contexto, dispositivo: &Dispositivo, estado: &Estado) -> Resultado<()> {
     let raiz_do_vault = dispositivo.raiz_do_vault()?;
     let pastas = imagens::enumerar(contexto.arquivos, &raiz_do_vault)?;
+
+    // C-13 também aqui, e este é o caso que o pedido de P-20 mais usa: colher
+    // duas vezes é o que alguém faz quando quer conferir. O ADR-0008 decidiu
+    // que colher não se repete, e isso continua valendo para o job — mas a
+    // ordem de boot não é o job, e recusar-se a arrumá-la porque o desfecho já
+    // foi lido seria deixar a máquina bootando no dispositivo por um motivo
+    // que não tem nada que ver.
+    let ordem = ordem::devolver_o_windows(contexto.firmware)?;
 
     contexto.registro.info(format!(
         "resultado · o job `{}` ja estava colhido",
@@ -575,12 +647,17 @@ fn ja_colhido(
 
     print!(
         "{}",
-        montar_ja_colhido(estado, &pastas, dispositivo.vault.livre_bytes)
+        montar_ja_colhido(estado, &pastas, dispositivo.vault.livre_bytes, &ordem)
     );
     Ok(())
 }
 
-pub fn montar_ja_colhido(estado: &Estado, pastas: &[Pasta], livre_bytes: u64) -> String {
+pub fn montar_ja_colhido(
+    estado: &Estado,
+    pastas: &[Pasta],
+    livre_bytes: u64,
+    ordem: &OrdemDevolvida,
+) -> String {
     let mut saida = String::from("Nao ha job a colher.\n\n");
     saida.push_str(&linha(
         "Ultimo job",
@@ -591,9 +668,11 @@ pub fn montar_ja_colhido(estado: &Estado, pastas: &[Pasta], livre_bytes: u64) ->
         "Armado em",
         &format!("{} · informativo, nunca comparado", estado.armado_em),
     ));
+    saida.push_str(&linha_da_ordem(ordem));
 
     saida.push('\n');
     saida.push_str(&list::montar(pastas, livre_bytes));
+    saida.push_str(&conselho_da_ordem(ordem));
     saida.push_str(concat!(
         "\n  O desfecho deste job ja foi lido e dito. Colher duas vezes nao muda nada,\n",
         "  e o ARCA nao o desarma de novo por isso: para desarmar ha `arca desarmar`.\n"
@@ -614,6 +693,17 @@ mod testes {
     use std::path::PathBuf;
 
     const DO_JOB: &str = "a3f1c9e07b2d4856";
+
+    /// A ordem que já estava certa, que é o caso em que C-13 não tem o que
+    /// dizer.
+    ///
+    /// É o padrão dos testes desta seção de propósito: eles falam do desfecho
+    /// e do job, e um conselho de cinco linhas sobre a ordem de boot no meio
+    /// da saída faria as asserções deles passarem por coincidência de
+    /// substring. Quem exercita o outro caso são os dois testes ao lado.
+    fn ordem() -> OrdemDevolvida {
+        OrdemDevolvida::JaEstavaNaFrente
+    }
 
     fn estado(situacao: Situacao) -> Estado {
         Estado {
@@ -663,6 +753,15 @@ mod testes {
         veredito: Option<Veredito>,
         encerramento: Encerramento,
     ) -> String {
+        colher_com_ordem(desfecho, veredito, encerramento, ordem())
+    }
+
+    fn colher_com_ordem(
+        desfecho: Encontrado,
+        veredito: Option<Veredito>,
+        encerramento: Encerramento,
+        ordem: OrdemDevolvida,
+    ) -> String {
         let estado = estado(Situacao::Armado);
         let pastas = vec![
             imagem("2026-08-21_WindowsCompleto", Some(Veredito::Aprovada)),
@@ -676,10 +775,107 @@ mod testes {
             desfecho: &desfecho,
             pasta,
             desarme: &desarme,
+            ordem: &ordem,
             encerramento: &encerramento,
             pastas: &pastas,
             livre_bytes: 176_312_811_520,
         })
+    }
+
+    #[test]
+    fn a_ordem_devolvida_sai_em_linha_propria_e_nomeia_quem_estava_na_frente() {
+        // A E8 registrou que misturar "colhi" com "arrumei" tira de quem lê a
+        // informacao de qual das duas aconteceu. Sao duas linhas, e esta diz o
+        // que estava na frente — o `arca status` ja nomeia a entrada desde a
+        // revisao do marco da E8, e o conserto nao pode dizer menos.
+        let saida = colher_com_ordem(
+            Encontrado::Arquivo(Julgamento::Concluida),
+            Some(Veredito::Aprovada),
+            Encerramento::Encerrado,
+            OrdemDevolvida::Devolvida {
+                estava_na_frente: "ARCA · {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}".to_string(),
+            },
+        );
+
+        assert!(saida.contains("Ordem de boot"), "{saida}");
+        assert!(
+            saida.contains("devolvida · o Windows voltou ao topo"),
+            "{saida}"
+        );
+        assert!(saida.contains("ARCA · {f4057bd0-"), "{saida}");
+
+        // E a linha do desarmar continua sendo a do desarmar. As duas acoes
+        // aconteceram, e nenhuma pode ser lida como a outra.
+        assert!(saida.contains("Desarmando SSD"), "{saida}");
+
+        // O conselho so aparece quando houve conserto, e ele responde a
+        // pergunta que fez C-13 existir: e agora, ligando com o SSD na mesa?
+        assert!(
+            saida.contains("liga no Windows, com o SSD conectado ou sem ele"),
+            "{saida}"
+        );
+    }
+
+    #[test]
+    fn sem_conserto_a_saida_nao_promete_conserto_nenhum() {
+        // Um `ok` sobre acao que nao aconteceu e a mentira que este projeto ja
+        // contou duas vezes (§11), e a E4 pegou a versao dela no desarmar —
+        // "Havia receita armada" quando nao havia. A linha existe sempre; o
+        // que ela **diz** muda.
+        let saida = colher(
+            Encontrado::Arquivo(Julgamento::Concluida),
+            Some(Veredito::Aprovada),
+        );
+
+        assert!(
+            saida.contains("ok · o Windows ja era o primeiro"),
+            "{saida}"
+        );
+        assert!(
+            !saida.contains("voltou ao topo"),
+            "a saida afirma um conserto que nao houve: {saida}"
+        );
+        assert!(
+            !saida.contains("liga no Windows, com o SSD conectado"),
+            "o conselho do conserto saiu sem conserto: {saida}"
+        );
+    }
+
+    #[test]
+    fn a_ordem_e_consertada_tambem_quando_nao_ha_job() {
+        // C-13 nao fala de job: a ordem permanente esta suja ou nao esta,
+        // tenha alguem armado alguma coisa ou nao. E o caminho por onde o
+        // conserto chega a quem rodou `arca resultado` so para conferir.
+        let pastas = vec![imagem("2026-08-22_Apps", Some(Veredito::Aprovada))];
+        let devolvida = OrdemDevolvida::Devolvida {
+            estava_na_frente: "ARCA · {f4057bd0}".to_string(),
+        };
+
+        let sem_job = montar_sem_job(&pastas, 176_312_811_520, &devolvida);
+        let ja_colhido = montar_ja_colhido(
+            &estado(Situacao::Colhido),
+            &pastas,
+            176_312_811_520,
+            &devolvida,
+        );
+
+        for saida in [&sem_job, &ja_colhido] {
+            assert!(saida.contains("Ordem de boot"), "{saida}");
+            assert!(saida.contains("o Windows voltou ao topo"), "{saida}");
+            // **O conselho, e nao so a linha.** A primeira versao deste teste
+            // cobrava so a linha, e com isso deixou passar um
+            // `montar_ja_colhido` que tinha a linha e **nao** tinha o
+            // conselho. Quem rodou o comando de verdade viu; o teste nao.
+            assert!(
+                saida.contains("liga no Windows, com o SSD conectado ou sem ele"),
+                "a saida conserta e nao diz o que isso significa: {saida}"
+            );
+        }
+
+        // E nenhum dos dois passa a dizer que desarmou: continuam sendo os
+        // caminhos que **nao** desarmam, e o texto que diz isso fica.
+        assert!(sem_job.contains("Nada foi desarmado"), "{sem_job}");
+        assert!(ja_colhido.contains("nao o desarma de novo"), "{ja_colhido}");
     }
 
     #[test]
@@ -729,6 +925,7 @@ mod testes {
             desfecho: &desfecho,
             pasta,
             desarme: &desarme,
+            ordem: &ordem(),
             encerramento: &Encerramento::Encerrado,
             pastas: &pastas,
             livre_bytes: 176_312_811_520,
@@ -776,7 +973,10 @@ mod testes {
         assert!(saida.contains("vem de UM sinal so"), "{saida}");
         assert!(saida.contains("(P-6)"), "{saida}");
         // §4.1 com dente: o registro do lado Windows foi destruido.
-        assert!(saida.contains("`arca.log` do lado Windows foi DESTRUIDO"), "{saida}");
+        assert!(
+            saida.contains("`arca.log` do lado Windows foi DESTRUIDO"),
+            "{saida}"
+        );
         // O log do Clonezilla desta operacao, que sobreviveu no ARCAVAULT.
         assert!(
             saida.contains(r"ARCA-LOGS\restauracao-2026-08-22_Apps\arca-restore.log"),
@@ -831,9 +1031,7 @@ mod testes {
             Encontrado::Arquivo(Julgamento::JobFantasma {
                 encontrado: Selo::novo("7e02b4d1af963c85").unwrap(),
             }),
-            Encontrado::Arquivo(Julgamento::NaoPertenceAoArca(
-                NaoEDesfecho::SemLinhaDeSelo,
-            )),
+            Encontrado::Arquivo(Julgamento::NaoPertenceAoArca(NaoEDesfecho::SemLinhaDeSelo)),
             Encontrado::SemArquivo,
             Encontrado::NaoDeuParaLer {
                 motivo: "x".to_string(),
@@ -940,7 +1138,8 @@ mod testes {
         assert!(saida.contains("NAO FOI POSSIVEL ENCERRAR"), "{saida}");
         assert!(saida.contains("acesso negado"), "{saida}");
         assert!(
-            !saida.contains("Job ..... encerrado") && !saida.contains("· o desfecho foi lido e dito"),
+            !saida.contains("Job ..... encerrado")
+                && !saida.contains("· o desfecho foi lido e dito"),
             "a linha do job disse `encerrado` sem ter encerrado:\n{saida}"
         );
     }
@@ -963,7 +1162,10 @@ mod testes {
             Some(Veredito::Aprovada),
         );
 
-        assert!(por_acidente.contains("NAO pôde ser encerrado"), "{por_acidente}");
+        assert!(
+            por_acidente.contains("NAO pôde ser encerrado"),
+            "{por_acidente}"
+        );
         assert!(
             de_proposito.contains("O JOB CONTINUA PENDENTE"),
             "{de_proposito}"
@@ -1019,13 +1221,20 @@ mod testes {
             Some(Veredito::Aprovada),
         );
 
-        assert!(saida.contains(list::montar(&pastas, 176_312_811_520).lines().next().unwrap()));
+        assert!(
+            saida.contains(
+                list::montar(&pastas, 176_312_811_520)
+                    .lines()
+                    .next()
+                    .unwrap()
+            )
+        );
     }
 
     #[test]
     fn sem_job_a_saida_diz_que_nada_foi_desarmado() {
         let pastas = vec![imagem("2026-08-22_Apps", Some(Veredito::Aprovada))];
-        let saida = montar_sem_job(&pastas, 176_312_811_520);
+        let saida = montar_sem_job(&pastas, 176_312_811_520, &ordem());
 
         assert!(saida.contains("Nao ha job a colher."));
         assert!(saida.contains("Nada foi desarmado"), "{saida}");
@@ -1038,7 +1247,7 @@ mod testes {
         // ser pendente e o `arca status` para de mostra-lo como tal.
         let estado = estado(Situacao::Colhido);
         let pastas = vec![imagem("2026-08-22_Apps", Some(Veredito::Aprovada))];
-        let saida = montar_ja_colhido(&estado, &pastas, 176_312_811_520);
+        let saida = montar_ja_colhido(&estado, &pastas, 176_312_811_520, &ordem());
 
         assert!(saida.contains("ja colhido"), "{saida}");
         assert!(saida.contains("Colher duas vezes nao muda nada"), "{saida}");

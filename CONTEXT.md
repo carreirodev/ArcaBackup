@@ -53,7 +53,9 @@ O `bootsequence` do `{fwbootmgr}`: a marca que manda o firmware bootar por uma e
 _Evitar_: BootNext, boot temporário, agendamento de boot
 
 **Ordem permanente**:
-O `displayorder` do `{fwbootmgr}`: por onde a máquina boota quando ninguém pediu nada. **O ARCA nunca a toca** — nem para pôr, nem para tirar, nem para consertar. Ela muda sozinha no ciclo de boot pelo dispositivo, e por isso é lida e relatada, e não corrigida. **E uma restauração a devolve ao que está dentro da imagem**, porque o BCD mora na partição EFI e a partição EFI é restaurada junto — medido em 23/08/2026 ([ADR-0012](docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)).
+O `displayorder` do `{fwbootmgr}`: por onde a máquina boota quando ninguém pediu nada. Ela tem **três donos**, e nenhum deles é quem se supunha: o ciclo de boot pelo dispositivo põe a entrada dele na frente ([ADR-0009](docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md)); o Windows a espelha do BCD ao subir; e uma **restauração a devolve ao que está dentro da imagem**, porque o BCD mora na partição EFI e ela é restaurada junto ([ADR-0012](docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md)).
+
+**O ARCA a toca em um lugar só, e nunca para acrescentar caminho**: ao colher, ele põe o `{bootmgr}` no topo (C-13, [ADR-0013](docs/adr/0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md)) — sem remover nada, e conferindo com uma releitura. Armar e desarmar continuam proibidos de mexer nela (C-5), e releem para provar que não mexeram. `arca status` só lê e avisa.
 _Evitar_: BootOrder, ordem de boot, boot padrão
 
 **Estado inerte**:

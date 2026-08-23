@@ -194,6 +194,19 @@ pub enum Erro {
     )]
     OrdemPermanenteAlterada { antes: String, depois: String },
 
+    /// C-13: mandou-se pôr o `{bootmgr}` no topo da ordem permanente, e a
+    /// releitura mostra outra coisa em primeiro.
+    ///
+    /// E o modo de falha medido do `bcdedit` desde a E2 — responder "êxito"
+    /// sem ter escrito —, e por isso quem responde e sempre o `/enum` (C-3).
+    /// A consequencia de deixar passar e concreta: quem lesse a tela acharia
+    /// que a maquina volta ao Windows, e ela continuaria bootando no
+    /// dispositivo a cada reinicio.
+    #[error(
+        "mandei por o gerenciador do Windows no topo da ordem permanente de boot e a releitura mostra [{ordem}]. O bcdedit respondeu sem escrever, ou escreveu noutro lugar. Enquanto isso, ligar a maquina com o SSD conectado continua bootando nele (C-13)"
+    )]
+    OrdemNaoDevolvida { ordem: String },
+
     /// O UAC foi recusado ou fechado. Nao e falha do ARCA, e uma decisao do
     /// usuario, e merece mensagem propria.
     #[error(
