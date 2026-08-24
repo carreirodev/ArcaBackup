@@ -765,6 +765,52 @@ colheita **desarma e encerra o job**, e a próxima operação vai truncar aquele
 > execução foi refeita porque a captura existe para mostrar o comando **certo**,
 > e o registro do errado vive no cabeçalho e no plano de etapas.
 
+### Os três da sondagem que deu certo
+
+`blkdev-list-da-sondagem-2026-08-24.txt`, `arca-fim-sondagem-2026-08-24.txt` e
+`estado-sondagem-2026-08-24.json` — cópias byte a byte do que ficou no
+dispositivo depois do marco.
+
+**Eles existem porque a pasta da sondagem é fixa e a segunda sondagem escreve por
+cima da primeira** (SD-4). Sem estas cópias, a falha forçada de 15:32 teria
+apagado o único original do primeiro `ARCA_PROBE=OK` deste projeto — e foi
+exatamente isso que ela fez no dispositivo.
+
+O `estado.json` está aqui com `"situacao": "colhido"`, que é o estado **depois**
+da colheita: ele é o único lugar que liga o selo `354da624e7fa0d21` ao job, e o
+`arca sondar` seguinte o sobrescreveu.
+
+### `arca-sondar-falha-forcada-2026-08-24.txt`
+
+**O primeiro `FALHOU` deste projeto**, e o único arquivo deste diretório que
+nasceu de uma execução montada para falhar.
+
+A sondagem foi armada com uma coluna inventada no `lsblk` — `FLAGQUENAOEXISTE` —,
+e o dispositivo voltou com 54 bytes de `arca-fim.txt` e 40 de `blkdev.list`:
+
+```text
+ARCA_SELO=95772dae07463701      lsblk: unknown column: FLAGQUENAOEXISTE
+ARCA_PROBE=FALHOU
+ARCA_FIM
+```
+
+O arquivo traz as três telas do lado Windows — `arca resultado` (com código de
+saída **1**), `arca backup --dry-run` e `arca status` —, e o cabeçalho diz **como
+a falha foi montada e como foi desfeita**: a mutação de `FLAGS_DE_SONDAGEM` não
+está no repositório, e quem colheu foi o binário normal.
+
+> **É o mesmo movimento do ADR-0017**, em que a entrada de firmware de medição
+> foi criada, medida e apagada, e da segunda execução do marco da E10. O que se
+> quer é exercitar o caminho que nenhuma execução normal exercita — e desfazer o
+> que foi montado para isso, para que o repositório não fique com uma mentira
+> compilável dentro.
+
+**O que ele permite conferir, e nenhuma captura anterior permitia:** que o
+`if/then/else` de R-5 toma o **ramo do erro** em hardware; que o `2>&1` da
+receita guarda a causa no dispositivo em vez de deixá-la sumir com o `poweroff`;
+e que as duas telas seguintes **concordam** — `FALHOU` e `POR DETERMINAR` —, que
+é exatamente o que a forma com `;` teria tornado contraditório.
+
 ### O que este par de arquivos permite conferir, e nenhum outro permitia
 
 **Que o dispositivo boota pela entrada que o ARCA criou.** As três telas do

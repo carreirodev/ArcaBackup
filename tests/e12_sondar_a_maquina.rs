@@ -130,14 +130,56 @@ fn sd2_as_colunas_da_receita_sao_as_do_cabecalho_capturado() {
     // O teste confere a reconstrução contra o **original**, lendo as colunas do
     // próprio cabeçalho em vez de repeti-las: uma lista escrita à mão aqui
     // provaria que eu sei copiar a constante.
+    //
+    // **E a comparação é por igualdade, e não por `contains`.** A primeira
+    // versão deste teste procurava `-o <colunas>` como substring, e uma coluna
+    // **a mais** passava por ela — `-o A,B,C,D` contém `-o A,B,C`. Não é
+    // hipotético: a falha forçada de 24/08/2026 acrescentou `FLAGQUENAOEXISTE`
+    // ao fim da lista para fazer o `lsblk` recusar a receita, e esta asserção
+    // **passou**.
     let cabecalho = DA_SONDAGEM.lines().next().expect("o cabeçalho está lá");
     let colunas: Vec<&str> = cabecalho.split_whitespace().collect();
 
-    assert!(
-        receita_da_sondagem()
-            .comando()
-            .contains(&format!("-o {}", colunas.join(","))),
+    const MARCA: &str = "-o ";
+    let comando = receita_da_sondagem().comando().to_string();
+    let depois = &comando[comando.find(MARCA).expect("a receita tem `-o `") + MARCA.len()..];
+    let na_receita = depois.split_whitespace().next().expect("há colunas");
+
+    assert_eq!(
+        na_receita,
+        colunas.join(","),
         "as colunas do `lsblk` não reproduzem o cabeçalho de `{cabecalho}`"
+    );
+}
+
+#[test]
+fn sd2_uma_coluna_a_mais_nao_atravessa_o_teste_das_colunas() {
+    // **O guarda do guarda**, e ele existe porque o buraco foi medido.
+    //
+    // O teste acima só vale se ele reprovar uma lista diferente da do
+    // cabeçalho — e a versão dele que usava `contains` **não reprovava** uma
+    // coluna a mais. Este teste exercita a mesma extração sobre uma receita
+    // adulterada, para que a forma frouxa não volte por descuido.
+    let comando = receita_da_sondagem()
+        .comando()
+        .replace(",MODEL ", ",MODEL,FLAGQUENAOEXISTE ");
+
+    const MARCA: &str = "-o ";
+    let depois = &comando[comando.find(MARCA).expect("a receita tem `-o `") + MARCA.len()..];
+    let na_receita = depois.split_whitespace().next().expect("há colunas");
+
+    let cabecalho = DA_SONDAGEM.lines().next().expect("o cabeçalho está lá");
+    let colunas: Vec<&str> = cabecalho.split_whitespace().collect();
+
+    assert_ne!(
+        na_receita,
+        colunas.join(","),
+        "uma coluna a mais passou pela extração: o teste acima não guarda nada"
+    );
+    // E a forma frouxa, para mostrar o que ela deixava passar.
+    assert!(
+        comando.contains(&format!("-o {}", colunas.join(","))),
+        "esta é a asserção que a falha forçada atravessou, e ela continua atravessando"
     );
 }
 

@@ -1,0 +1,185 @@
+O PRIMEIRO FALHOU DESTE PROJETO, em 24/08/2026.
+
+Falha forcada: uma sondagem armada com uma coluna INVENTADA no lsblk
+(FLAGQUENAOEXISTE), para exercitar o ramo de erro do if/then/else de R-5 em
+hardware. Nenhuma execucao deste projeto tinha escrito um FALHOU — nem
+ARCA_BACKUP=, nem ARCA_RESTORE=, nem ARCA_VERIFY= (P-6).
+
+COMO FOI FEITO, e a mutacao nao esta no repositorio
+
+  FLAGS_DE_SONDAGEM foi mutada para
+  -i -o KNAME,NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL,FLAGQUENAOEXISTE,
+  o binario foi compilado, copiado para o ARCABOOT e usado para ARMAR. A
+  mutacao foi revertida antes de colher, e o binario que colheu e o normal.
+
+  E o mesmo movimento do ADR-0017 (a entrada de medicao foi apagada no fim) e
+  da segunda execucao do marco da E10: exercitar o caminho que nenhuma execucao
+  normal exercita, e desfazer o que foi montado para isso.
+
+  Armado as 15:32:25 (relogio do Windows). A maquina reiniciou, bootou pelo
+  dispositivo, o lsblk recusou a coluna, e ela desligou.
+
+O QUE FICOU NO DISPOSITIVO
+
+  E:\ARCA-LOGS\sondagem\arca-fim.txt ... 54 bytes
+    ARCA_SELO=95772dae07463701
+    ARCA_PROBE=FALHOU
+    ARCA_FIM
+
+  E:\ARCA-LOGS\sondagem\blkdev.list .... 40 bytes
+    lsblk: unknown column: FLAGQUENAOEXISTE
+
+O que cada arquivo responde:
+
+  - o if de R-5 tomou o ramo do ERRO em hardware, pela primeira vez;
+  - o 2>&1 da receita apontava para o proprio lkdev.list, e a mensagem do
+    lsblk ficou no dispositivo em vez de sumir com o poweroff — a proxima
+    sessao lê QUAL coluna foi recusada, e nao um arquivo vazio;
+  - P-27 responde tambem pelo outro lado: aquele util-linux VALIDA as colunas e
+    sai com codigo diferente de zero quando nao conhece uma. Se a reconstrucao
+    das sete estivesse errada, teriamos sabido exatamente assim.
+
+  E o mtime do arquivo (12:33:49, carimbo do Clonezilla) contra o rmado_em
+  (15:32:25, relogio do Windows) da 1 min 24 s sob o deslocamento de 3 h de P-7
+  — a SEGUNDA medicao deste intervalo, e ela concorda com a do marco (1 min 27 s).
+
+===== arca resultado =====
+Sondagem
+  nao opera sobre imagem nenhuma
+  Desfecho: o Clonezilla falhou e disse: o desfecho e FALHOU
+  Discos vistos: nenhum — o `blkdev.list` esta la e nao traz disco nenhum
+  Selo: 95772dae07463701
+
+  Desarmando SSD .................. ok · F:\boot\grub\grub.cfg
+  Job ............................. encerrado · o desfecho foi lido e dito
+  Ordem de boot ................... devolvida · o Windows voltou ao topo, na frente de ARCA · {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+
+Nenhuma imagem em ARCAVAULT.
+
+445 GB livres
+
+  O CLONEZILLA FALHOU E DISSE. O log da operacao esta em
+  ARCA-LOGS\sondagem\, junto do proprio `arca-fim.txt`.
+
+  O ciclo de boot pelo dispositivo tinha posto a entrada dele na frente da
+  ordem permanente, e com ela ali toda religada com o SSD conectado bootava
+  no dispositivo — sem boot unico nenhum. Isso acabou de ser desfeito: daqui
+  em diante a maquina liga no Windows, com o SSD conectado ou sem ele.
+  Nenhuma entrada foi removida; o Windows so voltou a ser a primeira (C-13).
+erro: a operacao nao foi concluida: o Clonezilla falhou e disse: o desfecho e FALHOU
+
+codigo de saida: 1
+
+===== arca backup 2026-08-24_Sondado --dry-run =====
+
+E ESTA E A TELA QUE O if EXISTE PARA TORNAR COERENTE.
+
+O desfecho acima diz FALHOU, e esta diz POR DETERMINAR: as duas concordam. Com o
+; da forma proposta na mesa, o desfecho diria OK e esta continuaria dizendo POR
+DETERMINAR — duas afirmacoes contraditorias, as duas do ARCA, na mesma sessao.
+
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Origem: KINGSTON SNV3S500G · 465,8 GB · 109,2 GB em uso
+Imagem estimada: ~49,1 GB · espaco suficiente
+Imagem: 2026-08-24_Sondado
+
+  Desarmando receita anterior ..... nao, e ensaio · F:\boot\grub\grub.cfg
+  Inicializacao rapida ............ desativada   ok
+  chkdsk /scan .................... limpo        ok
+  Nome disponivel ................. ok
+  Disco de origem ................. POR DETERMINAR
+
+  O NOME DO DISCO DE ORIGEM NAO FOI DETERMINADO.
+  nao ha `blkdev.list` legivel no dispositivo — nem de sondagem, nem dentro de imagem nenhuma —, e e dele que sai o nome que o Linux da ao disco. O Windows nao conhece esse nome, e o ARCA nao o inventa. Para produzi-lo:  arca sondar
+  A receita nomeia o disco pelo nome que o **Linux** lhe da, e o Windows
+  nao conhece esse nome. O ARCA o lê de um `blkdev.list` — o da sondagem,
+  ou o de dentro de uma imagem ja existente.
+  Ele nao deriva o nome de indice nem de tipo de barramento, porque o
+  indice do Windows nao e o do Linux.
+
+Pre-voo concluido, e o dispositivo esta inerte. Nenhuma receita foi armada
+e nenhum boot unico foi marcado: e ensaio, e ensaio nao arma.
+
+Ensaio (--dry-run): nada e gravado, nada e armado.
+
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Imagem: 2026-08-24_Sondado
+Disco de origem: nvme0n1 · DE EXEMPLO: o nome de verdade nao foi determinado, e esta receita nao serviria
+
+  Nome validado (B-2) ............. ok
+  Receita validada (C-2) .......... ok
+
+Receita de backup — e esta que o comando sem --dry-run armaria
+
+  O que o Clonezilla executa:
+
+    mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-24_Sondado nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-24_Sondado > /home/partimag/2026-08-24_Sondado/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; sleep 20; poweroff
+
+  Como entra na linha do grub.cfg:
+
+    locales=en_US.UTF-8 keyboard-layouts=NONE ocs_repository="dev:///LABEL=ARCAVAULT" ocs_live_run="bash -c 'mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-24_Sondado nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-24_Sondado > /home/partimag/2026-08-24_Sondado/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; sleep 20; poweroff'" ocs_live_batch="yes"
+
+O selo acima e de ensaio (so zeros), e por isso esta receita nao serviria: o
+de verdade nasce **ao armar**, de uma fonte de entropia do sistema. E ele que
+liga o job ao desfecho que voltar.
+
+Nada foi armado, e o dispositivo nao foi nem desarmado — no ensaio, C-1 nao
+acontece. O mesmo comando sem `--dry-run` desarma, pede a confirmacao por
+extenso, arma e reinicia.
+
+A receita de restauracao nao sai mais daqui: ela e montada com o disco de
+DESTINO, que este comando nao escolhe. Para ve-la:  arca restore --dry-run
+
+
+===== arca status, depois de tudo =====
+
+E AQUI HA UM ACHADO QUE NAO SE PROCURAVA.
+
+As DUAS colheitas de sondagem deste dia deram respostas DIFERENTES na linha
+Ordem de boot, e as duas sondagens foram iguais:
+
+  marco (14:56 -> colhido)  ..... ok · o Windows ja era o primeiro
+  falha (15:32 -> colhido)  ..... devolvida · o Windows voltou ao topo, na
+                                   frente de ARCA · {f4057bd3-...}
+
+Antes do marco, a entrada ARCA estava FORA da ordem permanente — o rca
+prepare a tirou de la (C-5, ADR-0017), e o rca status de 23/08 registra
+1 entrada(s), nenhuma para o dispositivo.
+
+A hipotese que isto sugere, E QUE NAO ESTA MEDIDA: o ciclo de boot pelo
+dispositivo ACRESCENTA a entrada a ordem (ADR-0009), e na primeira vez ela pode
+entrar ATRAS do {bootmgr} — o que faria C-13 nao ter o que consertar na
+primeira colheita e ter na segunda. O ADR-0009 diz que o ciclo poe a entrada
+"na frente", sem distinguir o caso em que ela estava fora.
+
+O QUE FALTA PARA SABER: ler o {fwbootmgr} ENTRE o desligamento e a colheita,
+que e justamente onde ninguem leu. E a mesma forma de P-19, e a mesma armadilha
+que o §11 ja nomeia — medir o firmware depois do reinicio e achar que se mediu o
+reinicio.
+
+Dispositivo ARCA
+  ARCAVAULT ....................... E: · NTFS · 445,6 GB
+  ARCABOOT ........................ F: · FAT32 · 1,6 GB
+
+Nenhuma imagem em ARCAVAULT.
+
+445 GB livres
+
+Entrada de firmware
+  Descricao ....................... ARCA
+  Identificador ................... {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+  Aponta para ..................... partition=F: · o ARCABOOT deste dispositivo
+  Carrega ......................... \EFI\boot\bootx64.efi
+  Ordem de boot ................... dispositivo em 2o de 2 · `Windows Boot Manager` vem antes
+
+Ultimo job, ja colhido
+  Boot unico ...................... nao armado
+  Estado no ARCABOOT .............. sondagem · ja colhido, nada esperando
+  Selo ............................ 95772dae07463701
+  Disco alvo ...................... nenhum · a sondagem lê TODOS os discos, e nao nomeia nenhum
+  Armado em ....................... 2026-08-24T15:32:25-03:00 · informativo, nunca comparado
+
+  Este job ja foi colhido: o `arca resultado` leu o desfecho dele e disse
+  o que era. O `estado.json` fica no dispositivo de proposito — e o unico
+  registro que liga este selo a este nome, e o ARCA nao apaga nada (B-10).
+

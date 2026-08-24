@@ -12,7 +12,7 @@ que valem.
 
 **As treze etapas do plano fecharam.** Os nove comandos do §8 fazem trabalho, a
 lista de *"chega na etapa X"* esvaziou na E10, todo requisito do §9 tem código, e
-a suíte tem 827 testes. O ciclo inteiro rodou em hardware: backup armado e
+a suíte tem 829 testes. O ciclo inteiro rodou em hardware: backup armado e
 colhido (22/08), restauração completa com o Windows voltando de dentro da imagem
 (23/08), verificação armada (23/08), um dispositivo criado do zero (23/08) e —
 **em 24/08 — esse dispositivo bootando sozinho pela entrada de firmware que o
@@ -104,6 +104,30 @@ para um disco que não serve, com o código de saída observado.
 
 **Custa:** montar uma VM com Clonezilla e um disco de teste. É a pendência mais
 cara desta lista, e a única cujo fechamento não acontece nesta mesa.
+
+> ### O que ela **deixou** de ser, em 24/08/2026
+>
+> A tabela acima diz *"nenhuma execução deste projeto jamais escreveu um
+> `FALHOU`"*, e isso deixou de ser verdade — **falta uma linha nela**:
+>
+> | Aconteceu | Onde |
+> |---|---|
+> | `ARCA_PROBE=FALHOU` | §10.2.5, em 24/08/2026 |
+>
+> Uma sondagem foi armada com uma coluna inventada no `lsblk`, e o dispositivo
+> voltou com `ARCA_PROBE=FALHOU` e `lsblk: unknown column: FLAGQUENAOEXISTE`
+> dentro do próprio `blkdev.list`. O `arca resultado` reportou a falha e saiu
+> com código 1; o `arca backup --dry-run` seguinte disse `POR DETERMINAR`. **As
+> duas concordaram**, que é exatamente o que o `;` teria tornado contraditório.
+>
+> **P-6 continua aberta, e o sujeito é a razão.** Ela pergunta se o **`ocs-sr`**
+> devolve código diferente de zero ao falhar, e quem falhou aqui foi o `lsblk`.
+> Nenhuma resposta de um fala pelo outro.
+>
+> **O que mudou é o que sobrou dentro dela.** Antes, P-6 carregava duas coisas
+> juntas: *"a forma de R-5 funciona?"* e *"o `ocs-sr` coopera?"*. A primeira está
+> respondida em hardware — o `if` toma os dois ramos, e a tela de falha existe e
+> imprime. A segunda é a que continua custando uma VM.
 
 ### P-25 — uma receita rodou e o rastro divergiu do que a string manda fazer
 
@@ -204,12 +228,13 @@ A tabela de desfechos possíveis do §5.5 tem **sete linhas**, e o marco da E8
 produziu exatamente **uma**: selo batendo, `ARCA_FIM` presente, `ARCA_BACKUP=OK`,
 veredito `APROVADA`.
 
-As outras seis continuam sem original — o que quer dizer que o código que as
-distingue nunca foi exercitado por um arquivo que o Clonezilla escreveu:
+**Duas das outras seis já rodaram**, e nenhuma das duas foi planejada como
+exercício da tabela — o código que distingue as quatro restantes continua sem ter
+sido exercitado por um arquivo que o Clonezilla escreveu:
 
 | Linha | Como se produziria |
 |---|---|
-| Selo bate, desfecho `FALHOU` | depende de P-6 |
+| ~~Selo bate, desfecho `FALHOU`~~ | **rodou** em 24/08, com uma coluna inventada no `lsblk` (E12). O que continua sem original é o `FALHOU` de uma operação que **grava**, e esse depende de P-6 |
 | Selo bate, sem `ARCA_FIM` | desligar a máquina no meio da receita |
 | Selo não bate (job fantasma) | colher com um `estado.json` de outro job |
 | Sem linha de selo / selo repetido / sem marcador | truncar o `arca-fim.txt` |
@@ -221,8 +246,18 @@ distingue nunca foi exercitado por um arquivo que o Clonezilla escreveu:
 > Clonezilla — e o `arca resultado` colheu a ausência de desfecho, nomeou as duas
 > causas de C-12, desarmou e encerrou o job. Era a linha que mais tinha esperado.
 
-Nenhuma delas é cara de produzir à mão, e **a mais valiosa é a do desfecho
-`FALHOU`**, que é P-6 com outra roupa.
+> **E a primeira rodou de propósito, em 24/08.** Uma sondagem com uma coluna
+> inventada no `lsblk` produziu `ARCA_PROBE=FALHOU`, e o `arca resultado` o
+> classificou naquela linha, reportou a falha e saiu com código 1. **Foi a
+> linha mais barata de produzir da tabela** — a sondagem não grava nada, e o
+> comando principal dela falha com uma flag errada.
+>
+> O que ela **não** produziu é o `FALHOU` de uma operação que grava, e é esse
+> que P-6 pergunta: `ARCA_BACKUP=` e `ARCA_RESTORE=` dependem de o **`ocs-sr`**
+> devolver código diferente de zero, e nenhuma resposta do `lsblk` fala por ele.
+
+Nenhuma das quatro que sobram é cara de produzir à mão, e **a mais valiosa é o
+`FALHOU` de uma operação que grava**, que é P-6 com outra roupa.
 
 ---
 
@@ -307,7 +342,7 @@ comparar datas.
 
 ## 5. Estado da mesa, e não do app
 
-**A suíte está inteira verde**: 827 testes, zero vermelhos, com o dispositivo
+**A suíte está inteira verde**: 829 testes, zero vermelhos, com o dispositivo
 que a E10 criou sozinho na mesa — e que a E12 já bootou.
 
 Chegar aí custou uma correção que vale registrar aqui, porque ela é sobre o que
@@ -321,7 +356,51 @@ passaram a **sair cedo dizendo por quê**; os do `grub.cfg` passaram a aceitar o
 **dois** inertes conhecidos — o do ISO e o do zip —, com o teste da E10 provando
 que são equivalentes. Nenhum foi afrouxado.
 
-**Nada da E10 nem da E12 foi commitado.**
+**A E10 e a E12 estão commitadas.**
+
+### O dispositivo está sem oráculo agora, e isso é do teste de falha
+
+**O `blkdev.list` do dispositivo tem a mensagem de erro do `lsblk`**, e não a
+lista de discos: a falha forçada de 24/08 substituiu a sondagem boa, que é o que
+SD-4 diz que a segunda sondagem faz. Enquanto ficar assim, `arca backup` recusa
+com `POR DETERMINAR` — corretamente.
+
+```text
+E:\ARCA-LOGS\sondagem\blkdev.list ... lsblk: unknown column: FLAGQUENAOEXISTE
+```
+
+**Devolver o oráculo custa um reinício**: `arca sondar` com o binário normal, que
+já está no `ARCABOOT`. Nada mais precisa ser feito antes.
+
+**Os originais da sondagem que deu certo estão salvos** em `recursos/capturas/`
+— `blkdev-list-da-sondagem-2026-08-24.txt`, `arca-fim-sondagem-2026-08-24.txt` e
+`estado-sondagem-2026-08-24.json` —, e foi por isso que eles foram copiados antes
+da falha. **Não os copie de volta para o dispositivo**: um `blkdev.list` escrito
+à mão é exatamente o artefato que o §3.5 do PRD alerta, e a diferença entre "a
+receita escreveu" e "alguém escreveu depois" é a que este projeto mais paga para
+manter.
+
+### O firmware, depois de tudo
+
+`arca status` de 24/08, no fim da sessão:
+
+```text
+Entrada de firmware
+  Descricao ....... ARCA
+  Identificador ... {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+  Aponta para ..... partition=F: · o ARCABOOT deste dispositivo
+  Ordem de boot ... dispositivo em 2o de 2 · `Windows Boot Manager` vem antes
+
+Ultimo job, ja colhido
+  Boot unico ...... nao armado
+  Estado .......... sondagem · ja colhido, nada esperando
+```
+
+A entrada **entrou na ordem permanente** em algum ponto dos dois boots pelo
+dispositivo — ela estava fora quando o `arca prepare` terminou —, e C-13 a
+empurrou para trás do Windows ao colher. Ligar a máquina sobe o Windows. **Quando
+e como ela entrou não está medido**, e é o achado registrado na seção da E12 do
+plano de etapas.
 
 ---
 
@@ -334,23 +413,23 @@ Do mais barato para o mais caro, e cada linha diz o que se ganha.
 | ~~—~~ | ~~**E12** — escrever o `arca sondar` e rodá-lo~~ | ~~1 etapa + 1 reinício~~ | **Feito em 24/08/2026: P-26 e P-27** |
 | 1 | Religar com o SSD conectado, sem job armado | 1 reinício, risco zero | **P-22**, e confere a promessa da tela do `arca prepare` |
 | 2 | Segunda verificação armada | 1 reinício, ~5 min | **P-25** |
-| 3 | **Uma sondagem com flag inventada no `lsblk`** | 1 reinício, risco zero | o **primeiro `FALHOU`** deste projeto, e uma das seis linhas do §5.5 |
-| 4 | Produzir as outras cinco linhas do §5.5 à mão | tempo, sem risco | cinco casos do §5.5 |
-| 5 | Falha forçada em VM | montar uma VM | **P-6** no `ocs-sr`, que é a pergunta original |
-| 6 | Próxima restauração, com o log medido | uma restauração | **P-23** |
-| 7 | Backup por F12, com o `bcdedit` antes | um backup | **P-19** |
+| ~~—~~ | ~~Uma sondagem com flag inventada no `lsblk`~~ | ~~1 reinício~~ | **Feito em 24/08/2026: o primeiro `FALHOU`** |
+| 3 | Produzir as outras quatro linhas do §5.5 à mão | tempo, sem risco | quatro casos do §5.5 |
+| 4 | Falha forçada em VM | montar uma VM | **P-6** no `ocs-sr`, que é a pergunta original |
+| 5 | Próxima restauração, com o log medido | uma restauração | **P-23** |
+| 6 | Backup por F12, com o `bcdedit` antes | um backup | **P-19** |
 
-**O 3 é novo, e ele nasceu da E12.** Até aqui, produzir um `FALHOU` exigia fazer
-o `ocs-sr` falhar — o que significa uma VM, um disco de teste e uma operação
-destrutiva de mentira. A sondagem tem um comando principal que **falha de graça**:
-basta uma flag que o `lsblk` não conheça, e o `if` de R-5 escreve
-`ARCA_PROBE=FALHOU` sem tocar em disco nenhum.
-
-Ele **não** fecha P-6 — a pergunta de lá é sobre o `ocs-sr`, e nenhuma resposta
-do `lsblk` fala por ele. O que ele fecha é o outro lado, que vale por si: o
-`if/then/else` de R-5 tomando o ramo do erro em hardware, e o `arca resultado`
-imprimindo um desfecho ruim pela primeira vez. **Custa o mesmo que uma sondagem
-normal, e o pior caso é a mesma coisa.**
+> **O passo que saiu era novo, e nasceu da E12.** Até 24/08, produzir um `FALHOU`
+> exigia fazer o `ocs-sr` falhar — uma VM, um disco de teste, uma operação
+> destrutiva de mentira. A sondagem tem um comando principal que **falha de
+> graça**: uma flag que o `lsblk` não conheça basta, e nada é escrito fora do
+> `ARCAVAULT`.
+>
+> Foi feito no mesmo dia, e rendeu mais do que a linha do §5.5: mostrou que o
+> `if` de R-5 toma os dois ramos em hardware, que o `2>&1` guarda a causa no
+> dispositivo, e **expôs um teste que aceitava mais do que devia** — o das
+> colunas do `lsblk` passava com uma coluna a mais, e a mutação atravessou a
+> suíte inteira.
 
 > **Os passos 1 e 7 são o mesmo reinício, se você quiser.** P-19 pede um backup
 > disparado por F12 com o `bcdedit` lido imediatamente antes; o passo 1 pede um
@@ -371,14 +450,20 @@ Por esse critério, hoje falta **uma** coisa, e eram duas:
 - ~~**P-26**, porque a tela do `arca prepare` diz *"Dispositivo pronto"* e
   ninguém bootou nele.~~ **Fechada em 24/08/2026**: bootou, pela entrada que o
   próprio comando criou, e a tela deixou de afirmar o que ninguém tinha visto.
-- **P-6**, porque a tela do `arca resultado` sabe dizer `FALHOU` e nunca disse.
+- **P-6**, porque a tela do `arca resultado` sabe dizer `FALHOU` e ~~nunca
+  disse~~ — **disse em 24/08/2026**, sobre uma sondagem com flag inventada no
+  `lsblk`. O que a tela afirma e o repositório ainda não pode mostrar é mais
+  estreito do que era: *"o `ocs-sr` falhou e disse"*, numa operação que grava.
 
-**E P-6 ficou mais barata do que era**, sem que ninguém mexesse nela. A sondagem
-tem um comando principal que falha de graça — uma flag inventada no `lsblk` —, e
-com ele o `if/then/else` de R-5 escreve o primeiro `FALHOU` deste projeto sem
-tocar em disco nenhum. Isso **não** responde a pergunta de P-6, que é sobre o
-`ocs-sr`; responde a metade dela que a tela do `arca resultado` depende: que o
-ramo do erro existe e é impresso.
+**E é essa metade que sobra.** A sondagem provou a **forma**: o `if/then/else`
+de R-5 toma os dois ramos em hardware, o `2>&1` guarda a causa no dispositivo, o
+`arca resultado` imprime a falha e sai com código 1, e a tela seguinte concorda
+com ele. O que continua sem prova é o **sujeito** de P-6: que o `ocs-sr` devolve
+código diferente de zero quando falha.
+
+Vale registrar a diferença de custo, porque ela explica por que uma metade
+fechou e a outra não: a sondagem falha de graça — uma flag errada, nada escrito
+fora do `ARCAVAULT` —, e o `ocs-sr` só falha destruindo alguma coisa.
 
 As outras quatro são perguntas honestas sobre o mundo — como o firmware se
 comporta, o que o `ocs-chkimg` faz com um descritor, de onde o `bcdedit` lê. O

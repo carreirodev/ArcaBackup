@@ -1695,6 +1695,21 @@ mod testes {
 
     // ─────────────────── a quarta receita, da etapa E12 ───────────────────
 
+    /// A lista de colunas que o `-o` da receita passa ao `lsblk`, **inteira**.
+    ///
+    /// Existe para que a comparacao seja por **igualdade**: procurar a lista
+    /// como substring aceita uma coluna a mais no fim, e foi assim que a falha
+    /// forcada de 24/08/2026 atravessou o teste que guarda a reconstrucao.
+    fn colunas_do_lsblk(comando: &str) -> String {
+        const MARCA: &str = "-o ";
+        let depois = &comando[comando.find(MARCA).expect("a receita tem `-o `") + MARCA.len()..];
+        depois
+            .split_whitespace()
+            .next()
+            .expect("ha algo depois do `-o`")
+            .to_string()
+    }
+
     /// A sondagem. Sem nome e sem disco: ela lê os discos da maquina.
     fn sondagem() -> Receita {
         Receita::montar(&Pedido {
@@ -1762,8 +1777,17 @@ mod testes {
         let comando = sondagem().comando().to_string();
         let colunas: Vec<&str> = CABECALHO.split_whitespace().collect();
 
-        assert!(
-            comando.contains(&format!("-o {}", colunas.join(","))),
+        // **Por igualdade, e nao por `contains`.** A primeira versao deste
+        // teste procurava `-o <colunas>` como substring, e uma coluna **a
+        // mais** passava por ela: `-o A,B,C,D` contem `-o A,B,C`.
+        //
+        // Isso nao e hipotetico — foi medido. A falha forcada de 24/08/2026
+        // acrescentou `FLAGQUENAOEXISTE` ao fim da lista para fazer o `lsblk`
+        // recusar a receita, e **esta assercao passou**. O unico teste que
+        // pegou a mutacao foi o do ensaio em bash, e por acaso.
+        assert_eq!(
+            colunas_do_lsblk(&comando),
+            colunas.join(","),
             "as colunas nao batem com o cabecalho de `{CABECALHO}`: {comando}"
         );
 

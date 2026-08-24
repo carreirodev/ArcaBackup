@@ -1,0 +1,10 @@
+KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL
+loop0     loop0       466.2M loop squashfs /run/live/rootfs/filesystem.squashfs 
+sda       sda         447.1G disk                                               Maxtor Z1 SSD 480GB
+sda1      |-sda1      445.6G part ntfs     /home/partimag                       
+sda2      `-sda2        1.6G part vfat                                          
+nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G
+nvme0n1p1 |-nvme0n1p1   300M part vfat                                          
+nvme0n1p2 |-nvme0n1p2    16M part                                               
+nvme0n1p3 |-nvme0n1p3 464.5G part ntfs                                          
+nvme0n1p4 `-nvme0n1p4     1G part ntfs                                          

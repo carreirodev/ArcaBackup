@@ -660,6 +660,34 @@ fn conselho(colheita: &Colheita) -> String {
             "  novo — o selo continua gravado e o desfecho continua sendo deste job.\n"
         )
         .to_string(),
+        // **A sondagem aponta o arquivo pelo nome, e as outras três não podem.**
+        //
+        // Nelas o log é do `ocs-sr` ou do `ocs-chkimg`, e o que está lá é
+        // centenas de linhas de progresso — dizer "olhe a pasta" é o melhor que
+        // se pode fazer. Na sondagem o arquivo tem **uma linha**, e ela é a
+        // mensagem do `lsblk` dizendo o que ele recusou: mandar procurar na
+        // pasta seria esconder a resposta a um `cd` de distância.
+        //
+        // Medido na falha forçada de 24/08/2026: `lsblk: unknown column:
+        // FLAGQUENAOEXISTE`, quarenta bytes, no `blkdev.list`.
+        Encontrado::Arquivo(Julgamento::Falhou)
+            if colheita.estado.comando == Operacao::Sondagem =>
+        {
+            concat!(
+                "\n  O `lsblk` FALHOU E DISSE POR QUÊ. A mensagem dele esta em\n",
+                "  ARCA-LOGS\\sondagem\\blkdev.list — o `2>&1` da receita aponta para la, e\n",
+                "  por isso ela sobreviveu ao desligamento.\n",
+                "\n",
+                "  As flags do `lsblk` sao RECONSTRUCAO a partir do formato do arquivo, e\n",
+                "  nao ha captura da linha de comando que o Clonezilla usa (§10.2.5). Uma\n",
+                "  coluna que esta versao do util-linux nao conheca cai exatamente aqui.\n",
+                "\n",
+                "  O nome do disco continua por determinar, e `arca backup` vai continuar\n",
+                "  recusando ate uma sondagem concluir.\n"
+            )
+            .to_string()
+        }
+
         Encontrado::Arquivo(Julgamento::Falhou) => format!(
             "\n  O CLONEZILLA FALHOU E DISSE. O log da operacao esta em\n\
              \x20 ARCA-LOGS\\{}\\, junto do proprio `arca-fim.txt`.\n",
@@ -1404,6 +1432,50 @@ mod testes {
         );
         assert!(saida.contains("ORACULO DO §4.5 EXISTE AGORA"), "{saida}");
         assert!(saida.contains("arca backup"), "{saida}");
+    }
+
+    #[test]
+    fn uma_sondagem_que_falhou_aponta_o_arquivo_que_tem_a_mensagem() {
+        // **A primeira tela de `FALHOU` deste projeto**, rodada em hardware em
+        // 24/08/2026 com uma coluna inventada no `lsblk`. O conselho genérico
+        // dizia *"o log da operação está em ARCA-LOGS\sondagem\"* — e ali há
+        // **um** arquivo com **uma** linha, que é a resposta. Mandar procurar
+        // na pasta seria esconder a resposta a um `cd` de distância.
+        //
+        // Nas outras três o log tem centenas de linhas de progresso, e "olhe a
+        // pasta" é o melhor que se pode dizer. Por isso a sondagem tem conselho
+        // próprio, e não uma frase que serve mal às quatro.
+        let estado = Estado {
+            comando: Operacao::Sondagem,
+            nome: None,
+            disco: None,
+            ..estado(Situacao::Armado)
+        };
+        let desarme = desarme();
+        let desfecho = Encontrado::Arquivo(Julgamento::Falhou);
+
+        let saida = montar(&Colheita {
+            estado: &estado,
+            desfecho: &desfecho,
+            pasta: None,
+            sondagem: Some(&[]),
+            desarme: &desarme,
+            ordem: &OrdemDevolvida::JaEstavaNaFrente,
+            encerramento: &Encerramento::Encerrado,
+            pastas: &[],
+            livre_bytes: 176_000_000_000,
+        });
+
+        assert!(saida.contains(r"ARCA-LOGS\sondagem\blkdev.list"), "{saida}");
+        assert!(saida.contains("2>&1"), "e por que ela sobreviveu: {saida}");
+        assert!(
+            saida.contains("RECONSTRUCAO"),
+            "e a causa provável: {saida}"
+        );
+        assert!(
+            !saida.contains("O CLONEZILLA FALHOU"),
+            "quem falhou foi o `lsblk`, e a tela tem de dizer isso: {saida}"
+        );
     }
 
     #[test]

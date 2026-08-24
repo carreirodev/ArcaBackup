@@ -1,7 +1,9 @@
 # A sondagem é a quarta `Operacao`, e ela é a segunda fonte do §4.5
 
-Decidido em 23/08/2026, na etapa E12. **Rodou em hardware em 24/08/2026**, e
-fechou P-26 e P-27 — ver *"O marco"*, no fim.
+Decidido em 23/08/2026, na etapa E12. **Rodou em hardware em 24/08/2026** duas
+vezes — a segunda com uma coluna inventada, para exercitar o ramo do erro. A
+primeira fechou P-26 e P-27; a segunda escreveu o **primeiro `FALHOU` deste
+projeto**. Ver *"O marco"* e *"A falha forçada"*, no fim.
 
 ## O contexto: três comandos que armam, e nenhum funciona num dispositivo novo
 
@@ -378,6 +380,75 @@ O marco desmentiu em uma linha — armado às `14:56:55`, arquivo carimbado
 mediu. O que mudou foi a tela, que passou a dizer de quem é o carimbo. Para o
 que o campo existe — separar uma sondagem da anterior — o deslocamento não
 atrapalha: as duas vêm do mesmo relógio, e a distância entre elas é real.
+
+---
+
+## A falha forçada, no mesmo dia — e é o primeiro `FALHOU` deste projeto
+
+Armada às **15:32:25**, com `FLAGS_DE_SONDAGEM` mutada para incluir uma coluna
+inventada (`FLAGQUENAOEXISTE`). O binário foi compilado, copiado para o
+`ARCABOOT` e usado para **armar**; a mutação foi revertida antes de colher, e
+quem colheu foi o binário normal.
+
+É o mesmo movimento do [ADR-0017](0017-a-entrada-de-firmware-nasce-de-uma-copia-do-bootmgr.md)
+— a entrada de medição foi apagada no fim — e da segunda execução do marco da
+E10: exercitar o caminho que nenhuma execução normal exercita, e desfazer o que
+foi montado para isso.
+
+```text
+E:\ARCA-LOGS\sondagem\arca-fim.txt ... 54 bytes
+  ARCA_SELO=95772dae07463701
+  ARCA_PROBE=FALHOU
+  ARCA_FIM
+
+E:\ARCA-LOGS\sondagem\blkdev.list .... 40 bytes
+  lsblk: unknown column: FLAGQUENAOEXISTE
+```
+
+**Três coisas que nenhuma execução deste projeto tinha mostrado:**
+
+- **O `if/then/else` de R-5 tomou o ramo do erro em hardware.** Ele existe desde
+  a E3 e só tinha rodado no ramo do êxito, em cinco execuções. `ARCA_PROBE=FALHOU`
+  é o primeiro `FALHOU` que o ARCA escreveu.
+- **O `2>&1` guardou a causa no dispositivo.** A mensagem do `lsblk` ficou no
+  próprio `blkdev.list` em vez de sumir com o `poweroff` — quarenta bytes que
+  dizem exatamente qual coluna foi recusada.
+- **E P-27 respondeu pelo outro lado**: aquele util-linux **valida as colunas** e
+  sai com código diferente de zero quando não conhece uma. Se a reconstrução das
+  sete estivesse errada, teríamos sabido exatamente assim.
+
+**E as duas telas seguintes concordaram**, que é o que o `if` compra: o `arca
+resultado` disse `Desfecho: o Clonezilla falhou e disse` e saiu com código 1
+(S-5); o `arca backup --dry-run` disse `Disco de origem ..... POR DETERMINAR`.
+Com o `;` da forma proposta na mesa, a primeira teria dito `OK` e a segunda
+continuaria dizendo `POR DETERMINAR` — as duas do ARCA, na mesma sessão.
+
+### O que ela **não** fecha, e vale dizer
+
+**P-6 continua aberta.** A pergunta de lá é sobre o `ocs-sr`, e nenhuma resposta
+do `lsblk` fala por ele. O que esta medição fecha é o outro lado, que vale por
+si: a **forma** de R-5 funciona em hardware nos dois ramos, e o `arca resultado`
+sabe imprimir um desfecho ruim.
+
+### E ela expôs um buraco no teste que guardava a reconstrução
+
+`as_colunas_do_lsblk_sao_as_do_cabecalho_capturado` procurava `-o <colunas>` como
+**substring**, e `-o A,B,C,D` contém `-o A,B,C`: a mutação **passou por ele**. O
+único teste que a pegou foi o do ensaio em bash, e por acaso — porque a string do
+script não bate.
+
+A comparação passou a ser por **igualdade**, sobre a lista extraída da receita, e
+há um segundo teste que exercita a extração contra uma receita adulterada — o
+guarda do guarda. É a lição de sempre com o sujeito trocado: **um teste que
+aceita mais do que devia é um teste que ninguém sabe se funciona**, e a única
+forma de descobrir é mutar o código de produção.
+
+### O conselho da colheita ganhou um ramo próprio
+
+O genérico dizia *"o log da operação está em `ARCA-LOGS\sondagem\`"*. Ali há
+**um** arquivo com **uma** linha, e ela é a resposta — mandar procurar na pasta
+esconderia a resposta a um `cd` de distância. Nas outras três o log tem centenas
+de linhas de progresso, e "olhe a pasta" é o melhor que se pode dizer.
 
 ### Um achado que ninguém pediu, e ele fala de uma defesa da E9
 

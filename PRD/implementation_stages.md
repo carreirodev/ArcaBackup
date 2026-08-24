@@ -2440,6 +2440,80 @@ mediu. O que mudou foi a tela, que passou a dizer de quem é o carimbo —
 `(carimbo do Clonezilla, P-7)` —, para que ninguém o compare com o `armado_em`
 do `estado.json` e conclua que a sondagem é mais velha do que é.
 
+#### A falha forçada, no mesmo dia — o primeiro `FALHOU` deste projeto
+
+Armada às **15:32:25**, com `FLAGS_DE_SONDAGEM` mutada para incluir
+`FLAGQUENAOEXISTE`. O binário de medição armou; a mutação foi revertida antes de
+colher, e quem colheu foi o normal — o mesmo movimento do ADR-0017, em que a
+entrada de medição foi apagada no fim.
+
+```text
+E:\ARCA-LOGS\sondagem\arca-fim.txt ... 54 bytes
+  ARCA_SELO=95772dae07463701
+  ARCA_PROBE=FALHOU
+  ARCA_FIM
+
+E:\ARCA-LOGS\sondagem\blkdev.list .... 40 bytes
+  lsblk: unknown column: FLAGQUENAOEXISTE
+```
+
+| O que se queria saber | O que se soube |
+|---|---|
+| o `if` de R-5 toma o **ramo do erro** em hardware | toma — e era o único ramo que faltava desde a E3 |
+| o `2>&1` guarda a causa no dispositivo | guarda: quarenta bytes dizendo **qual** coluna foi recusada |
+| aquele util-linux valida as colunas? | **valida**, e sai com código ≠ 0 — P-27 pelo outro lado |
+| o `arca resultado` sabe imprimir uma falha | imprime, aponta o arquivo e **sai com código 1** (S-5) |
+| as duas telas se contradizem? | **não**: `FALHOU` e `POR DETERMINAR` concordam. É o que o `;` teria quebrado |
+
+**P-6 continua aberta, e a distinção é o ponto.** Ela pergunta se o **`ocs-sr`**
+devolve código diferente de zero ao falhar; quem falhou aqui foi o `lsblk`. O
+que ficou provado é a **forma** de R-5 — e o que sobra em P-6 é o sujeito.
+
+##### E ela expôs um teste que aceitava mais do que devia
+
+`as_colunas_do_lsblk_sao_as_do_cabecalho_capturado` procurava `-o <colunas>` como
+**substring**, e `-o A,B,C,D` contém `-o A,B,C`. A mutação da falha forçada
+**passou por ele** — o único que a pegou foi o do ensaio em bash, e por acaso.
+
+Corrigido para comparação por **igualdade** sobre a lista extraída da receita, com
+um segundo teste que exercita a extração contra uma receita adulterada. A lição é
+a de sempre com o sujeito trocado: **um teste que aceita mais do que devia é um
+teste que ninguém sabe se funciona**, e a única forma de descobrir é mutar o
+código de produção.
+
+##### E o conselho da colheita ganhou um ramo próprio
+
+O genérico dizia *"o log da operação está em `ARCA-LOGS\sondagem\`"* — e ali há
+**um** arquivo com **uma** linha, que é a resposta. Nas três operações que gravam
+o log tem centenas de linhas de progresso, e "olhe a pasta" é o melhor que se
+pode dizer; aqui era esconder a resposta a um `cd` de distância.
+
+#### E as duas colheitas de sondagem discordaram sobre a ordem de boot
+
+Duas sondagens iguais, no mesmo dia, e o `arca resultado` disse coisas
+diferentes na linha `Ordem de boot`:
+
+```text
+marco (14:56)  ..... ok · o Windows ja era o primeiro
+falha (15:32)  ..... devolvida · o Windows voltou ao topo, na frente de ARCA
+```
+
+Antes do marco a entrada `ARCA` estava **fora** da ordem permanente — o `arca
+prepare` a tirou de lá (C-5, ADR-0017), e o `arca status` de 23/08 registra `1
+entrada(s), nenhuma para o dispositivo`. Depois de tudo, o `arca status` mostra
+`dispositivo em 2o de 2`.
+
+**A hipótese que isso sugere, e ela não está medida:** o ciclo de boot pelo
+dispositivo **acrescenta** a entrada à ordem (ADR-0009), e na primeira vez ela
+pode entrar **atrás** do `{bootmgr}` — o que faria C-13 não ter o que consertar
+na primeira colheita e ter na segunda. O ADR-0009 diz que o ciclo põe a entrada
+*"na frente"*, sem distinguir o caso em que ela estava fora.
+
+**O que falta para saber é ler o `{fwbootmgr}` entre o desligamento e a
+colheita**, que é justamente onde ninguém leu. É a mesma forma de P-19, e a
+mesma armadilha que o §11 do PRD já nomeia: *medir o firmware depois do reinício
+e achar que se mediu o reinício*.
+
 #### Um achado que a sondagem deu de graça, e ele fala de uma defesa da E9
 
 O `blkdev.list` trouxe o dispositivo como **`Maxtor Z1 SSD 480GB`**, e o WMI o
