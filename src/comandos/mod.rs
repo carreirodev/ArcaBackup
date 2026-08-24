@@ -11,5 +11,6 @@ pub mod list;
 pub mod prepare;
 pub mod restore;
 pub mod resultado;
+pub mod sondar;
 pub mod status;
 pub mod verify;

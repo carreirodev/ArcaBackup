@@ -61,6 +61,35 @@ pub fn dia_e_mes(momento: Option<DateTime<Local>>) -> String {
     }
 }
 
+/// `23/08 21:14`, para a sondagem (E12).
+///
+/// # Por que ela leva a hora e as imagens nao
+///
+/// A imagem se reconhece pelo nome, e a data e so uma dica; duas sondagens do
+/// mesmo dia nao tem nome nenhum que as separe — a pasta e fixa e a segunda
+/// substitui a primeira. Sem a hora, `lido da sondagem de 23/08` nao distingue
+/// a medicao de cinco minutos atras da de manhã, e e justamente essa distancia
+/// que decide se ela ainda descreve esta maquina.
+///
+/// **Continua sendo informativo**: nada compara este valor com nada (S-6).
+///
+/// # E o carimbo e do relogio do Clonezilla, nao do Windows
+///
+/// Quem escreve o `blkdev.list` e o `lsblk`, do outro lado do reinicio; o
+/// Windows so lê o `mtime`. O valor sai **tres horas atras** do relogio daqui,
+/// que e P-7 — medido de novo no marco da E12: sondagem armada as 14:56:55, e o
+/// arquivo carimbado 11:58.
+///
+/// Esta funcao **nao corrige nada**: somar tres horas seria fabricar um
+/// instante que ninguem mediu. Quem imprime e que diz de quem e o carimbo — ver
+/// [`crate::blkdev::NomeDoDisco`].
+pub fn dia_e_hora(momento: Option<DateTime<Local>>) -> String {
+    match momento {
+        Some(momento) => momento.format("%d/%m %H:%M").to_string(),
+        None => "--/-- --:--".to_string(),
+    }
+}
+
 /// Uma casa decimal, com a virgula do portugues.
 fn com_virgula(valor: f64) -> String {
     format!("{valor:.1}").replace('.', ",")

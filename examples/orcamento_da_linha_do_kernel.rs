@@ -44,7 +44,7 @@ const RESERVADO: usize = 512;
 fn pedido_do_marco() -> Pedido {
     Pedido {
         operacao: Operacao::Backup,
-        nome: Nome::novo("2026-08-22_Apps").expect("nome valido"),
+        nome: Some(Nome::novo("2026-08-22_Apps").expect("nome valido")),
         disco: Some(Disco::novo("nvme0n1").expect("disco valido")),
         selo: Selo::novo("7d2d2f5153625b38").expect("o selo que o arca-fim.txt devolveu"),
     }
@@ -129,7 +129,7 @@ fn main() {
     println!("\n═══ O PIOR CASO QUE B-2 AINDA DEIXA PASSAR ═══\n");
     let nome_maximo = "A".repeat(48);
     let pior = Receita::montar(&Pedido {
-        nome: Nome::novo(&nome_maximo).expect("48 e o teto de B-2"),
+        nome: Some(Nome::novo(&nome_maximo).expect("48 e o teto de B-2")),
         ..pedido_do_marco()
     })
     .expect("cabe, e e o que o §10.2.3 preve");

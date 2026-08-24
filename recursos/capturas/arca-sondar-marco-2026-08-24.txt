@@ -1,0 +1,146 @@
+O MARCO DA ETAPA E12, em 24/08/2026.
+
+rca sondar armado no dispositivo que o rca prepare criou em 23/08 — MBR,
+USB, ARCAVAULT VAZIO DE IMAGENS —, com a entrada de firmware FORA da ordem
+permanente. A maquina reiniciou, bootou pelo boot unico, rodou o lsblk sozinha
+e desligou.
+
+  armado em ......... 2026-08-24T14:56:55-03:00 (relogio do Windows, do estado.json)
+  reiniciar->desligar  1 min 40 s (relogio de parede, cronometrado a mao)
+
+O que ficou no dispositivo antes desta colheita:
+
+  E:\ARCA-LOGS\sondagem\arca-fim.txt ... 50 bytes  · ARCA_SELO=354da624e7fa0d21 · ARCA_PROBE=OK · ARCA_FIM
+  E:\ARCA-LOGS\sondagem\blkdev.list .... 852 bytes · 2 discos, 7 particoes, 1 loop
+
+===== arca resultado =====
+Sondagem
+  nao opera sobre imagem nenhuma
+  Desfecho: concluida — o selo bate e a receita chegou ao fim
+  Discos vistos: sda (Maxtor Z1 SSD 480GB), nvme0n1 (KINGSTON SNV3S500G)
+  Selo: 354da624e7fa0d21
+
+  Desarmando SSD .................. ok · F:\boot\grub\grub.cfg
+  Job ............................. encerrado · o desfecho foi lido e dito
+  Ordem de boot ................... ok · o Windows ja era o primeiro
+
+Nenhuma imagem em ARCAVAULT.
+
+445 GB livres
+
+  O ORACULO DO §4.5 EXISTE AGORA. O `blkdev.list` da sondagem esta em
+  ARCA-LOGS\sondagem\, e e dele que sai o nome que o LINUX da ao disco —
+  aquele que o Windows nao conhece e que o ARCA nao inventa.
+
+  Para conferir o que o `arca backup` vai nomear, sem armar nada:
+    arca backup <nome> --dry-run
+
+
+===== arca backup 2026-08-24_Sondado --dry-run =====
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Origem: KINGSTON SNV3S500G · 465,8 GB · 109,2 GB em uso
+Imagem estimada: ~49,1 GB · espaco suficiente
+Imagem: 2026-08-24_Sondado
+
+  Desarmando receita anterior ..... nao, e ensaio · F:\boot\grub\grub.cfg
+  Inicializacao rapida ............ desativada   ok
+  chkdsk /scan .................... limpo        ok
+  Nome disponivel ................. ok
+  Disco de origem ................. nvme0n1 · lido da sondagem de 24/08 11:58, casando o modelo `KINGSTON SNV3S500G`
+
+Pre-voo concluido, e o dispositivo esta inerte. Nenhuma receita foi armada
+e nenhum boot unico foi marcado: e ensaio, e ensaio nao arma.
+
+Ensaio (--dry-run): nada e gravado, nada e armado.
+
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Imagem: 2026-08-24_Sondado
+Disco de origem: nvme0n1 · lido do blkdev.list de uma imagem
+
+  Nome validado (B-2) ............. ok
+  Receita validada (C-2) .......... ok
+
+Receita de backup — e esta que o comando sem --dry-run armaria
+
+  O que o Clonezilla executa:
+
+    mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-24_Sondado nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-24_Sondado > /home/partimag/2026-08-24_Sondado/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; sleep 20; poweroff
+
+  Como entra na linha do grub.cfg:
+
+    locales=en_US.UTF-8 keyboard-layouts=NONE ocs_repository="dev:///LABEL=ARCAVAULT" ocs_live_run="bash -c 'mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-24_Sondado nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-24_Sondado > /home/partimag/2026-08-24_Sondado/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; sleep 20; poweroff'" ocs_live_batch="yes"
+
+O selo acima e de ensaio (so zeros), e por isso esta receita nao serviria: o
+de verdade nasce **ao armar**, de uma fonte de entropia do sistema. E ele que
+liga o job ao desfecho que voltar.
+
+Nada foi armado, e o dispositivo nao foi nem desarmado — no ensaio, C-1 nao
+acontece. O mesmo comando sem `--dry-run` desarma, pede a confirmacao por
+extenso, arma e reinicia.
+
+A receita de restauracao nao sai mais daqui: ela e montada com o disco de
+DESTINO, que este comando nao escolhe. Para ve-la:  arca restore --dry-run
+
+
+===== arca backup 2026-08-24_Sondado --dry-run =====
+
+A PRIMEIRA VERSAO DESTA TELA TINHA UM DEFEITO, e ele so apareceu aqui.
+
+A linha do pre-voo dizia lido da sondagem de 24/08 11:58, e a do ensaio, quatro
+linhas abaixo, dizia · lido do blkdev.list de uma imagem — uma frase FIXA, de
+antes de a sondagem existir. Duas linhas da mesma tela afirmando fontes
+diferentes para o mesmo nome, e a de baixo estava errada.
+
+Corrigido antes desta captura: a linha do ensaio passou a ser, literalmente, a
+mesma que o pre-voo imprime — ver Ensaio::origem em src/comandos/backup.rs.
+
+E o CARIMBO DA SONDAGEM ganhou dono. O mtime do lkdev.list foi escrito pelo
+lsblk, do outro lado do reinicio, e sai tres horas atras do relogio do Windows
+(P-7): a sondagem foi armada as 14:56:55 e o arquivo esta carimbado 11:58. Nada
+e corrigido — somar tres horas fabricaria um instante que ninguem mediu —, e a
+tela passou a dizer de quem e o carimbo.
+
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Origem: KINGSTON SNV3S500G · 465,8 GB · 109,2 GB em uso
+Imagem estimada: ~49,1 GB · espaco suficiente
+Imagem: 2026-08-24_Sondado
+
+  Desarmando receita anterior ..... nao, e ensaio · F:\boot\grub\grub.cfg
+  Inicializacao rapida ............ desativada   ok
+  chkdsk /scan .................... limpo        ok
+  Nome disponivel ................. ok
+  Disco de origem ................. nvme0n1 · lido da sondagem de 24/08 11:58 (carimbo do Clonezilla, P-7), casando o modelo `KINGSTON SNV3S500G`
+
+Pre-voo concluido, e o dispositivo esta inerte. Nenhuma receita foi armada
+e nenhum boot unico foi marcado: e ensaio, e ensaio nao arma.
+
+Ensaio (--dry-run): nada e gravado, nada e armado.
+
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Imagem: 2026-08-24_Sondado
+Disco de origem: nvme0n1 · lido da sondagem de 24/08 11:58 (carimbo do Clonezilla, P-7), casando o modelo `KINGSTON SNV3S500G`
+
+  Nome validado (B-2) ............. ok
+  Receita validada (C-2) .......... ok
+
+Receita de backup — e esta que o comando sem --dry-run armaria
+
+  O que o Clonezilla executa:
+
+    mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-24_Sondado nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-24_Sondado > /home/partimag/2026-08-24_Sondado/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; sleep 20; poweroff
+
+  Como entra na linha do grub.cfg:
+
+    locales=en_US.UTF-8 keyboard-layouts=NONE ocs_repository="dev:///LABEL=ARCAVAULT" ocs_live_run="bash -c 'mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-24_Sondado nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-24_Sondado > /home/partimag/2026-08-24_Sondado/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-24_Sondado/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-24_Sondado/arca-fim.txt; sleep 20; poweroff'" ocs_live_batch="yes"
+
+O selo acima e de ensaio (so zeros), e por isso esta receita nao serviria: o
+de verdade nasce **ao armar**, de uma fonte de entropia do sistema. E ele que
+liga o job ao desfecho que voltar.
+
+Nada foi armado, e o dispositivo nao foi nem desarmado — no ensaio, C-1 nao
+acontece. O mesmo comando sem `--dry-run` desarma, pede a confirmacao por
+extenso, arma e reinicia.
+
+A receita de restauracao nao sai mais daqui: ela e montada com o disco de
+DESTINO, que este comando nao escolhe. Para ve-la:  arca restore --dry-run
+

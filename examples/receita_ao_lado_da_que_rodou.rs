@@ -30,7 +30,7 @@ fn receita_da_captura(grub_cfg: &str) -> String {
 fn gerar(operacao: Operacao, nome: &str) -> Receita {
     Receita::montar(&Pedido {
         operacao,
-        nome: Nome::novo(nome).expect("nome valido"),
+        nome: Some(Nome::novo(nome).expect("nome valido")),
         disco: Some(Disco::novo("nvme0n1").expect("disco valido")),
         selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
     })
@@ -53,6 +53,44 @@ fn main() {
     println!(
         "  {}\n",
         gerar(Operacao::Restauracao, "ARCA-TESTE-02").comando()
+    );
+
+    // As duas que nao tem captura ao lado, e por razoes diferentes: a
+    // verificacao (E11) rodou em hardware e o `grub.cfg` dela nao foi
+    // preservado; a sondagem (E12) e nova. Elas aparecem aqui porque
+    // `recursos/ensaio-da-receita.sh` as ensaia num bash de verdade, e a string
+    // dele sai daqui.
+    println!("═══ VERIFICACAO (V-2) ═══\n");
+    println!("nao ha captura: esta receita nasceu na E11.\n");
+    println!("o que o ARCA gera:\n");
+    println!(
+        "  {}\n",
+        Receita::montar(&Pedido {
+            operacao: Operacao::Verificacao,
+            nome: Some(Nome::novo("ARCA-TESTE-02").expect("nome valido")),
+            disco: None,
+            selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
+        })
+        .expect("a receita passa por C-2")
+        .comando()
+    );
+
+    println!("═══ SONDAGEM ═══\n");
+    println!(
+        "nao ha captura da LINHA, e ha do RESULTADO: o `blkdev.list` de dentro das\n\
+         imagens. As flags do `lsblk` sao reconstrucao a partir do cabecalho dele.\n"
+    );
+    println!("o que o ARCA gera:\n");
+    println!(
+        "  {}\n",
+        Receita::montar(&Pedido {
+            operacao: Operacao::Sondagem,
+            nome: None,
+            disco: None,
+            selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
+        })
+        .expect("a receita passa por C-2")
+        .comando()
     );
 
     println!("═══ A LINHA INTEIRA, COMO ENTRA NO grub.cfg ═══\n");

@@ -20,13 +20,12 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E9 | Restauração | IV | ✅ | 2026-08-23 11:50 · marco cumprido |
 | E10 | `arca prepare` | IV | ✅ | 2026-08-23 18:44 · marco cumprido · **sem reinício** · abriu P-26 |
 | E11 | `arca verify` | IV | ✅ | 2026-08-23 17:00 · marco cumprido · abriu P-25 |
-| E12 | `arca sondar` | IV | ⬜ | — · fecha P-26 |
+| E12 | `arca sondar` | IV | ✅ | 2026-08-24 14:58 · marco cumprido · **fechou P-26** |
 
-**As doze primeiras fecharam. A E12 nasceu depois delas**, de uma pergunta na
-mesa em 23/08/2026 e não do plano original — e é a única do documento que ainda
-não foi escrita. Uma etapa só é marcada ✅ quando o **Pronto quando**
-ou o **Entrega** da sua seção estiver cumprido de fato — não quando o código foi
-escrito.
+**As doze primeiras fecharam, e a E12 fechou a décima terceira.** Ela nasceu
+depois delas, de uma pergunta na mesa em 23/08/2026 e não do plano original.
+Uma etapa só é marcada ✅ quando o **Pronto quando** ou o **Entrega** da sua
+seção estiver cumprido de fato — não quando o código foi escrito.
 
 > **E isso não é o mesmo que o app estar fechado.** As etapas respondem *"foi
 > construído?"*; o que continua sem resposta é *"está provado?"* — seis
@@ -64,7 +63,7 @@ pasta montada de propósito, e **V-2 rodou em hardware às 16:53** — armada,
 bootada, `ocs-chkimg` executado sozinho, máquina desligada, colheita
 `concluida` com veredito `APROVADA`.
 
-**As cinco etapas com marco em hardware fecharam, e as cinco em sessões à
+**As seis etapas com marco em hardware fecharam, e as seis em sessões à
 parte:**
 
 - **E7 e E8, em 22/08/2026.** O backup `2026-08-22_Apps` foi armado às
@@ -90,6 +89,17 @@ parte:**
   boot — tirando-a da ordem permanente em seguida. **Duas execuções**, e a
   segunda porque a primeira reusou a entrada de firmware que já existia. Abriu
   **P-26**: um dispositivo preparado pelo ARCA ainda não bootou.
+- **E12, em 24/08/2026 às 14:56:55** — a mais barata de todas, e a única cujo
+  pior caso não envolve gravação. `arca sondar` foi armado, a máquina bootou
+  **pela entrada de firmware que o `arca prepare` criou**, o `lsblk` rodou
+  sozinho, a máquina desligou, e a colheita saiu `concluida` com selo
+  `354da624e7fa0d21`. **Fechou P-26 inteira**, as duas metades de uma vez: a
+  entrada estava **fora da ordem permanente**, então o boot único era o único
+  caminho possível até o dispositivo.
+
+  **1 min 40 s do reinício ao desligamento**, cronometrado à mão — e é o único
+  número deste repositório sobre quanto custa um boot do Clonezilla, porque toda
+  execução anterior tinha uma operação longa depois dele.
 
 Os blocos **"o que faltava para o marco, e como cada coisa fechou"** das seções
 continuam lá, reescritos contra o que aconteceu — apagá-los perderia o registro
@@ -1629,6 +1639,16 @@ que o repositório não pode mostrar tendo acontecido*.
 A tela passou a dizer o que fazer — F12, menu do Clonezilla, e daí em diante o
 ARCA —, **por quê**, e que o F12 do passo 1 é justamente o que responde P-26.
 
+> **E essa segunda versão da tela durou um dia.** Ela nasceu com data de
+> validade escrita: mandar o usuário para o menu do Clonezilla é *exatamente
+> aquilo que este app existe para não precisar*, cobrado logo na primeira vez
+> que alguém usa um dispositivo novo. A **E12** foi desenhada para tirar isso do
+> caminho, e em 24/08/2026 tirou — a tela passou a mandar `arca sondar`, que
+> custa **um** reinício e nenhuma tela do Clonezilla.
+>
+> O que valeu registrar a data de validade junto com a correção: a **primeira**
+> versão desta tela quase sobreviveu ao motivo dela, e a segunda não teve como.
+
 #### E cinco testes de hardware descreviam um dispositivo, e não o conceito
 
 Achado logo depois, ao deixar **só o dispositivo novo** na mesa. Cinco testes
@@ -2145,7 +2165,13 @@ aquele formato.
 | Escrever em `/home/partimag` **antes** de qualquer comando do Clonezilla | **Rodou** — verificação armada da E11, 23/08/2026 |
 | **O `lsblk` como comando principal** | **Código novo** — nenhuma receita deste projeto o chamou |
 | **O `ARCA_PROBE=`** | **Código novo** |
-| **As flags exatas do `lsblk`** | **Não medido** — ver abaixo |
+| **As flags exatas do `lsblk`** | **Reconstrução** — a terceira procedência, e ela estreia aqui. É **P-27** |
+
+> **A terceira procedência é o que esta etapa acrescenta ao vocabulário do
+> §10.2.2**, que tinha duas: *transcrito* (há captura da linha de comando) e
+> *código novo* (não há original nenhum). A sondagem não é nem uma nem outra: há
+> original do **resultado**, e não da linha que o produziu. Chamar isso de
+> transcrição seria a sexta vez do padrão do §3.5.
 
 #### O pressuposto perigoso já tem original, e ninguém tinha notado
 
@@ -2205,40 +2231,74 @@ falha dessa reconstrução seja **barato e visível**: com o `if` no lugar, uma
 flag recusada vira `ARCA_PROBE=FALHOU` numa tela, e não um arquivo vazio com
 carimbo de sucesso.
 
-#### As cinco perguntas que a etapa decide
+#### As cinco perguntas, e o que cada uma decidiu
 
-**1. Onde a sondagem grava, e o que acontece com a anterior.** `pasta_do_log`
-produz `"{operacao}-{nome}"`, e a sondagem não tem nome de imagem. Com pasta
-fixa, duas sondagens colidem e a segunda trunca o `arca-fim.txt` da primeira —
-que é o defeito que a revisão da E3 pegou entre backup e restauração. **Aqui
-pode ser o comportamento certo**, porque a medição mais recente é a que vale. A
-etapa decide e escreve por quê; o que não pode é decidir por omissão.
+Estão todas em [ADR-0019](../docs/adr/0019-a-sondagem-e-a-quarta-operacao.md),
+com o argumento inteiro. Aqui fica o que ficou decidido.
 
-**2. O `Nome` do `Pedido` e do `estado.json`.** O precedente é da E11: o `disco`
-virou opcional com a **string vazia** como sentinela, e a escolha não foi
-arbitrária — `Disco::novo("")` já recusava desde a E3, então o vazio nunca foi um
-valor possível e não pode colidir. Conferir se `Nome::novo("")` recusa. Se
-recusar, o mesmo argumento vale e a decisão já está tomada por precedente.
+**1. Onde a sondagem grava, e o que acontece com a anterior.** Pasta **fixa** —
+`ARCA-LOGS\sondagem\`, com o `arca-fim.txt` e o `blkdev.list` juntos —, e a
+sondagem anterior é **substituída**.
 
-**3. A segunda variante de `Origem`.** `blkdev::Origem` só sabe dizer
-`LidoDaImagem { imagem, modelo }`, e o pré-voo imprime isso literalmente. Uma
-sondagem que se apresentasse como imagem seria a mesma falha que o `arca prepare`
-acabou de pagar — uma tela afirmando o que não aconteceu. Precisa de uma
-variante própria, e ela tem de dizer **quando** a sondagem foi feita.
+O que decidiu foi **o que se perde**. Entre backup e restauração perdia-se o
+desfecho de *outro job*, sobre outra pergunta, que ninguém mais ia reproduzir:
+quarenta minutos de gravação. Aqui perde-se a *medição anterior da mesma
+pergunta*, e a mais recente é a que vale — uma sondagem velha descrevendo uma
+máquina que mudou é pior do que nenhuma, e refazê-la custa um reinício. **A tela
+diz isso antes de armar**: `Sondagem de hoje … SERA SUBSTITUIDA pela de agora`.
 
-**4. A precedência entre a sondagem e o `blkdev.list` das imagens.** A sondagem
-descreve a máquina de **agora**; a imagem descreve a de quando o backup foi
-feito. A proposta é a sondagem ganhar, com a divergência **dita na tela** e nunca
-resolvida em silêncio. Vale registrar que a defesa existente já ajuda: o
-casamento é por modelo, e uma sondagem obsoleta que descrevesse outro disco cai
-em `ModeloNaoCasa`, que é recusa.
+E `sondagem` não colide com nenhuma das outras três, **nem com uma imagem
+chamada `sondagem`** — que B-2 aceita: as delas são `{operacao}-{nome}`, e há
+teste sobre isso.
 
-**5. O que se digita para confirmar, e o que essa confirmação impede.** `arca
-backup` e `arca restore` pedem o nome digitado porque a operação é cara ou
-destrutiva. A sondagem não apaga nada — mas **reinicia a máquina**, e isso não é
-pouco para quem está trabalhando. A decisão tem de sobreviver à pergunta *"o que
-essa confirmação impede?"*; uma confirmação que não impede nada é ruído que ensina
-o usuário a digitar sem ler.
+**2. O `Nome` do `Pedido` e do `estado.json`.** O precedente se aplica, e foi
+**conferido antes de reusado**: `Nome::novo("")` recusa com `Recusa::Vazio` desde
+a E1, então a string vazia nunca foi um nome de imagem possível e não pode
+colidir. O campo virou `Option<Nome>`, a chave continua obrigatória no arquivo, e
+o vazio diz "nenhuma".
+
+O sentinela óbvio — `sondagem` — **colidiria**, e é isso que torna o argumento do
+vazio necessário em vez de estético.
+
+**A coerência é cobrada nos dois sentidos e nos dois eixos**, e o segundo eixo
+quase nasceu errado: `nomeia_disco` e `nomeia_imagem` separam coisas
+**diferentes**, e a verificação é a prova — ela não nomeia disco e nomeia imagem.
+
+**3. A segunda variante de `Origem`.** `Origem::LidoDaSondagem { modelo, quando,
+divergencia }`, e a tela diz `lido da sondagem de 23/08 21:14`. O `quando` sai do
+`mtime` do arquivo, que é o relógio **do Windows** — informativo e nunca
+comparado (S-6), como o `dia_e_mes` das imagens no `arca list`. Com a hora junto,
+porque a pasta é fixa e duas sondagens do mesmo dia não têm nome que as separe.
+
+**4. A precedência.** A sondagem ganha, e a divergência sai **na linha do disco**
+(`DIVERGE de …`) e num **aviso próprio** do pré-voo, que explica que há duas
+fontes, que elas falam de instantes diferentes, e qual delas o ARCA usou.
+
+E a etapa decidiu uma coisa que a pergunta não previa: **`SemOraculo` é a única
+recusa da sondagem que deixa as imagens falar.** As outras são afirmações sobre a
+máquina de agora — `ModeloAmbiguo` diz *"há dois discos deste modelo aqui, neste
+instante"*, e resolver isso por um `blkdev.list` antigo é exatamente o chute que
+aquela recusa existe para não dar.
+
+**E o `arca restore` usa a mesma lista.** Ele resolve dois nomes pelo oráculo — o
+do destino e o do próprio dispositivo (a recusa que a revisão da E9 achou) —, e
+os dois falam do hardware que está na mesa agora. Deixar a sondagem de fora dali
+faria o `arca backup` achar o disco por uma fonte que o `arca restore` não lê,
+sobre a mesma máquina e no mesmo minuto.
+
+**5. O que se digita para confirmar.** **Uma tecla, com o padrão no não** — a
+mesma pergunta do primeiro tempo de PR-4, que saiu do `arca prepare` para
+`src/confirmacao.rs`.
+
+O que ela impede está dito na tela imediatamente acima dela: o **reinício** de
+quem digitou o comando sem saber que ele reinicia. S-2 pede o **alvo** por
+extenso e existe para custar lê-lo; a sondagem não tem alvo — não apaga nada e
+não escolhe nada.
+
+**Pedir a palavra `sondar` por extenso seria ruído**, e é o caso que a pergunta
+mandava evitar: quem acabou de digitar `arca sondar` a ecoaria sem ler nada.
+Copiaria a forma de S-2 sem a razão dela, e gastaria o único recurso que S-2 tem
+— a disposição de quem lê para levar uma confirmação a sério.
 
 #### O pior caso não toca em disco nenhum, e isso é inédito aqui
 
@@ -2280,6 +2340,130 @@ sondagem**, dizendo na tela que veio dela.
 > **Um F12 não serve para o marco.** O F12 responde (a) e não responde (b) — é a
 > distinção que a própria P-26 faz. O boot tem de ser o único, disparado pelo
 > `bootsequence` que o `arca sondar` escreveu.
+
+#### O marco, cumprido em 24/08/2026
+
+Armado às **14:56:55**. A máquina reiniciou, bootou pelo dispositivo, rodou o
+`lsblk` e desligou sozinha — **1 min 40 s** de relógio de parede.
+
+O que ficou no dispositivo, e cada linha responde uma coisa:
+
+```text
+E:\ARCA-LOGS\sondagem\arca-fim.txt ... 50 bytes
+  ARCA_SELO=354da624e7fa0d21     ← o selo do estado.json, batendo
+  ARCA_PROBE=OK                  ← o `if` tomou o ramo do exito: o lsblk aceitou as flags
+  ARCA_FIM                       ← a receita chegou ao fim
+
+E:\ARCA-LOGS\sondagem\blkdev.list .... 852 bytes
+  sda       sda      447.1G disk           Maxtor Z1 SSD 480GB
+  sda1      |-sda1   445.6G part ntfs  /home/partimag
+  nvme0n1   nvme0n1  465.8G disk           KINGSTON SNV3S500G
+```
+
+| O que se queria saber | O que a linha responde |
+|---|---|
+| **P-26 (a)** — o dispositivo boota | bootou |
+| **P-26 (b)** — a entrada do `arca prepare` leva a ele | a entrada estava **fora da ordem permanente**, então não havia outro caminho |
+| **P-27** — as flags reconstruídas do `lsblk` | `ARCA_PROBE=OK`, e a árvore saiu em **ASCII**: o `-i` foi aceito |
+| o repositório estava montado no `mkdir` | `/home/partimag` no `MOUNTPOINT` do `sda1` — o próprio arquivo testemunha |
+| o oráculo do §4.5 num dispositivo sem imagem | `nvme0n1` ↔ `KINGSTON SNV3S500G` |
+
+E a colheita, com o `arca backup --dry-run` em seguida:
+
+```text
+Sondagem
+  nao opera sobre imagem nenhuma
+  Desfecho: concluida — o selo bate e a receita chegou ao fim
+  Discos vistos: sda (Maxtor Z1 SSD 480GB), nvme0n1 (KINGSTON SNV3S500G)
+  Selo: 354da624e7fa0d21
+  …
+  Disco de origem ..... nvme0n1 · lido da sondagem de 24/08 11:58 (carimbo do Clonezilla, P-7)
+```
+
+#### O que o marco custou, e é a medição que nenhuma etapa tinha
+
+**1 min 40 s** do reinício ao desligamento, cronometrado à mão. Dois pedaços
+desse total são conhecidos por outra medição — o `set timeout="30"` do
+`grub.cfg` e o `sleep 20` da receita —, e o que sobra é o boot propriamente
+dito:
+
+```text
+1 min 40 s   do reinicio ao desligamento (cronometrado)
+   − 30 s    o menu do grub, parado (medido no `set timeout` do grub.cfg)
+   − 20 s    o `sleep` antes do poweroff (a receita)
+   ────────
+   ≈ 50 s    POST + kernel + initrd + `toram` + o live subir + o `lsblk`
+```
+
+**Os 50 s são aritmética sobre um número cronometrado, e não uma terceira
+medição** — vale como ordem de grandeza, e não como o `202,6 s` de V-1.
+
+> **E o `~2 minutos` que foi dito na mesa era palpite.** O total real ficou
+> abaixo dele, e o que a etapa trocou não foi o número: foi a **procedência**.
+> A tela do `arca sondar` continua sem prometer tempo nenhum, e há teste
+> cobrando isso — quem quiser o número tem este parágrafo, com a decomposição à
+> vista.
+
+**Uma conferência secundária, que concorda e não substitui.** O `arca-fim.txt`
+saiu carimbado `11:58:22`, e a sondagem foi armada às `14:56:55` do relógio do
+Windows. Sob o deslocamento de 3 h de P-7, isso põe o `echo ARCA_FIM` em
+`14:58:22` — **1 min 27 s** depois do armar, mais os 20 s do `sleep`. Concorda
+com o cronômetro. **Não é medição**: ela depende de o deslocamento ser
+exatamente três horas, que é a hipótese que P-7 registra e que S-6 proíbe usar
+para decidir qualquer coisa.
+
+#### Dois defeitos que só a execução real mostrou, e a suíte estava verde
+
+**1. Duas linhas da mesma tela afirmando fontes diferentes.** O `arca backup
+--dry-run` imprimiu, no pré-voo, `Disco de origem ..... lido da sondagem de
+24/08 11:58` — e quatro linhas abaixo, no ensaio, `Disco de origem: nvme0n1 ·
+lido do blkdev.list de uma imagem`.
+
+A segunda era uma **frase fixa**, de antes de a sondagem existir: o `Ensaio`
+carregava um `de_exemplo: bool`, que nunca soube dizer *qual* fonte respondeu. É
+o padrão de sempre — peça nova encaixada em peça antiga que ninguém releu ao
+encaixar —, e é a mesma classe de defeito que a etapa existe para não cometer:
+**uma tela afirmando o que não aconteceu**.
+
+A saída foi não ter mais frase fixa: o campo virou
+`origem: Option<&NomeDoDisco>`, e a linha do ensaio é literalmente a que o
+pré-voo imprime.
+
+**2. A data da sondagem tinha o dono errado, e estava na doc.** O campo `quando`
+sai do `mtime` do `blkdev.list`, e a doc dizia que ele vinha do relógio **do
+Windows, e não do live**. É o contrário: quem escreve o arquivo é o `lsblk`, do
+outro lado do reinício. O marco desmentiu em uma linha — armado às `14:56:55`,
+arquivo carimbado `11:58`.
+
+Nada é corrigido no valor: somar três horas fabricaria um instante que ninguém
+mediu. O que mudou foi a tela, que passou a dizer de quem é o carimbo —
+`(carimbo do Clonezilla, P-7)` —, para que ninguém o compare com o `armado_em`
+do `estado.json` e conclua que a sondagem é mais velha do que é.
+
+#### Um achado que a sondagem deu de graça, e ele fala de uma defesa da E9
+
+O `blkdev.list` trouxe o dispositivo como **`Maxtor Z1 SSD 480GB`**, e o WMI o
+chama de **`JMicron Generic SCSI Disk Device`**. São dois nomes para o mesmo
+hardware: a ponte USB responde ao Windows com o nome **dela**, e o Linux lê o
+disco que está atrás dela.
+
+| Disco | WMI | `lsblk` | Casam? |
+|---|---|---|---|
+| interno | `KINGSTON SNV3S500G` | `KINGSTON SNV3S500G` | **sim** |
+| dispositivo | `JMicron Generic SCSI Disk Device` | `Maxtor Z1 SSD 480GB` | **não** |
+
+O disco de **origem** casa, que é o que o backup precisa. O que não casa é o
+**dispositivo** — e a consequência é da E9: a segunda barreira de R-8
+(`DestinoResolveNoDispositivo`, que resolve o nome Linux do dispositivo pelo
+mesmo oráculo e compara com o do destino) **fica inerte neste dispositivo**,
+porque `nome_do_disco` não acha `JMicron Generic` em `blkdev.list` nenhum.
+
+Ela não falha errado — só não dispara —, e a primeira barreira (por letra do
+Windows) continua valendo. O ADR-0015 já previa que ela viraria redundante. **O
+que se aprendeu é por quê ela pode ficar inerte**, e a razão não estava medida:
+uma ponte USB entre o disco e o Windows. No dispositivo antigo os dois lados
+casavam (`KGSSE100 256 SCSI Disk Device` ↔ `KGSSE100256`), e ninguém tinha
+razão para suspeitar.
 
 ---
 

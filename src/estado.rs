@@ -211,7 +211,22 @@ pub struct Estado {
     /// O que liga este job ao desfecho que o Clonezilla escrever (§4.3).
     pub selo: Selo,
     pub comando: Operacao,
-    pub nome: Nome,
+
+    /// A imagem sobre a qual a operacao roda, quando ha uma.
+    ///
+    /// # `None` na sondagem, e o sentinela e o mesmo argumento do `disco`
+    ///
+    /// A E12 trouxe uma operacao que **nao opera sobre imagem nenhuma**: o
+    /// `lsblk` da sondagem lê os discos da maquina, e ela existe justamente
+    /// para o dispositivo que ainda nao tem imagem (§4.5, P-26).
+    ///
+    /// A chave continua obrigatoria no JSON, pela razao do campo abaixo, e o
+    /// valor ausente e a **string vazia**. O precedente e da E11 e o argumento
+    /// e o mesmo, conferido antes de ser reusado: [`Nome::novo`] recusa o
+    /// vazio com [`crate::nome::Recusa::Vazio`] desde a E1, entao o vazio
+    /// nunca foi um nome de imagem possivel e nao pode colidir com nenhum. Um
+    /// sentinela como `sondagem` colidiria — B-2 o aceita como nome de imagem.
+    pub nome: Option<Nome>,
 
     /// O disco que a receita nomeia, com o nome que o Linux lhe da.
     ///
@@ -254,6 +269,20 @@ pub struct Estado {
 const CHAVES: [&str; 6] = ["selo", "comando", "nome", "disco", "armado_em", "situacao"];
 
 impl Estado {
+    /// Como este job se apresenta numa tela: `backup \`2026-08-22_Apps\``, ou
+    /// so `sondagem`, que nao opera sobre imagem nenhuma.
+    ///
+    /// Existe desde a E12, quando o `nome` virou opcional e cinco telas
+    /// passaram a ter de decidir o que dizer no lugar dele. Cinco decisoes
+    /// separadas divergiriam, e a diferenca apareceria como uma tela dizendo
+    /// ``sondagem ` ` `` — um par de crases vazio no lugar de um nome.
+    pub fn descricao(&self) -> String {
+        match &self.nome {
+            Some(nome) => format!("{} `{nome}`", self.comando.nome()),
+            None => self.comando.nome().to_string(),
+        }
+    }
+
     /// O `estado.json`, em texto.
     ///
     /// Uma chave por linha, e nao compacto: quem abrir este arquivo depois de
@@ -264,8 +293,9 @@ impl Estado {
         let valores = [
             self.selo.como_texto(),
             self.comando.nome(),
-            self.nome.como_texto(),
-            // O vazio e o "nenhum disco" da verificacao — ver o campo.
+            // O vazio e o "nenhuma imagem" da sondagem — ver o campo.
+            self.nome.as_ref().map_or("", Nome::como_texto),
+            // O vazio e o "nenhum disco" da verificacao e da sondagem.
             self.disco.as_ref().map_or("", Disco::como_texto),
             self.armado_em.como_texto(),
             self.situacao.nome(),
@@ -339,10 +369,27 @@ impl Estado {
             }
         };
 
+        // A mesma cobranca, no outro eixo e nos dois sentidos (E12). Um
+        // `estado.json` dizendo `sondagem` com nome de imagem carregaria um
+        // valor que receita nenhuma usa; um dizendo `backup` com nome vazio
+        // armaria uma gravacao sem dizer com que nome — e a pasta do desfecho
+        // sai do nome, entao o desfecho iria para o lugar da sondagem.
+        let nome = match (comando.nomeia_imagem(), nome.is_empty()) {
+            (true, false) => Some(Nome::novo(&nome).map_err(RecusaDoEstado::NomeInvalido)?),
+            (false, true) => None,
+            (nomeia, _) => {
+                return Err(RecusaDoEstado::NomeIncoerente {
+                    comando: comando.nome(),
+                    tem: nome,
+                    nomeia_imagem: nomeia,
+                });
+            }
+        };
+
         Ok(Estado {
             selo: Selo::novo(&selo).map_err(|_| RecusaDoEstado::SeloInvalido { tem: selo })?,
             comando,
-            nome: Nome::novo(&nome).map_err(RecusaDoEstado::NomeInvalido)?,
+            nome,
             disco,
             armado_em: MomentoDoArmar::de_texto(&armado_em)?,
             situacao: situacao_de_texto(&situacao)?,
@@ -367,7 +414,11 @@ fn situacao_de_texto(bruto: &str) -> Result<Situacao, RecusaDoEstado> {
 /// mesma funcao de que a receita monta o caminho Linux. Os dois lados do
 /// reinicio nao podem divergir no nome da pasta, e a unica forma de garantir
 /// isso e nao haver dois lugares onde ele se escreva.
-pub fn caminho_do_desfecho(raiz_do_vault: &Path, comando: Operacao, nome: &Nome) -> PathBuf {
+pub fn caminho_do_desfecho(
+    raiz_do_vault: &Path,
+    comando: Operacao,
+    nome: Option<&Nome>,
+) -> PathBuf {
     raiz_do_vault
         .join(ARCA_LOGS)
         .join(crate::receita::pasta_do_log(comando, nome))
@@ -530,6 +581,7 @@ fn operacao_de_texto(bruto: &str) -> Result<Operacao, RecusaDoEstado> {
         Operacao::Backup,
         Operacao::Restauracao,
         Operacao::Verificacao,
+        Operacao::Sondagem,
     ] {
         if operacao.nome() == bruto {
             return Ok(operacao);
@@ -589,6 +641,15 @@ pub enum RecusaDoEstado {
         tem: String,
         nomeia_disco: bool,
     },
+
+    /// O comando e o nome da imagem nao combinam. A gemea de
+    /// [`RecusaDoEstado::DiscoIncoerente`], no outro eixo (E12).
+    NomeIncoerente {
+        comando: &'static str,
+        tem: String,
+        nomeia_imagem: bool,
+    },
+
     MomentoInvalido {
         tem: String,
     },
@@ -649,7 +710,7 @@ impl fmt::Display for RecusaDoEstado {
             ),
             RecusaDoEstado::ComandoDesconhecido { tem } => write!(
                 f,
-                "`{tem}` nao e um comando do ARCA: valem `backup`, `restauracao` e `verificacao`"
+                "`{tem}` nao e um comando do ARCA: valem `backup`, `restauracao`, `verificacao` e `sondagem`"
             ),
             RecusaDoEstado::DiscoIncoerente {
                 comando,
@@ -662,6 +723,18 @@ impl fmt::Display for RecusaDoEstado {
             RecusaDoEstado::DiscoIncoerente { comando, tem, .. } => write!(
                 f,
                 "o estado diz `{comando}`, que nao nomeia disco nenhum na receita, e o campo `disco` tras `{tem}`. Um disco guardado por uma operacao que nao o usa e um valor que ninguem confere"
+            ),
+            RecusaDoEstado::NomeIncoerente {
+                comando,
+                nomeia_imagem: true,
+                ..
+            } => write!(
+                f,
+                "o estado diz `{comando}`, que opera sobre uma imagem, e o campo `nome` esta vazio. E do nome que sai a pasta do desfecho, e sem ele o desfecho iria para o lugar de outra operacao"
+            ),
+            RecusaDoEstado::NomeIncoerente { comando, tem, .. } => write!(
+                f,
+                "o estado diz `{comando}`, que nao opera sobre imagem nenhuma — ela lê os discos da maquina —, e o campo `nome` tras `{tem}`. Um nome guardado por uma operacao que nao o usa e um valor que ninguem confere"
             ),
             RecusaDoEstado::NomeInvalido(recusa) => {
                 write!(f, "o nome gravado nao passa por B-2: {recusa}")
@@ -698,7 +771,7 @@ mod testes {
         Estado {
             selo: Selo::novo("a3f1c9e07b2d4856").unwrap(),
             comando: Operacao::Backup,
-            nome: Nome::novo("2026-08-22_Apps").unwrap(),
+            nome: Some(Nome::novo("2026-08-22_Apps").unwrap()),
             disco: Some(Disco::novo("nvme0n1").unwrap()),
             armado_em: MomentoDoArmar::agora(&RelogioParado::em("2026-08-22T18:14:03")),
             situacao: Situacao::Armado,
@@ -796,17 +869,21 @@ mod testes {
     }
 
     #[test]
-    fn as_tres_operacoes_dao_a_volta_pelo_nome() {
-        // O leitor conhece as tres, e nao duas. Um `estado.json` escrito por
+    fn as_quatro_operacoes_dao_a_volta_pelo_nome() {
+        // O leitor conhece as quatro, e nao duas. Um `estado.json` escrito por
         // esta versao e lido por ela tem de voltar igual — inclusive o
-        // `verificacao`, que a E11 acrescentou.
+        // `verificacao`, que a E11 acrescentou, e o `sondagem`, da E12.
         for operacao in [
             Operacao::Backup,
             Operacao::Restauracao,
             Operacao::Verificacao,
+            Operacao::Sondagem,
         ] {
             let original = Estado {
                 comando: operacao,
+                nome: operacao
+                    .nomeia_imagem()
+                    .then(|| Nome::novo("2026-08-22_Apps").unwrap()),
                 disco: operacao
                     .nomeia_disco()
                     .then(|| Disco::novo("nvme0n1").unwrap()),
@@ -820,7 +897,7 @@ mod testes {
     }
 
     #[test]
-    fn a_recusa_de_comando_desconhecido_lista_as_tres() {
+    fn a_recusa_de_comando_desconhecido_lista_as_quatro() {
         // A mensagem tem de acompanhar o enum: um usuario que abra o arquivo e
         // veja `valem backup e restauracao` concluiria que `verificacao` e
         // corrupcao.
@@ -829,9 +906,121 @@ mod testes {
         }
         .to_string();
 
-        for nome in ["backup", "restauracao", "verificacao"] {
+        for nome in ["backup", "restauracao", "verificacao", "sondagem"] {
             assert!(recusa.contains(nome), "a mensagem nao cita `{nome}`: {recusa}");
         }
+    }
+
+    // ────────── a quarta operacao, e a coerencia com o nome ──────────
+
+    fn estado_de_sondagem() -> Estado {
+        Estado {
+            comando: Operacao::Sondagem,
+            nome: None,
+            disco: None,
+            ..estado()
+        }
+    }
+
+    #[test]
+    fn o_nome_vazio_e_a_string_vazia_no_arquivo() {
+        // O mesmo argumento do `disco` da E11, conferido antes de ser reusado:
+        // `Nome::novo("")` recusa desde a E1, entao o vazio nunca foi um nome
+        // de imagem possivel e nao pode colidir com nenhum. Um sentinela como
+        // `sondagem` colidiria — B-2 o aceita como nome de imagem.
+        let json = estado_de_sondagem().como_json().unwrap();
+
+        assert!(json.contains("\"comando\": \"sondagem\""), "{json}");
+        assert!(json.contains("\"nome\": \"\""), "{json}");
+        assert!(
+            Nome::novo("").is_err(),
+            "se `Nome::novo` passar a aceitar vazio, o sentinela colide"
+        );
+        assert!(
+            Nome::novo("sondagem").is_ok(),
+            "e por isso `sondagem` nao serviria de sentinela: B-2 o aceita"
+        );
+    }
+
+    #[test]
+    fn uma_sondagem_com_nome_de_imagem_e_recusada() {
+        // Um nome carregado ate uma receita que nao o usa e um valor que
+        // ninguem confere — o mesmo defeito que o `disco` da E11 fecha, no
+        // outro eixo.
+        let json = estado_de_sondagem()
+            .como_json()
+            .unwrap()
+            .replace("\"nome\": \"\"", "\"nome\": \"2026-08-22_Apps\"");
+
+        match Estado::de_json(&json).unwrap_err() {
+            RecusaDoEstado::NomeIncoerente {
+                comando,
+                tem,
+                nomeia_imagem,
+            } => {
+                assert_eq!(comando, "sondagem");
+                assert_eq!(tem, "2026-08-22_Apps");
+                assert!(!nomeia_imagem);
+            }
+            outro => panic!("esperava nome incoerente, veio {outro}"),
+        }
+    }
+
+    #[test]
+    fn as_tres_que_operam_sobre_imagem_sem_nome_sao_recusadas() {
+        // **O sentido que dói**, e ele e pior do que o do disco: a pasta do
+        // desfecho sai do nome (`pasta_do_log`), entao um `backup` com nome
+        // vazio procuraria o desfecho na pasta `backup-`, que nao e a de
+        // ninguem — e um `sondagem` colheria o desfecho errado.
+        for operacao in [
+            Operacao::Backup,
+            Operacao::Restauracao,
+            Operacao::Verificacao,
+        ] {
+            let json = Estado {
+                comando: operacao,
+                disco: operacao
+                    .nomeia_disco()
+                    .then(|| Disco::novo("nvme0n1").unwrap()),
+                ..estado()
+            }
+            .como_json()
+            .unwrap()
+            .replace("\"nome\": \"2026-08-22_Apps\"", "\"nome\": \"\"");
+
+            match Estado::de_json(&json).unwrap_err() {
+                RecusaDoEstado::NomeIncoerente {
+                    comando,
+                    nomeia_imagem,
+                    ..
+                } => {
+                    assert_eq!(comando, operacao.nome());
+                    assert!(nomeia_imagem, "{} opera sobre imagem", operacao.nome());
+                }
+                outro => panic!("{}: esperava incoerencia, veio {outro}", operacao.nome()),
+            }
+        }
+    }
+
+    #[test]
+    fn a_sondagem_procura_o_desfecho_na_pasta_fixa() {
+        // Os dois lados do reinicio pelo mesmo caminho: a receita escreve em
+        // `/home/partimag/ARCA-LOGS/sondagem/arca-fim.txt`, e a colheita
+        // procura em `E:\ARCA-LOGS\sondagem\arca-fim.txt`. Sao a mesma funcao
+        // — [`crate::receita::pasta_do_log`] — vista dos dois lados.
+        assert_eq!(
+            caminho_do_desfecho(Path::new(r"E:\"), Operacao::Sondagem, None),
+            PathBuf::from(r"E:\ARCA-LOGS\sondagem\arca-fim.txt")
+        );
+    }
+
+    #[test]
+    fn a_descricao_de_um_job_sem_imagem_nao_tem_crase_vazia() {
+        // Cinco telas imprimem o job, e o `nome` opcional as obrigou a decidir
+        // o que dizer no lugar dele. A decisao e uma so, e mora aqui: sem
+        // imagem, sobra a operacao — e nunca ``sondagem ` ` ``.
+        assert_eq!(estado_de_sondagem().descricao(), "sondagem");
+        assert_eq!(estado().descricao(), "backup `2026-08-22_Apps`");
     }
 
     // ───────────────────────────── o selo ─────────────────────────────
@@ -919,7 +1108,10 @@ mod testes {
         assert_eq!(volta, original);
         assert_eq!(volta.selo.como_texto(), "a3f1c9e07b2d4856");
         assert_eq!(volta.comando, Operacao::Backup);
-        assert_eq!(volta.nome.como_texto(), "2026-08-22_Apps");
+        assert_eq!(
+            volta.nome.as_ref().map(Nome::como_texto),
+            Some("2026-08-22_Apps")
+        );
         assert_eq!(volta.disco.as_ref().map(Disco::como_texto), Some("nvme0n1"));
     }
 
@@ -1226,11 +1418,11 @@ mod testes {
         let nome = Nome::novo("2026-08-22_Apps").unwrap();
 
         assert_eq!(
-            caminho_do_desfecho(Path::new(r"E:\"), Operacao::Backup, &nome),
+            caminho_do_desfecho(Path::new(r"E:\"), Operacao::Backup, Some(&nome)),
             PathBuf::from(r"E:\ARCA-LOGS\backup-2026-08-22_Apps\arca-fim.txt")
         );
         assert_eq!(
-            caminho_do_desfecho(Path::new(r"E:\"), Operacao::Restauracao, &nome),
+            caminho_do_desfecho(Path::new(r"E:\"), Operacao::Restauracao, Some(&nome)),
             PathBuf::from(r"E:\ARCA-LOGS\restauracao-2026-08-22_Apps\arca-fim.txt")
         );
     }
@@ -1245,13 +1437,13 @@ mod testes {
         let nome = Nome::novo("2026-08-22_Apps").unwrap();
         let receita = Receita::montar(&Pedido {
             operacao: Operacao::Backup,
-            nome: nome.clone(),
+            nome: Some(nome.clone()),
             disco: Some(Disco::novo("nvme0n1").unwrap()),
             selo: Selo::de_ensaio(),
         })
         .unwrap();
 
-        let windows = caminho_do_desfecho(Path::new(r"E:\"), Operacao::Backup, &nome);
+        let windows = caminho_do_desfecho(Path::new(r"E:\"), Operacao::Backup, Some(&nome));
         let cauda = windows
             .to_string_lossy()
             .trim_start_matches(r"E:\")

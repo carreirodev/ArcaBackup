@@ -41,8 +41,20 @@ Uma operação armada e ainda não colhida. Existe entre o reinício e a leitura
 _Evitar_: tarefa, execução, operação pendente
 
 **Operação**:
-O que a receita executa, e o que dá nome à pasta do desfecho: **backup**, **restauração** ou **verificação**. São três desde a E11, e a terceira nasceu porque toda receita começa truncando o próprio `arca-fim.txt` — duas operações que dividissem a pasta apagariam o desfecho uma da outra. Só as duas primeiras nomeiam um disco; a verificação opera sobre a imagem.
+O que a receita executa, e o que dá nome à pasta do desfecho: **backup**, **restauração**, **verificação** ou **sondagem**. São quatro desde a E12, e cada uma nova nasceu pelo mesmo motivo — toda receita começa truncando o próprio `arca-fim.txt`, e duas operações que dividissem a pasta apagariam o desfecho uma da outra.
+
+**Duas coisas as separam, e são eixos independentes**: nomear um **disco** e nomear uma **imagem**. Backup e restauração nomeiam as duas; a verificação não nomeia disco e nomeia imagem; a sondagem não nomeia nenhuma das duas — e é a única assim.
 _Evitar_: comando, ação, tarefa
+
+**Sondagem**:
+A operação que descobre os discos desta máquina: um boot único que roda `lsblk`, grava a saída no `ARCAVAULT` e desliga. **Ela não chama programa nenhum do Clonezilla** — nem `ocs-sr`, nem `ocs-chkimg` — e nada escreve fora do `ARCAVAULT`, o que faz dela a operação mais barata do ARCA e a única cujo pior caso não envolve gravação.
+
+Existe por uma consequência do §4.5: o nome que o Linux dá ao disco vem de um `blkdev.list`, e um dispositivo recém-preparado não tem imagem de onde lê-lo. A sondagem é a **segunda fonte** para aquele arquivo, e ela não depende de imagem nenhuma ([ADR-0019](docs/adr/0019-a-sondagem-e-a-quarta-operacao.md)).
+_Evitar_: scan, detecção, descoberta, inventário
+
+**Oráculo**:
+O `blkdev.list` de onde sai o nome que o **Linux** dá ao disco — um par nome-modelo que o Windows não conhece e que o ARCA não inventa. Há **duas fontes**: o de dentro de cada imagem, que descreve a máquina de quando o backup foi feito, e o da sondagem, que descreve a de agora. Havendo as duas, a sondagem ganha, e a divergência é dita na tela.
+_Evitar_: mapa de discos, tabela, cache
 
 **Colher**:
 Ler o que há no lugar do desfecho, julgá-lo pelo selo e dizer o que era. Encerra o job — inclusive quando o que se encontra é nada, que é uma resposta. O que não encerra é não ter conseguido ler.
@@ -87,7 +99,7 @@ _Evitar_: job órfão, estado sujo
 ### O que se colhe
 
 **Desfecho**:
-Se a operação terminou ou não: `ARCA_BACKUP=OK`, `ARCA_RESTORE=FALHOU`. Escrito pelo Clonezilla em arquivo, nunca em tela.
+Se a operação terminou ou não: `ARCA_BACKUP=OK`, `ARCA_RESTORE=FALHOU`, `ARCA_PROBE=OK`. Escrito pelo Clonezilla em arquivo, nunca em tela.
 _Evitar_: resultado, status, saída
 
 **Veredito**:

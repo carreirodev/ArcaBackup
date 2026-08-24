@@ -88,6 +88,12 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
             return comandos::verify::executar(contexto, nome, *completo);
         }
 
+        // A quarta operacao, e a unica que nao chama programa nenhum do
+        // Clonezilla: ela arma um boot unico que roda `lsblk`, grava a saida
+        // no `ARCAVAULT` e desliga. E o que da ao §4.5 um oraculo num
+        // dispositivo que nunca teve imagem (E12, P-26).
+        Comando::Sondar => return comandos::sondar::executar(contexto),
+
         // O comando que transforma um disco qualquer num dispositivo ARCA, e
         // o unico que roda antes de existirem os rotulos de que todos os
         // outros dependem (B-1, S-3, C-10). Ele julga o disco pelas sete
@@ -186,6 +192,7 @@ mod testes {
             vec!["arca", "resultado"],
             vec!["arca", "restore"],
             vec!["arca", "verify", "2026-08-22_Apps"],
+            vec!["arca", "sondar"],
             vec!["arca", "desarmar"],
         ] {
             let saida = executar(&Cli::parse_from(&argumentos), &contexto);
@@ -201,12 +208,17 @@ mod testes {
         // `list` e `status` desde a E1 e a E2; `backup` entrou na E6, quando
         // deixou de responder "armar e a E7" para rodar o pre-voo do §5.2, e
         // passou a armar de verdade na **E7**. O `resultado` entrou na **E8**,
-        // o `restore` na **E9** e o `verify` na **E11**.
+        // o `restore` na **E9**, o `verify` na **E11** e o `sondar` na **E12**.
         //
-        // Sem dispositivo conectado, os sete devolvem a recusa da descoberta.
+        // Sem dispositivo conectado, os oito devolvem a recusa da descoberta.
         // O `verify` esta aqui nas duas formas: sem `--completo` ele so lê, e
         // com ele arma, e as duas precisam do dispositivo antes de qualquer
         // outra coisa.
+        //
+        // **E o `sondar` esta aqui apesar de nao precisar de imagem nenhuma**,
+        // que e a razao de ele existir: o que ele nao precisa e de imagem, e
+        // nao de dispositivo — a receita dele e gravada no `grub.cfg` do
+        // `ARCABOOT`, e a saida do `lsblk` vai para o `ARCAVAULT`.
         //
         // **O `prepare` nao esta nesta lista, e a ausencia e o ponto**: ele e o
         // unico comando que nao se localiza pelos rotulos, porque no disco que
@@ -222,6 +234,7 @@ mod testes {
             vec!["arca", "restore"],
             vec!["arca", "verify", "2026-08-22_Apps"],
             vec!["arca", "verify", "2026-08-22_Apps", "--completo"],
+            vec!["arca", "sondar"],
         ] {
             let erro = executar(&Cli::parse_from(&argumentos), &contexto).unwrap_err();
             assert!(

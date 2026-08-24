@@ -39,6 +39,7 @@ pub mod prevoo;
 pub mod receita;
 pub mod registro;
 pub mod resumo;
+pub mod sondagem;
 pub mod verificacao;
 
 pub use erro::{Erro, Resultado};

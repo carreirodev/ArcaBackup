@@ -116,7 +116,11 @@ pub struct Armado {
 pub struct Pedir<'a> {
     pub dispositivo: &'a Dispositivo,
     pub operacao: Operacao,
-    pub nome: &'a Nome,
+    /// A imagem sobre a qual a operacao roda, quando ha uma.
+    ///
+    /// `None` so na sondagem da E12, e quem cobra a coerencia entre os dois e
+    /// [`Receita::montar`] — aqui ele so atravessa, como o `disco`.
+    pub nome: Option<&'a Nome>,
 
     /// O disco que a receita nomeia, quando a operacao nomeia algum.
     ///
@@ -185,7 +189,7 @@ pub fn executar(
     let selo = estado::gerar_selo(entropia)?;
     let receita = Receita::montar(&Pedido {
         operacao: pedido.operacao,
-        nome: pedido.nome.clone(),
+        nome: pedido.nome.cloned(),
         disco: pedido.disco.cloned(),
         selo: selo.clone(),
     })
@@ -204,7 +208,7 @@ pub fn executar(
     let estado_do_job = Estado {
         selo: selo.clone(),
         comando: pedido.operacao,
-        nome: pedido.nome.clone(),
+        nome: pedido.nome.cloned(),
         disco: pedido.disco.cloned(),
         armado_em: MomentoDoArmar::agora(relogio),
         situacao: estado::Situacao::Armado,
@@ -259,9 +263,9 @@ pub fn executar(
 /// **idêntico** ao de "o Clonezilla descartou a receita". Foi preciso ir ao
 /// dispositivo procurar a pasta do log para separar os dois.
 ///
-/// O aviso é comum aos três comandos que armam, e por isso mora aqui: o que
-/// se vê na tela do outro lado do reinício é o mesmo nos três, e três cópias
-/// divergiriam.
+/// O aviso é comum aos **quatro** comandos que armam, e por isso mora aqui: o
+/// que se vê na tela do outro lado do reinício é o mesmo nos quatro, e quatro
+/// cópias divergiriam.
 pub fn montar_o_que_vem_pela_frente() -> &'static str {
     concat!(
         "\nA maquina vai reiniciar agora e desligar sozinha ao terminar.\n",
@@ -619,7 +623,7 @@ mod testes {
             &Pedir {
                 dispositivo: &dispositivo,
                 operacao: Operacao::Backup,
-                nome: &nome,
+                nome: Some(&nome),
                 disco: Some(&disco),
             },
         )
@@ -925,7 +929,7 @@ mod testes {
             &Pedir {
                 dispositivo: &dispositivo,
                 operacao: Operacao::Backup,
-                nome: &nome,
+                nome: Some(&nome),
                 disco: Some(&disco),
             },
         )
@@ -947,7 +951,10 @@ mod testes {
         let lido = estado::ler(&arquivos, &armado.caminho_do_estado).expect("relê");
         assert_eq!(lido.selo, armado.selo);
         assert_eq!(lido.comando, Operacao::Backup);
-        assert_eq!(lido.nome.como_texto(), "2026-08-22_Apps");
+        assert_eq!(
+            lido.nome.as_ref().map(Nome::como_texto),
+            Some("2026-08-22_Apps")
+        );
         assert_eq!(lido.disco.as_ref().map(Disco::como_texto), Some("nvme0n1"));
         assert_eq!(lido.situacao, estado::Situacao::Armado);
     }

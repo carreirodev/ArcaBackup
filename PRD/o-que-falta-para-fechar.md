@@ -1,19 +1,22 @@
 # O que falta para o ARCA se considerar fechado
 
-23/08/2026, depois da etapa E10 — e **revisado no mesmo dia**, quando a E12
-foi planejada e P-26 mudou de caminho. Complementa o
-[PRD v5.1](PRD-ARCA-v5_1.md) e o [plano de etapas](implementation_stages.md);
-onde este documento divergir deles, são eles que valem.
+23/08/2026, depois da etapa E10 — revisado no mesmo dia, quando a E12 foi
+planejada, e **revisado outra vez em 24/08/2026, quando ela rodou e P-26
+fechou**. Complementa o [PRD v5.1](PRD-ARCA-v5_1.md) e o [plano de
+etapas](implementation_stages.md); onde este documento divergir deles, são eles
+que valem.
 
 ---
 
 ## A pergunta que este documento responde
 
-**As doze etapas do plano fecharam.** Os oito comandos do §8 fazem trabalho, a
+**As treze etapas do plano fecharam.** Os nove comandos do §8 fazem trabalho, a
 lista de *"chega na etapa X"* esvaziou na E10, todo requisito do §9 tem código, e
-a suíte tem 760 testes. O ciclo inteiro rodou em hardware: backup armado e
+a suíte tem 827 testes. O ciclo inteiro rodou em hardware: backup armado e
 colhido (22/08), restauração completa com o Windows voltando de dentro da imagem
-(23/08), verificação armada (23/08) e um dispositivo criado do zero (23/08).
+(23/08), verificação armada (23/08), um dispositivo criado do zero (23/08) e —
+**em 24/08 — esse dispositivo bootando sozinho pela entrada de firmware que o
+próprio ARCA criou nele**.
 
 Isso responde *"foi construído?"*. Não responde *"está provado?"* — e é essa a
 diferença que este documento existe para não deixar dissolver.
@@ -45,94 +48,31 @@ lista de pendências parecer maior ou menor do que é.
 
 ## 1. O que não foi medido
 
-Seis pendências abertas. Estão listadas por **quanto custa a alguém se elas
-estiverem erradas**, e não pela ordem em que nasceram.
 
-### P-26 — um dispositivo preparado pelo ARCA nunca bootou
+**Cinco pendências abertas**, e eram seis: P-26 fechou em 24/08/2026. Estão
+listadas por **quanto custa a alguém se elas estiverem erradas**, e não pela
+ordem em que nasceram.
 
-**Aberta na E10, em 23/08/2026. É a mais nova e a mais direta.**
-
-O `arca prepare` produziu um dispositivo com o Clonezilla instalado, o `grub.cfg`
-inerte e a entrada de firmware apontando para ele. Conferiu-se tudo o que se
-confere sem reiniciar:
-
-- a estrutura de partições **relida do disco** — `MbrType 7` e `12`, offsets
-  idênticos aos da medição à mão, nenhuma partição ativa, unidade 4096;
-- os quatro caminhos obrigatórios **dentro do pacote**, antes de extrair;
-- o `set default` de volta em `live-default`;
-- a entrada de boot **relida do `bcdedit`**, apontando para `partition=F:` e
-  `\EFI\boot\bootx64.efi`.
-
-**O que falta é o firmware honrar aquela entrada**, e nada do lado Windows
-responde isso.
-
-É a mesma forma de P-18, que a E4 abriu e o marco da E8 fechou: *o lado Windows
-prova o que escreveu, e só o hardware prova que o firmware obedeceu.*
-
-**Por que incomoda mais do que incomodava lá.** O ADR-0014 nomeia o modo de
-falha deste comando: um dispositivo que não boota **só se descobre depois de o
-Windows ter sido apagado**, porque é aí que alguém precisa dele. O `arca prepare`
-existe para produzir algo que boota; enquanto P-26 estiver aberta, ele entrega
-uma promessa conferida por leitura.
-
-**Como fecha — e as duas primeiras respostas a esta pergunta estavam erradas.**
-
-A resposta óbvia seria *"um `arca backup` no dispositivo novo"*. **Ele recusa**,
-e a razão é o §4.5: a receita nomeia o disco pelo nome que o **Linux** lhe dá, o
-ARCA o descobre lendo o `blkdev.list` de dentro de uma imagem, e um dispositivo
-recém-preparado **não tem imagem nenhuma**.
-
-O mesmo vale para os outros dois comandos que armam: `arca restore` e `arca
-verify --completo` precisam de uma imagem que também não existe. **Nenhum dos
-três funciona num dispositivo recém-nascido.**
-
-Isso parte P-26 em duas metades:
-
-| | O que prova |
-|---|---|
-| **(a)** o dispositivo boota | o `.efi`, o `grub.cfg` e o pacote instalado prestam |
-| **(b)** a entrada de firmware que o ARCA criou leva a ele | o `/copy` e os dois `/set` produziram algo que o firmware honra |
-
-**A segunda resposta foi mandar o usuário para o menu do Clonezilla** — F12,
-primeiro backup pelo menu (§6.4), e daí em diante o ARCA. Ela não está errada
-sobre os fatos, e continua sendo o caminho manual quando tudo o mais falhar. O
-que ela é: **exatamente aquilo que este app existe para não precisar**, cobrado
-logo na primeira vez que alguém usa um dispositivo novo. Custava dois reinícios e
-cerca de quarenta minutos.
-
-**A resposta certa é a E12.** `arca sondar` arma um boot único que não faz backup
-nem restauração: roda `lsblk`, grava a saída no `ARCAVAULT` no mesmo formato do
-`blkdev.list` que o §4.5 lê, e desliga. Um reinício, nenhuma tela do Clonezilla,
-e o dispositivo passa a ter o oráculo que lhe faltava.
-
-**E ela fecha as duas metades de uma vez.** O boot é o **único**, disparado pela
-entrada que o `arca prepare` criou: se a máquina voltar com o desfecho escrito,
-(a) e (b) estão respondidas juntas. Um F12 responderia só (a).
-
-**Custa:** um reinício e o tempo de um boot do Clonezilla — que, aliás, **não
-está medido neste repositório**, porque toda execução anterior tinha uma operação
-longa depois dele. A E12 mede isso de graça.
-
-**Risco: o menor de todos os marcos deste projeto.** A receita não tem `ocs-sr`,
-logo não há `savedisk` nem `restoredisk`, e nada é escrito fora do `ARCAVAULT`.
-O pior caso é a máquina parar num menu (§3.2, §4.4), que é chato e não destrói
-nada.
-
-Ver a seção **E12** do [plano de etapas](implementation_stages.md).
-
-> **A tela do `arca prepare` dizia `Primeiro backup: arca backup <nome>`**, e
-> isso era exatamente o que o §7 deste documento proíbe: uma tela afirmando o
-> que o repositório não pode mostrar tendo acontecido. Corrigida em 23/08/2026 —
-> ela passou a dizer que o primeiro backup é pelo menu, **por quê**, e que o F12
-> daquele passo é o que responde P-26.
+> ### ~~P-26~~ — fechada em 24/08/2026, e o que ela custou foi um reinício
 >
-> **Essa correção vence quando a E12 fechar**, e a tela terá de dizer `arca
-> sondar`. Fica registrado aqui para que a segunda versão não sobreviva ao
-> motivo dela — a primeira quase sobreviveu.
+> **Aberta na E10 e fechada no marco da E12**, inteira e de uma vez. `arca
+> sondar` armou às 14:56:55 no dispositivo que o `arca prepare` criou — vazio de
+> imagens —, a máquina bootou, o `lsblk` rodou sozinho e ela desligou. A colheita
+> saiu `concluida`, com `ARCA_PROBE=OK` e o selo `354da624e7fa0d21` batendo.
 >
-> O defeito original é da própria E10 e tem a forma de sempre: peça nova
-> encaixada em peça antiga que ninguém releu ao encaixar. A peça antiga ali é o
-> §4.5, decidido na E6 e na E7.
+> **As duas metades juntas**, e o que as junta é o `arca status` de minutos
+> antes: `1 entrada(s), nenhuma para o dispositivo · so o boot unico leva a ele`.
+> Com a entrada fora da ordem permanente não havia outro caminho até o
+> dispositivo — (a) ele boota, e (b) a entrada que o ARCA criou leva a ele. Um
+> F12 teria respondido só (a), e é a distinção que a própria P-26 fazia.
+>
+> **As duas primeiras respostas a esta pergunta estavam erradas**, e ficam
+> registradas: um `arca backup` no dispositivo novo **recusa** (§4.5), e mandar o
+> usuário para o menu do Clonezilla era exatamente aquilo que este app existe
+> para não precisar — dois reinícios e cerca de quarenta minutos.
+>
+> **E fechou P-27 junto**: as flags reconstruídas do `lsblk` foram aceitas por
+> aquele util-linux, e a árvore saiu em ASCII, o que diz que o `-i` funcionou.
 
 ### P-6 — o ramo de falha nunca rodou, em nenhuma das três receitas
 
@@ -317,12 +257,18 @@ antigo, e o `arca prepare` não sabe que ele existe. O antigo serviu só como
 **oráculo de comparação**, para provar que o que se instala é equivalente ao que
 já funciona.
 
-A dependência que sobra é outra e está acima, em P-26: hoje o **primeiro
-backup** de um dispositivo novo precisa do menu do Clonezilla, porque o nome do
-disco no Linux só existe dentro de uma imagem (§4.5). Ela não é do dispositivo
-antigo — é da natureza do oráculo, e é exatamente o que a **E12** foi desenhada
-para tirar do caminho: `arca sondar` produz o mesmo arquivo sem que exista imagem
-nenhuma.
+~~A dependência que sobra é outra: hoje o **primeiro backup** de um dispositivo
+novo precisa do menu do Clonezilla, porque o nome do disco no Linux só existe
+dentro de uma imagem (§4.5).~~ **Saiu em 24/08/2026.** A E12 foi desenhada para
+tirar isso do caminho e tirou: `arca sondar` produziu o `blkdev.list` num
+dispositivo sem imagem nenhuma, e o `arca backup --dry-run` seguinte nomeou
+`nvme0n1` dizendo que veio da sondagem. **Nenhuma parte do ciclo de vida de um
+dispositivo ARCA passa mais por fora do ARCA.**
+
+**O que continua sem original é o ramo de falha desta operação.** Nenhum
+`ARCA_PROBE=FALHOU` foi escrito, e ele é mais barato de produzir do que os
+outros três — bastaria uma flag inventada no `lsblk`. É P-6 com a roupa mais
+barata que ela já teve, e vale como caminho para a linha `FALHOU` do §5.5.
 
 ---
 
@@ -361,8 +307,8 @@ comparar datas.
 
 ## 5. Estado da mesa, e não do app
 
-**A suíte está inteira verde**: 760 testes, zero vermelhos, com o dispositivo
-que a E10 criou sozinho na mesa.
+**A suíte está inteira verde**: 827 testes, zero vermelhos, com o dispositivo
+que a E10 criou sozinho na mesa — e que a E12 já bootou.
 
 Chegar aí custou uma correção que vale registrar aqui, porque ela é sobre o que
 este documento mede. **Cinco testes de hardware — das etapas E1, E4, E7 e E11 —
@@ -375,7 +321,7 @@ passaram a **sair cedo dizendo por quê**; os do `grub.cfg` passaram a aceitar o
 **dois** inertes conhecidos — o do ISO e o do zip —, com o teste da E10 provando
 que são equivalentes. Nenhum foi afrouxado.
 
-**Nada da E10 foi commitado.**
+**Nada da E10 nem da E12 foi commitado.**
 
 ---
 
@@ -385,30 +331,30 @@ Do mais barato para o mais caro, e cada linha diz o que se ganha.
 
 | # | O quê | Custa | Fecha |
 |---|---|---|---|
+| ~~—~~ | ~~**E12** — escrever o `arca sondar` e rodá-lo~~ | ~~1 etapa + 1 reinício~~ | **Feito em 24/08/2026: P-26 e P-27** |
 | 1 | Religar com o SSD conectado, sem job armado | 1 reinício, risco zero | **P-22**, e confere a promessa da tela do `arca prepare` |
-| 2 | **F12** no dispositivo novo, até o menu do Clonezilla | 1 reinício, risco zero | **P-26 (a)** — o dispositivo boota |
-| 3 | **E12** — escrever o `arca sondar` e rodá-lo | 1 etapa + 1 reinício, risco quase zero | **P-26 inteira**, e põe o dispositivo em uso |
-| 4 | Segunda verificação armada | 1 reinício, ~5 min | **P-25** |
-| 5 | Produzir as seis linhas do §5.5 à mão | tempo, sem risco | seis casos do §5.5 |
-| 6 | Falha forçada em VM | montar uma VM | **P-6**, e com ele a linha `FALHOU` |
-| 7 | Próxima restauração, com o log medido | uma restauração | **P-23** |
-| 8 | Backup por F12, com o `bcdedit` antes | um backup | **P-19** |
+| 2 | Segunda verificação armada | 1 reinício, ~5 min | **P-25** |
+| 3 | **Uma sondagem com flag inventada no `lsblk`** | 1 reinício, risco zero | o **primeiro `FALHOU`** deste projeto, e uma das seis linhas do §5.5 |
+| 4 | Produzir as outras cinco linhas do §5.5 à mão | tempo, sem risco | cinco casos do §5.5 |
+| 5 | Falha forçada em VM | montar uma VM | **P-6** no `ocs-sr`, que é a pergunta original |
+| 6 | Próxima restauração, com o log medido | uma restauração | **P-23** |
+| 7 | Backup por F12, com o `bcdedit` antes | um backup | **P-19** |
 
-**Os três primeiros valem mais do que os cinco últimos juntos.** O **1** e o
-**2** são reinícios de risco zero que respondem afirmações que o ARCA já imprime
-na tela; o **3** é a única coisa que separa a E10 de estar provada — e é o que o
-dispositivo novo precisa para servir para alguma coisa.
+**O 3 é novo, e ele nasceu da E12.** Até aqui, produzir um `FALHOU` exigia fazer
+o `ocs-sr` falhar — o que significa uma VM, um disco de teste e uma operação
+destrutiva de mentira. A sondagem tem um comando principal que **falha de graça**:
+basta uma flag que o `lsblk` não conheça, e o `if` de R-5 escreve
+`ARCA_PROBE=FALHOU` sem tocar em disco nenhum.
 
-> **O passo 2 continua valendo mesmo com o 3 na fila, e por uma razão de ordem.**
-> A E12 fecha (a) e (b) de uma vez, mas ela custa uma etapa **escrita antes** de
-> alguém saber se o dispositivo boota. Um F12 responde (a) por um reinício: se o
-> menu do Clonezilla não aparecer, o problema é do dispositivo e não da receita
-> nova — e descobrir isso depois de escrever a etapa é a ordem cara.
->
-> **O passo 2 e o passo 8 são o mesmo reinício, se você quiser.** P-19 pede um
-> backup disparado por F12 com o `bcdedit` lido imediatamente antes; o passo 2
-> pede um F12. Lendo o `bcdedit` antes de apertar F12, um reinício responde as
-> duas.
+Ele **não** fecha P-6 — a pergunta de lá é sobre o `ocs-sr`, e nenhuma resposta
+do `lsblk` fala por ele. O que ele fecha é o outro lado, que vale por si: o
+`if/then/else` de R-5 tomando o ramo do erro em hardware, e o `arca resultado`
+imprimindo um desfecho ruim pela primeira vez. **Custa o mesmo que uma sondagem
+normal, e o pior caso é a mesma coisa.**
+
+> **Os passos 1 e 7 são o mesmo reinício, se você quiser.** P-19 pede um backup
+> disparado por F12 com o `bcdedit` lido imediatamente antes; o passo 1 pede um
+> religar limpo. Lendo o `bcdedit` antes, um reinício responde as duas.
 
 ---
 
@@ -420,14 +366,19 @@ depender de quem responde. O critério proposto:
 > **O ARCA se considera fechado quando nenhuma tela dele afirmar algo que este
 > repositório não possa mostrar tendo acontecido.**
 
-Por esse critério, hoje faltam **duas** coisas, e não sete:
+Por esse critério, hoje falta **uma** coisa, e eram duas:
 
-- **P-26**, porque a tela do `arca prepare` diz *"Dispositivo pronto"* e ninguém
-  bootou nele — e ela ganhou caminho barato em 23/08/2026: a **E12**
-  (`arca sondar`) a fecha inteira com um reinício, sem tocar em disco nenhum.
-  Deixou de ser a pendência que custa quarenta minutos e passou a ser a que custa
-  uma etapa escrita;
+- ~~**P-26**, porque a tela do `arca prepare` diz *"Dispositivo pronto"* e
+  ninguém bootou nele.~~ **Fechada em 24/08/2026**: bootou, pela entrada que o
+  próprio comando criou, e a tela deixou de afirmar o que ninguém tinha visto.
 - **P-6**, porque a tela do `arca resultado` sabe dizer `FALHOU` e nunca disse.
+
+**E P-6 ficou mais barata do que era**, sem que ninguém mexesse nela. A sondagem
+tem um comando principal que falha de graça — uma flag inventada no `lsblk` —, e
+com ele o `if/then/else` de R-5 escreve o primeiro `FALHOU` deste projeto sem
+tocar em disco nenhum. Isso **não** responde a pergunta de P-6, que é sobre o
+`ocs-sr`; responde a metade dela que a tela do `arca resultado` depende: que o
+ramo do erro existe e é impresso.
 
 As outras quatro são perguntas honestas sobre o mundo — como o firmware se
 comporta, o que o `ocs-chkimg` faz com um descritor, de onde o `bcdedit` lê. O
@@ -436,5 +387,4 @@ conviver com elas abertas.
 
 ---
 
-*Atualizar quando qualquer pendência fechar, e apagar quando as duas do §7
-fecharem.*
+*Atualizar quando qualquer pendência fechar, e apagar quando a do §7 fechar.*

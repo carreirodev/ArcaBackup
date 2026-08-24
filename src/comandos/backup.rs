@@ -53,10 +53,25 @@ pub struct Ensaio<'a> {
     pub nome: &'a Nome,
     pub disco: &'a Disco,
 
-    /// Se este disco e so um exemplo, por nao haver `blkdev.list` de onde lê o
-    /// nome de verdade. A E6 acrescentou o campo: ate ela o disco era
-    /// **sempre** suposto e a distincao nao existia no codigo.
-    pub de_exemplo: bool,
+    /// De onde o nome do disco veio, e `None` quando ele e de exemplo.
+    ///
+    /// # Este campo nasceu de uma tela mentindo, no marco da E12
+    ///
+    /// Ate aqui havia um `de_exemplo: bool`, e a linha do ensaio era uma de
+    /// duas frases fixas: *"DE EXEMPLO …"* ou **`· lido do blkdev.list de uma
+    /// imagem`**. A segunda passou a ser falsa no instante em que a sondagem
+    /// virou a segunda fonte de §4.5 — e ela foi impressa assim no marco, na
+    /// mesma tela em que o pre-voo, quatro linhas acima, dizia `lido da
+    /// sondagem de 24/08 11:58`.
+    ///
+    /// **Duas linhas da mesma tela afirmando fontes diferentes para o mesmo
+    /// nome**, e a de baixo estava errada. E o padrao de sempre: peca nova
+    /// encaixada em peca antiga que ninguem releu ao encaixar — a peca antiga
+    /// aqui e um `bool` que nunca soube dizer *qual* fonte respondeu.
+    ///
+    /// A saida e nao ter mais frase fixa: quem sabe de onde o nome veio e
+    /// [`crate::blkdev::NomeDoDisco`], e ele ja sabe se dizer.
+    pub origem: Option<&'a crate::blkdev::NomeDoDisco>,
 
     pub backup: &'a Receita,
 }
@@ -196,13 +211,16 @@ fn armar_e_reiniciar(
     // resposta e recusar. `nvme0n1` e um nome do **Linux**, e quem o digitaria
     // esta no Windows, onde nao ha nada contra o que confer-lo: um `nvme1n1`
     // digitado por engano passaria por bom, iria para a receita, e nomearia o
-    // disco errado. O oraculo e o `blkdev.list` de dentro de uma imagem
-    // (§4.5), e um valor digitado nao tem oraculo nenhum.
+    // disco errado. O oraculo e um `blkdev.list` (§4.5), e um valor digitado
+    // nao tem oraculo nenhum.
     //
-    // O custo e conhecido e limitado: num dispositivo sem imagem alguma, o
-    // primeiro backup precisa ser feito uma vez pelo menu do Clonezilla. Dali
-    // em diante o `blkdev.list` dele responde para sempre. O custo do outro
-    // lado seria uma receita destrutiva (E9) nomeando um disco por suposicao.
+    // **O custo desta recusa mudou na E12, e por isso ela ficou mais barata de
+    // defender.** Ate a E11 ele era: num dispositivo sem imagem alguma, o
+    // primeiro backup precisava ser feito uma vez pelo menu do Clonezilla —
+    // dois reinicios e cerca de quarenta minutos, e exatamente aquilo que este
+    // app existe para nao precisar. Agora e um `arca sondar`: um reinicio,
+    // nenhuma tela do Clonezilla. O custo do outro lado continua o mesmo, e e
+    // uma receita destrutiva (E9) nomeando um disco por suposicao.
     let disco = match disco {
         DiscoDeOrigem::Descoberto(achado) => &achado.disco,
         DiscoDeOrigem::PorDeterminar(porque) => {
@@ -225,7 +243,7 @@ fn armar_e_reiniciar(
         &armar::Pedir {
             dispositivo,
             operacao: Operacao::Backup,
-            nome,
+            nome: Some(nome),
             disco: Some(disco),
         },
     )?;
@@ -346,33 +364,62 @@ fn letra_do_sistema() -> char {
         .unwrap_or('C')
 }
 
-/// O nome que o Linux da ao disco de origem, lido do `blkdev.list` das imagens.
+/// O nome que o Linux da ao disco de origem, pelas duas fontes de §4.5.
 ///
 /// Uma leitura que falhe nao derruba o pre-voo: a imagem pode estar num setor
 /// ruim, e o resultado disso e o nome ficar por determinar — que ja e um
 /// desfecho previsto e dito na tela.
+///
+/// A sondagem entra na lista desde a E12, e quem decide a precedencia e
+/// [`blkdev::nome_do_disco`]: ela ganha, e uma divergencia com as imagens sai
+/// na tela (SD-5). Montar a lista aqui e decidir la e deliberado — a regra e
+/// uma so, e ela vale igual para este comando e para o `arca restore`.
 fn descobrir_o_disco(
     arquivos: &dyn Arquivos,
     raiz_do_vault: &Path,
     pastas: &[Pasta],
     origem: &DiscoFisico,
 ) -> DiscoDeOrigem {
-    let listas: Vec<(String, String)> = pastas
-        .iter()
-        .filter(|pasta| pasta.e_imagem())
-        .filter_map(|pasta| {
-            let caminho = raiz_do_vault.join(&pasta.nome).join("blkdev.list");
-            arquivos
-                .ler_texto_alheio(&caminho)
-                .ok()
-                .map(|texto| (pasta.nome.clone(), texto))
-        })
-        .collect();
+    let listas = fontes_do_oraculo(arquivos, raiz_do_vault, pastas);
 
     match blkdev::nome_do_disco(&origem.modelo, &listas) {
         Ok(achado) => DiscoDeOrigem::Descoberto(achado),
         Err(porque) => DiscoDeOrigem::PorDeterminar(porque),
     }
+}
+
+/// Todo `blkdev.list` que o dispositivo tem: o da sondagem e os das imagens.
+///
+/// Publica porque o `arca restore` precisa **da mesma lista**, e nao de uma
+/// parecida: e ela que resolve o nome do disco de destino (R-2) e o do proprio
+/// dispositivo, na recusa que a revisao da E9 achou. Duas listas montadas em
+/// lugares diferentes divergiriam — e a divergencia apareceria como um comando
+/// achando o disco que o outro nao acha, sobre a mesma maquina.
+pub fn fontes_do_oraculo(
+    arquivos: &dyn Arquivos,
+    raiz_do_vault: &Path,
+    pastas: &[Pasta],
+) -> Vec<blkdev::Lista> {
+    // A sondagem primeiro na lista, e isso e so ordem de leitura: quem decide
+    // a precedencia e [`blkdev::nome_do_disco`], que filtra por fonte em vez
+    // de confiar na posicao.
+    let sondagem = crate::sondagem::ler(arquivos, raiz_do_vault);
+
+    let das_imagens = pastas
+        .iter()
+        .filter(|pasta| pasta.e_imagem())
+        .filter_map(|pasta| {
+            let caminho = raiz_do_vault.join(&pasta.nome).join(blkdev::ARQUIVO);
+            arquivos
+                .ler_texto_alheio(&caminho)
+                .ok()
+                .map(|texto| blkdev::Lista {
+                    fonte: blkdev::Fonte::Imagem(pasta.nome.clone()),
+                    texto,
+                })
+        });
+
+    sondagem.into_iter().chain(das_imagens).collect()
 }
 
 /// As duas receitas inteiras, so no `--dry-run`.
@@ -384,12 +431,13 @@ fn ensaio_das_receitas(
 ) -> Resultado<String> {
     // Sem nome de disco descoberto, o ensaio imprime a receita com um disco de
     // **exemplo** e diz isso. Recusar seria pior: quem quer conferir a forma da
-    // receita antes do primeiro backup nao tem imagem de onde tirar o nome.
-    let (o_disco, de_exemplo) = match disco {
-        DiscoDeOrigem::Descoberto(achado) => (achado.disco.clone(), false),
+    // receita antes do primeiro backup nao tem `blkdev.list` de onde tirar o
+    // nome.
+    let (o_disco, origem) = match disco {
+        DiscoDeOrigem::Descoberto(achado) => (achado.disco.clone(), Some(achado)),
         DiscoDeOrigem::PorDeterminar(_) => (
             Disco::novo(DISCO_DE_EXEMPLO).map_err(Erro::ReceitaRecusada)?,
-            true,
+            None,
         ),
     };
 
@@ -399,7 +447,7 @@ fn ensaio_das_receitas(
 
     let backup = Receita::montar(&Pedido {
         operacao: Operacao::Backup,
-        nome: nome.clone(),
+        nome: Some(nome.clone()),
         disco: Some(o_disco.clone()),
         selo: selo.clone(),
     })
@@ -407,7 +455,10 @@ fn ensaio_das_receitas(
 
     contexto.registro.info(format!(
         "ensaio de backup `{nome}` · disco {o_disco}{} · receita de {} caracteres · validada por C-2",
-        if de_exemplo { " (de exemplo)" } else { "" },
+        match origem {
+            Some(achado) => format!(" ({achado})"),
+            None => " (de exemplo)".to_string(),
+        },
         backup.comando().chars().count()
     ));
 
@@ -415,7 +466,7 @@ fn ensaio_das_receitas(
         dispositivo,
         nome,
         disco: &o_disco,
-        de_exemplo,
+        origem,
         backup: &backup,
     }))
 }
@@ -436,15 +487,16 @@ pub fn montar(ensaio: &Ensaio) -> String {
         gigabytes(ensaio.dispositivo.vault.livre_bytes)
     ));
     saida.push_str(&format!("Imagem: {}\n", ensaio.nome));
-    saida.push_str(&format!(
-        "Disco de origem: {}{}\n\n",
-        ensaio.disco,
-        if ensaio.de_exemplo {
-            " · DE EXEMPLO: o nome de verdade nao foi determinado, e esta receita nao serviria"
-        } else {
-            " · lido do blkdev.list de uma imagem"
-        }
-    ));
+    // A linha diz de onde o nome veio, e quem a escreve e quem sabe: o próprio
+    // [`NomeDoDisco`], que é o mesmo que o pré-voo imprime quatro linhas acima.
+    // Uma frase fixa aqui já mentiu uma vez — ver [`Ensaio::origem`].
+    saida.push_str(&match ensaio.origem {
+        Some(origem) => format!("Disco de origem: {origem}\n\n"),
+        None => format!(
+            "Disco de origem: {} · DE EXEMPLO: o nome de verdade nao foi determinado, e esta receita nao serviria\n\n",
+            ensaio.disco
+        ),
+    });
 
     saida.push_str(&linha("Nome validado (B-2)", "ok"));
     saida.push_str(&linha("Receita validada (C-2)", "ok"));
@@ -505,30 +557,51 @@ mod testes {
     fn receita(operacao: Operacao) -> Receita {
         Receita::montar(&Pedido {
             operacao,
-            nome: Nome::novo("2026-08-22_Apps").unwrap(),
+            nome: Some(Nome::novo("2026-08-22_Apps").unwrap()),
             disco: Some(Disco::novo(DISCO_DE_EXEMPLO).unwrap()),
             selo: Selo::de_ensaio(),
         })
         .unwrap()
     }
 
-    fn ensaio_montado_com(de_exemplo: bool) -> String {
+    /// O ensaio com o nome do disco vindo da fonte dada, ou de exemplo.
+    fn ensaio_montado_com(origem: Option<blkdev::Origem>) -> String {
         let dispositivo = dispositivo_conectado();
         let nome = Nome::novo("2026-08-22_Apps").unwrap();
         let disco = Disco::novo(DISCO_DE_EXEMPLO).unwrap();
         let backup = receita(Operacao::Backup);
 
+        let achado = origem.map(|origem| blkdev::NomeDoDisco {
+            disco: disco.clone(),
+            origem,
+        });
+
         montar(&Ensaio {
             dispositivo: &dispositivo,
             nome: &nome,
             disco: &disco,
-            de_exemplo,
+            origem: achado.as_ref(),
             backup: &backup,
         })
     }
 
+    fn da_imagem() -> blkdev::Origem {
+        blkdev::Origem::LidoDaImagem {
+            imagem: "2026-08-21_WindowsCompleto".to_string(),
+            modelo: "KINGSTON SNV3S500G".to_string(),
+        }
+    }
+
+    fn da_sondagem() -> blkdev::Origem {
+        blkdev::Origem::LidoDaSondagem {
+            modelo: "KINGSTON SNV3S500G".to_string(),
+            quando: Some(crate::duplos::momento("2026-08-24T11:58:22")),
+            divergencia: None,
+        }
+    }
+
     fn ensaio_montado() -> String {
-        ensaio_montado_com(false)
+        ensaio_montado_com(Some(da_imagem()))
     }
 
     #[test]
@@ -582,21 +655,84 @@ mod testes {
     }
 
     #[test]
-    fn o_ensaio_diz_de_onde_o_nome_do_disco_veio_nos_dois_casos() {
+    fn o_ensaio_diz_de_onde_o_nome_do_disco_veio_nos_tres_casos() {
         // O padrao da E3: uma receita destrutiva que nomeasse um disco sem
         // dizer de onde ele veio e pior do que nao imprimir nada. A E6 tornou
-        // a distincao real — antes o disco era **sempre** suposto —, e por
-        // isso os dois lados precisam de teste.
-        let descoberto = ensaio_montado_com(false);
-        assert!(descoberto.contains("lido do blkdev.list"), "{descoberto}");
-        assert!(!descoberto.contains("DE EXEMPLO"), "{descoberto}");
+        // a distincao real — antes o disco era **sempre** suposto —, e a E12
+        // acrescentou a terceira fonte.
+        let da_imagem = ensaio_montado_com(Some(da_imagem()));
+        assert!(
+            da_imagem.contains("lido de 2026-08-21_WindowsCompleto"),
+            "{da_imagem}"
+        );
+        assert!(!da_imagem.contains("DE EXEMPLO"), "{da_imagem}");
 
-        let de_exemplo = ensaio_montado_com(true);
+        let da_sondagem = ensaio_montado_com(Some(da_sondagem()));
+        assert!(da_sondagem.contains("lido da sondagem"), "{da_sondagem}");
+        assert!(!da_sondagem.contains("DE EXEMPLO"), "{da_sondagem}");
+
+        let de_exemplo = ensaio_montado_com(None);
         assert!(de_exemplo.contains("DE EXEMPLO"), "{de_exemplo}");
         assert!(
             de_exemplo.contains("nao serviria"),
             "faltou dizer que esta receita nao vale:\n{de_exemplo}"
         );
+    }
+
+    #[test]
+    fn o_ensaio_nao_afirma_a_fonte_do_nome_por_frase_fixa() {
+        // **O defeito que o marco da E12 imprimiu na tela**, e a suíte estava
+        // verde. A linha do ensaio era uma de duas frases fixas, e a do caso
+        // "descoberto" dizia `· lido do blkdev.list de uma imagem` — mesmo
+        // quando quem respondera fora a **sondagem**. Na mesma tela, quatro
+        // linhas acima, o pré-voo dizia `lido da sondagem de 24/08 11:58`.
+        //
+        // Duas linhas da mesma saída afirmando fontes diferentes para o mesmo
+        // nome, e a de baixo estava errada. Achado **rodando o comando de
+        // verdade**, como na E6, na E7, na E9, na E10 e na E11.
+        //
+        // O que este teste guarda é a propriedade que sobrou: a linha do ensaio
+        // e a do pré-voo **saem do mesmo lugar**, e não há frase fixa que possa
+        // divergir de novo.
+        let sondado = ensaio_montado_com(Some(da_sondagem()));
+
+        assert!(
+            !sondado.contains("lido do blkdev.list de uma imagem"),
+            "a frase fixa voltou, e ela mente quando quem respondeu foi a sondagem:\n{sondado}"
+        );
+
+        // A linha do ensaio é, literalmente, o que `NomeDoDisco` diz — que é o
+        // que o pré-voo imprime.
+        let dito = blkdev::NomeDoDisco {
+            disco: Disco::novo(DISCO_DE_EXEMPLO).unwrap(),
+            origem: da_sondagem(),
+        }
+        .to_string();
+        assert!(
+            sondado.contains(&format!("Disco de origem: {dito}")),
+            "a linha do ensaio deixou de ser a do pre-voo:\nesperava `{dito}`\n{sondado}"
+        );
+    }
+
+    #[test]
+    fn a_data_da_sondagem_sai_com_o_dono_do_relogio() {
+        // **O segundo defeito que o marco pegou, e ele estava na doc.** O campo
+        // `quando` sai do `mtime` do `blkdev.list`, e a primeira versão da doc
+        // dizia que ele vinha do relógio do **Windows**. Vem do Clonezilla —
+        // quem escreve o arquivo é o `lsblk`, do outro lado do reinício —, e o
+        // marco desmentiu em uma linha: sondagem armada às 14:56:55, arquivo
+        // carimbado `11:58`. Três horas atrás, que é P-7 pelo lado de sempre.
+        //
+        // Nada é corrigido: somar três horas fabricaria um instante que ninguém
+        // mediu. O que a tela faz é **dizer de quem é o carimbo**, para que
+        // ninguém o compare com o `armado_em` do `estado.json` e conclua que a
+        // sondagem é mais velha do que é — a conta que S-6 existe para não
+        // acontecer.
+        let sondado = ensaio_montado_com(Some(da_sondagem()));
+
+        assert!(sondado.contains("24/08 11:58"), "{sondado}");
+        assert!(sondado.contains("carimbo do Clonezilla"), "{sondado}");
+        assert!(sondado.contains("P-7"), "{sondado}");
     }
 
     #[test]

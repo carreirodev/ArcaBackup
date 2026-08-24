@@ -224,10 +224,17 @@ pub enum Erro {
     /// **Nao ha caminho de "digite voce"**, e isso e decisao e nao omissao:
     /// um nome de disco do Linux digitado do lado Windows nao tem contra o
     /// que ser conferido, e a receita que o nomeia e destrutiva na E9. O
-    /// oraculo e o `blkdev.list` de dentro de uma imagem (§4.5), e ele so
-    /// existe depois do primeiro backup.
+    /// oraculo e um `blkdev.list` (§4.5).
+    ///
+    /// **A saida mudou na E12**, e a mensagem mudou com ela: ate a E11 ela
+    /// mandava fazer o primeiro backup pelo menu do Clonezilla, que era o que
+    /// existia — e que e exatamente aquilo que este app existe para nao
+    /// precisar. `arca sondar` produz o mesmo arquivo num reinicio, sem imagem
+    /// nenhuma. **O `porque` ja diz isso quando sondar resolve**, e por isso a
+    /// frase fixa nao repete: cada recusa de [`crate::blkdev::SemNome`] diz a
+    /// saida dela, e `ModeloAmbiguo` nao tem essa.
     #[error(
-        "o nome que o Linux da ao disco de origem nao foi determinado, e a receita precisa dele: {porque}. O ARCA nao aceita esse nome digitado nem o deriva do indice do Windows — o indice do Windows nao e o do Linux, e um nome sem oraculo nomearia o disco errado numa receita (§4.5). Num dispositivo sem imagem nenhuma, o primeiro backup precisa ser feito uma vez pelo menu do Clonezilla; dali em diante o `blkdev.list` dele responde"
+        "o nome que o Linux da ao disco de origem nao foi determinado, e a receita precisa dele: {porque}. O ARCA nao aceita esse nome digitado nem o deriva do indice do Windows — o indice do Windows nao e o do Linux, e um nome sem oraculo nomearia o disco errado numa receita (§4.5)"
     )]
     DiscoDeOrigemPorDeterminar { porque: String },
 

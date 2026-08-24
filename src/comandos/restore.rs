@@ -65,7 +65,11 @@ use super::status;
 const ARQUIVO_DISK: &str = "disk";
 
 /// O `lsblk` que a imagem carrega, e de onde sai o par nome-modelo.
-const ARQUIVO_BLKDEV: &str = "blkdev.list";
+///
+/// Importado de [`crate::blkdev`] desde a E12, quando a sondagem passou a
+/// escrever um arquivo com o mesmo nome e o mesmo formato — ele deixou de ser
+/// so "o arquivo de dentro da imagem".
+use crate::blkdev::ARQUIVO as ARQUIVO_BLKDEV;
 
 /// A linha de comando que criou a imagem, escrita pelo proprio Clonezilla.
 ///
@@ -588,7 +592,7 @@ fn escolher_o_destino(
     discos: &[DiscoFisico],
     dispositivo: &Dispositivo,
     retrato: &Retrato,
-    listas: &[(String, String)],
+    listas: &[blkdev::Lista],
 ) -> Result<Destino, RecusaDaRestauracao> {
     let do_dispositivo: Vec<char> = dispositivo
         .vault
@@ -666,7 +670,7 @@ fn julgar_o_destino(
     discos: &[DiscoFisico],
     do_dispositivo: &[char],
     retrato: &Retrato,
-    listas: &[(String, String)],
+    listas: &[blkdev::Lista],
 ) -> Result<Destino, RecusaDaRestauracao> {
     let e_o_dispositivo =
         |disco: &DiscoFisico| do_dispositivo.iter().any(|letra| disco.tem_a_letra(*letra));
@@ -803,7 +807,7 @@ pub fn montar_cabecalho(cabecalho: &Cabecalho) -> String {
     );
 
     // A montagem mora em [`crate::desarme::linha_do_desarme`] desde a E11 — ver
-    // o comentario la para por que os tres comandos que armam a compartilham.
+    // o comentario la para por que os quatro comandos que armam a compartilham.
     saida.push_str(&crate::desarme::linha_do_desarme(
         cabecalho.desarme,
         cabecalho.caminho_do_grub,
@@ -1050,7 +1054,18 @@ pub fn executar(contexto: &Contexto, nome_pedido: Option<&str>) -> Resultado<()>
     let retrato = conferir_a_imagem(contexto.arquivos, &raiz_do_vault.join(&imagem.nome))
         .map_err(Erro::RestauracaoRecusada)?;
 
-    let listas = blkdev_das_imagens(contexto.arquivos, &raiz_do_vault, &pastas);
+    // As duas fontes do §4.5, e nao so as imagens.
+    //
+    // Este comando resolve **dois** nomes pelo oraculo: o do disco de destino
+    // (passo 5 de `julgar_o_destino`) e o do proprio dispositivo, na recusa que
+    // a revisao da E9 achou. Os dois falam do hardware que esta na mesa
+    // **agora**, e e isso que a sondagem descreve — a imagem descreve a maquina
+    // de quando o backup foi feito.
+    //
+    // A lista vem de `backup::fontes_do_oraculo`, e nao de uma copia daqui: uma
+    // segunda montagem deixaria o `arca backup` achando o disco por uma fonte
+    // que o `arca restore` nao lê, sobre a mesma maquina e no mesmo minuto.
+    let listas = super::backup::fontes_do_oraculo(contexto.arquivos, &raiz_do_vault, &pastas);
     let destino = escolher_o_destino(&discos, &dispositivo, &retrato, &listas)
         .map_err(Erro::RestauracaoRecusada)?;
 
@@ -1091,7 +1106,7 @@ pub fn executar(contexto: &Contexto, nome_pedido: Option<&str>) -> Resultado<()>
         &armar::Pedir {
             dispositivo: &dispositivo,
             operacao: Operacao::Restauracao,
-            nome: &nome,
+            nome: Some(&nome),
             disco: Some(&destino.disco),
         },
     )?;
@@ -1270,35 +1285,12 @@ fn escolher_pelo_indice<'a>(oferta: &Oferta<'a>, digitado: &str) -> Option<&'a P
         .map(|numero| oferta.imagens[numero - 1])
 }
 
-/// Os `blkdev.list` de todas as imagens, para o oraculo de §4.5.
-///
-/// Todas, e nao so a escolhida: o disco de **destino** pode nao ser o que a
-/// imagem escolhida retratou, e o nome dele pode estar em outra. Uma leitura
-/// que falhe nao derruba nada — vira "nao ha oraculo", que ja e um desfecho
-/// previsto e dito.
-fn blkdev_das_imagens(
-    arquivos: &dyn Arquivos,
-    raiz_do_vault: &Path,
-    pastas: &[Pasta],
-) -> Vec<(String, String)> {
-    pastas
-        .iter()
-        .filter(|pasta| pasta.e_imagem())
-        .filter_map(|pasta| {
-            arquivos
-                .ler_texto_alheio(&raiz_do_vault.join(&pasta.nome).join(ARQUIVO_BLKDEV))
-                .ok()
-                .map(|texto| (pasta.nome.clone(), texto))
-        })
-        .collect()
-}
-
 /// A receita inteira, so no `--dry-run`.
 fn ensaio_da_receita(contexto: &Contexto, nome: &Nome, destino: &Destino) -> Resultado<String> {
     // O selo de verdade nasce ao armar. Este e de ensaio, e a saida o diz.
     let receita = Receita::montar(&Pedido {
         operacao: Operacao::Restauracao,
-        nome: nome.clone(),
+        nome: Some(nome.clone()),
         disco: Some(destino.disco.clone()),
         selo: Selo::de_ensaio(),
     })
@@ -1370,8 +1362,11 @@ Sector size (logical/physical): 512/512 bytes
         }
     }
 
-    fn listas() -> Vec<(String, String)> {
-        vec![("2026-08-22_Apps".to_string(), BLKDEV.to_string())]
+    fn listas() -> Vec<blkdev::Lista> {
+        vec![blkdev::Lista {
+            fonte: blkdev::Fonte::Imagem("2026-08-22_Apps".to_string()),
+            texto: BLKDEV.to_string(),
+        }]
     }
 
     fn dispositivo_conectado() -> Dispositivo {

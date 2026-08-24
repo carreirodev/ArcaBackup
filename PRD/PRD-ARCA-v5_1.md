@@ -3,7 +3,8 @@
 **Automatizador de Clonezilla para backup e restauração de imagem de disco.**
 
 Versão 5.1 · 22/08/2026 · Substitui a v4
-Última revisão: 23/08/2026, **etapa E10, marco cumprido** — o `arca prepare` particionou um SSD de 447 GB, instalou o Clonezilla, criou a entrada de boot e a tirou da ordem permanente, **sem um único reinício**: é o primeiro comando destrutivo do ARCA que não custa um. §7.1 ganha a tela real e §7.2 nasce com o pacote, a versão e o SHA256 de **duas fontes**; §8 perde o `--destino` e ganha o `--dispositivo` obrigatório; **C-4 ganha a outra metade** — criar entrada de firmware deixou de ser código sem original, e a entrada `ARCA` desta máquina era a cópia do `{bootmgr}` que a explicava desde sempre ([ADR-0017](../docs/adr/0017-a-entrada-de-firmware-nasce-de-uma-copia-do-bootmgr.md)); **C-5 ganha a segunda aplicação, e ela nasceu de um achado** — `bcdedit /copy` põe a entrada nova na ordem permanente **sozinho**; §11 ganha cinco armadilhas, entre elas duas ferramentas com o mesmo nome respondendo por perguntas diferentes; a **dívida do ADR-0015 foi paga**, e R-7 passou de `>=` para `==` no código. E o `grub.cfg` do zip respondeu de onde veio o dispositivo desta mesa: **seis segundos** de carimbo separam o ISO do zip da mesma build ([ADR-0018](../docs/adr/0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md))
+Última revisão: 24/08/2026, **etapa E12, marco cumprido** — `arca sondar` armou às 14:56:55, a máquina bootou **pela entrada de firmware que o `arca prepare` criou** num dispositivo sem imagem nenhuma, o `lsblk` rodou sozinho e ela desligou; a colheita saiu `concluida` com `ARCA_PROBE=OK`. **P-26 fecha inteira, as duas metades de uma vez** — a entrada estava fora da ordem permanente, então o boot único era o único caminho possível. §8 ganha o nono comando; §9.7 nasce com **SD-1 a SD-6**; §10.2.5 nasce com a quarta receita; §4.5 ganha a **segunda fonte** do oráculo, e o custo que ele cobrava — o primeiro backup pelo menu do Clonezilla — deixou de existir; §10.2.2 ganha uma **terceira procedência**, a *reconstrução*, para o que tem original do resultado e não da linha de comando ([ADR-0019](../docs/adr/0019-a-sondagem-e-a-quarta-operacao.md)). **E a medição que nenhuma etapa tinha**: o boot do Clonezilla isolado custa **1 min 40 s** nesta máquina, do reinício ao desligamento. §11 ganha três armadilhas, e duas delas o marco imprimiu na tela com a suíte verde — uma frase fixa afirmando a fonte errada do nome do disco, e a data da sondagem com o dono do relógio trocado na própria doc
+Revisão anterior: 23/08/2026, **etapa E10, marco cumprido** — o `arca prepare` particionou um SSD de 447 GB, instalou o Clonezilla, criou a entrada de boot e a tirou da ordem permanente, **sem um único reinício**: é o primeiro comando destrutivo do ARCA que não custa um. §7.1 ganha a tela real e §7.2 nasce com o pacote, a versão e o SHA256 de **duas fontes**; §8 perde o `--destino` e ganha o `--dispositivo` obrigatório; **C-4 ganha a outra metade** — criar entrada de firmware deixou de ser código sem original, e a entrada `ARCA` desta máquina era a cópia do `{bootmgr}` que a explicava desde sempre ([ADR-0017](../docs/adr/0017-a-entrada-de-firmware-nasce-de-uma-copia-do-bootmgr.md)); **C-5 ganha a segunda aplicação, e ela nasceu de um achado** — `bcdedit /copy` põe a entrada nova na ordem permanente **sozinho**; §11 ganha cinco armadilhas, entre elas duas ferramentas com o mesmo nome respondendo por perguntas diferentes; a **dívida do ADR-0015 foi paga**, e R-7 passou de `>=` para `==` no código. E o `grub.cfg` do zip respondeu de onde veio o dispositivo desta mesa: **seis segundos** de carimbo separam o ISO do zip da mesma build ([ADR-0018](../docs/adr/0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md))
 Revisão anterior: 23/08/2026, **etapa E11, marco cumprido** — a verificação armada rodou às 16:53:30 e foi colhida `concluida` com veredito `APROVADA`; **P-24 fecha** e o `ARCA_VERIFY=` ganha original. **E o marco desmentiu uma linha desta etapa**: o `>>` do §10.2.4 devia deixar duas marcas no `arca-check.log` e deixou uma — o log do backup sumiu, a causa não está medida, e é **P-25**, a primeira vez neste projeto em que uma receita rodou e o rastro divergiu do que a string manda fazer. §11 ganha as três armadilhas novas, e uma delas custou uma operação inteira: a tela não dizia que o menu do Clonezilla fica **trinta segundos** parado antes de a receita começar. **V-1 perde o "em segundos", e o requisito é que estava errado**: são **202,6 s** para 39,7 GB, medidos, e a tela passa a estimar pelo tamanho real ([ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md)); §9.5 ganha a tela de V-1, que é **execução real**, e a de reprovação junto; §8 ganha o `--completo` e diz por que ele pede confirmação sem destruir nada; §10.2.4 nasce com a terceira receita, e o `>>` do `arca-check.log` é a decisão que ela carrega; §10.2.2 e §3.5 registram que **V-2 não rodou** (P-24). E o `MD5SUMS` foi lido de verdade antes de o leitor existir — o formato é do Clonezilla, e a ordem dele não é alfabética, o que quase fez V-1 nascer conferindo só metadados
 Revisão anterior: 23/08/2026, **etapa E9, escrita** — R-7 reescrito contra o help do `ocs-sr` e contra a medição das duas réguas do mesmo disco ([ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)), **P-17 fecha**; §6.1 ganha a tela real e perde o `498,7 GB` — a **sexta** vez do mesmo número medido na coisa errada; §6.2 ganha o que a imagem de fato carrega; §3.1 corrigido — as duas leituras de NVRAM de 21/08 são de **dois boots diferentes**, e a que o documento usava é da restauração ([ADR-0011](../docs/adr/0011-as-capturas-de-21-08-sao-de-dois-boots.md)); P-19 **estreita**: a primeira metade está descartada por medição; §8 ganha `--destino`; §11 ganha a armadilha de datar a captura e não saber de que operação ela é
 Revisão anterior: 22/08/2026, **marco em hardware das etapas E7 e E8** — o primeiro backup disparado e colhido pelo ARCA, sem uma única tela. **P-16 e P-18 fecharam** (§3.5); §3.1 mostra que a ordem permanente muda **no ciclo de boot**, e não à mão ([ADR-0009](../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md)); §5.2 e §5.4 são de execução real, com o `Desfecho esperado em` que a revisão da E7 já tinha corrigido no código; §10.2.3 ganhou o orçamento medido da linha que rodou; §11 ganhou a armadilha de medir o firmware **depois** do reinício; P-19 aberta
@@ -291,7 +292,41 @@ Restauração real sobre o `nvme0n1`. Do comando ao Windows restaurado, **sem in
 | P-25 | **Por que o `arca-check.log` foi substituído, se a receita usa `>>`?** Aberta no marco da E11. A verificação armada devia **acrescentar** ao log — o `--dry-run` imprimiu `>> …/arca-check.log 2>&1` minutos antes de armar, e `recursos/ensaio-da-receita.sh` prova que `>>` acrescenta num bash de verdade. Medido depois: o arquivo tem **uma** ocorrência de `ARCA_VEREDITO=`, no fim, e **uma** inicialização de terminal — ou seja, **uma execução do `ocs-chkimg`**, e não duas. O log do backup de 22/08 sumiu. Um append daria mais de 7600 bytes; o arquivo tem 4759. **Alguma coisa entre o redirecionamento e o disco truncou o arquivo, e não se sabe o quê.** O `>>` fica assim mesmo, com a razão trocada: ele não compra a preservação, mas elimina a janela em que o `>` deixa o log em zero byte. Fecha comparando uma segunda verificação armada com esta — e o experimento custa um reinício ([ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md)) |
 | P-23 | **Por que o `arca-restore.log` começa no meio?** Aberta no marco da E9, medindo o primeiro original que ele teve. Ele traz uma passagem só do Partclone — a da última das quatro partições — e um `Ending /usr/sbin/ocs-sr` sem o `Starting`. A receita redireciona com `> … 2>&1`, e o `arca-check.log` do backup não tem esse corte. **Importa porque o §6.3 aponta esse arquivo a quem quer saber o que aconteceu.** Fecha na próxima restauração, e a pergunta é se o corte cai sempre no mesmo lugar |
 | P-22 | **O `bcdedit /enum firmware` mostra a NVRAM do firmware, ou o BCD do disco?** Aberta no marco da E9. Nunca precisou de resposta até a restauração devolver a ordem permanente de dentro da imagem: **se é o BCD, a NVRAM pode continuar com o dispositivo à frente e a máquina continuaria bootando nele — enquanto a linha `Ordem de boot` do `arca status` diria que está tudo bem.** Seria uma afirmação de segurança feita sobre uma leitura que não fala da pergunta, que é o defeito que a revisão do marco da E8 já pegou naquela mesma linha. **O experimento custa um reinício e nenhum risco**: religar com o SSD conectado, sem job armado e com o `grub.cfg` inerte. Parando no Windows, a NVRAM acompanhou; parando no menu do Clonezilla, não acompanhou. Ver [ADR-0012](../docs/adr/0012-a-restauracao-devolve-a-ordem-permanente-de-dentro-da-imagem.md) |
-| P-26 | **Um dispositivo preparado pelo `arca prepare` boota?** Aberta no marco da E10, 23/08/2026. O comando entregou um dispositivo com o Clonezilla instalado, o `grub.cfg` inerte e a entrada de firmware apontando para ele; **nada disso foi bootado**. Conferiu-se tudo o que se pode conferir sem reiniciar — a estrutura relida do disco, os quatro caminhos obrigatórios dentro do pacote, o `set default` de volta em `live-default`, a entrada relida do `bcdedit` —, e o que falta é o firmware honrar aquela entrada. **É a mesma forma de P-18**, que a E4 abriu e o marco da E8 fechou: o lado Windows prova o que escreveu, e só o hardware prova que o firmware obedeceu. Fecha com um `arca backup` no dispositivo novo. Risco baixo e conhecido: com o `grub.cfg` inerte, o pior caso é a máquina parar no menu do Clonezilla |
+| ~~P-26~~ | ~~Um dispositivo preparado pelo `arca prepare` boota?~~ **Fechada em 24/08/2026, marco da E12**, e **inteira**: `arca sondar` armou às 14:56:55, a máquina bootou, o `lsblk` rodou sozinho e ela desligou; a colheita saiu `concluida` com `ARCA_PROBE=OK` e selo `354da624e7fa0d21`. **As duas metades de uma vez** — (a) o dispositivo boota, e (b) a entrada que o ARCA criou leva a ele, porque ela estava **fora da ordem permanente** e o boot único era o único caminho possível. Um F12 teria respondido só (a). Aberta no marco da E10 |
+| ~~P-27~~ | ~~As flags do `lsblk` da sondagem são reconstrução.~~ **Fechada em 24/08/2026, no mesmo marco.** `ARCA_PROBE=OK` diz que aquele util-linux aceitou as sete colunas do `-o`, e a árvore saiu em **ASCII** — `|-sda1`, `` `-sda2 `` —, o que diz que o `-i` foi aceito e produziu a forma do arquivo que ele imita. A **reconstrução** fica no vocabulário do §10.2.2 como terceira procedência, e agora com um caso em que ela deu certo |
+
+**P-26 e P-27 fecharam no marco da E12, em 24/08/2026**, e o mesmo reinício
+respondeu as duas:
+
+| # | Fechada | Como |
+|---|---|---|
+| P-26 | **O dispositivo que o ARCA fez boota, e a entrada que ele criou leva a ele.** | `arca sondar` armado às 14:56:55; a máquina bootou, o `lsblk` rodou sozinho e ela desligou. O `arca-fim.txt` traz `ARCA_SELO=354da624e7fa0d21`, `ARCA_PROBE=OK`, `ARCA_FIM` — 50 bytes, com o selo batendo com o do `estado.json`. **As duas metades de uma vez**, e o que as junta é a leitura de `arca status` de minutos antes: `1 entrada(s), nenhuma para o dispositivo · so o boot unico leva a ele`. Com a entrada fora da ordem permanente não havia outro caminho, e é isso que um F12 não teria respondido |
+| P-27 | **As flags reconstruídas do `lsblk` foram aceitas.** | `ARCA_PROBE=OK` diz que o `if` tomou o ramo do êxito, e a **forma** do arquivo diz o resto: a árvore saiu em ASCII (`\|-sda1`, `` `-sda2 ``), que é o que o `-i` compra sobre o `locales=en_US.UTF-8` do boot. O arquivo tem 852 bytes, sete colunas, e é lido pelo mesmo parser que lê o de dentro das imagens |
+
+E dois achados de graça, nenhum dos dois pedido:
+
+- **O repositório estava montado no `mkdir`**, e o próprio arquivo testemunha:
+  o `sda1` sai com `/home/partimag` no `MOUNTPOINT`. Era o único pressuposto
+  genuinamente novo da sondagem, e ele já tinha original na E11 (§10.2.5).
+- **O modelo do dispositivo não é o mesmo nas duas fontes.** O `lsblk` o chama
+  de `Maxtor Z1 SSD 480GB` e o WMI de `JMicron Generic SCSI Disk Device`: a
+  ponte USB responde ao Windows com o nome dela, e o Linux lê o disco atrás
+  dela. O disco de **origem** casa nas duas — é o que o backup precisa —, e o
+  que fica inerte é a **segunda** barreira de R-8, que resolvia o nome Linux do
+  dispositivo pelo mesmo oráculo. Ela não falha errado; só não dispara, e a
+  primeira barreira (por letra) continua valendo. O ADR-0015 já previa que ela
+  viraria redundante; o que não estava medido é **por que** ela pode ficar
+  inerte.
+
+> **E a etapa mediu o que nenhuma outra tinha medido: quanto custa o boot do
+> Clonezilla, isolado.** **1 min 40 s** do reinício ao desligamento,
+> cronometrado à mão. Tirando os 30 s do `set timeout` do `grub.cfg` e os 20 s
+> do `sleep` da receita, sobram **≈ 50 s** para POST, kernel, `initrd`, `toram`
+> e o live subir — e esses 50 s são **aritmética sobre um número cronometrado**,
+> não uma terceira medição.
+>
+> O `~2 minutos` que foi dito na mesa antes da etapa ficou acima do total real.
+> O que a etapa trocou não foi o número: foi a procedência.
 
 **P-16 e P-18 fecharam no marco em hardware de 22/08/2026**, e as duas ficam
 registradas aqui porque a forma como fecharam é o que a próxima etapa precisa
@@ -491,15 +526,44 @@ o disco errado — numa receita que na E9 é destrutiva. O `blkdev.list` tem
 oráculo; um valor digitado não tem nenhum.
 
 A recusa acontece **antes** da confirmação digitada, para que ninguém digite o
-nome inteiro da imagem para ouvir um não depois. E o custo é conhecido e
-limitado: num dispositivo sem imagem alguma, o primeiro backup precisa ser
-feito uma vez pelo menu do Clonezilla (§6.4). Dali em diante o `blkdev.list`
-dele responde para sempre.
+nome inteiro da imagem para ouvir um não depois.
 
 **A saída sempre diz de onde o nome veio** — `nvme0n1 · lido de
 2026-08-21_WindowsCompleto/blkdev.list, casando o modelo …`. Uma receita
 destrutiva que nomeie um disco sem dizer a origem do nome é pior do que não
 imprimir nada.
+
+#### A segunda fonte, e ela não depende de imagem nenhuma
+
+**O custo do oráculo só existir depois do primeiro backup era maior do que esta
+seção deixava parecer**, e isso só apareceu quando o ARCA passou a **criar**
+dispositivos, na E10: num dispositivo recém-nascido não há imagem, logo não há
+nome, logo **nenhum dos três comandos que armam funciona** — `arca backup` pela
+razão acima, `arca restore` e `arca verify --completo` porque não há imagem para
+restaurar nem para verificar. O texto anterior mandava fazer o primeiro backup
+uma vez pelo menu do Clonezilla (§6.4), que é exatamente aquilo que este app
+existe para não precisar.
+
+**A etapa E12 dá uma segunda fonte para o mesmo arquivo.** `arca sondar` (§9.7)
+arma um boot único que roda `lsblk`, grava a saída no `ARCAVAULT` no mesmo
+formato e desliga — um reinício, nenhuma tela do Clonezilla. **O parser não
+muda**: `crate::blkdev` continua sendo o único lugar que lê aquele formato, e o
+arquivo leva o mesmo nome.
+
+| Fonte | O que descreve | Quando existe |
+|---|---|---|
+| `blkdev.list` **de dentro de uma imagem** | a máquina de **quando o backup foi feito** | depois do primeiro backup |
+| `blkdev.list` **da sondagem** | a máquina de **agora** | depois de um `arca sondar` |
+
+**Havendo as duas, a sondagem ganha** — e a divergência é dita na tela, nunca
+resolvida em silêncio (SD-5). Um disco trocado entre o backup e hoje faz a
+imagem nomear um disco que não está mais lá, e a sondagem sabe disso. A defesa
+velha continua embaixo: o casamento é por **modelo**, e uma sondagem obsoleta que
+descrevesse outro disco cai em recusa, não em palpite.
+
+A saída também diz **quando** a sondagem foi feita — `nvme0n1 · lido da sondagem
+de 23/08 21:14, casando o modelo …` —, porque uma sondagem de um mês atrás pode
+estar descrevendo uma máquina que mudou. É informativo, e nunca comparado (S-6).
 
 ## 5. Fluxo: backup
 
@@ -1114,43 +1178,52 @@ Dispositivo pronto.
   ARCA opera um por vez, e com dois `arca backup` e `arca restore` recusam
   por rotulo repetido (C-10).
 
-  O PRIMEIRO BACKUP DESTE DISPOSITIVO NAO PODE SER PELO ARCA, e isso nao e
-  defeito — e o preco de uma decisao que protege voce.
+  ANTES DO PRIMEIRO BACKUP, RODE:  arca sondar
 
   A receita nomeia o disco pelo nome que o LINUX lhe da (`nvme0n1`), e o
-  Windows nao conhece esse nome. O ARCA o descobre lendo o `blkdev.list`
-  que o Clonezilla escreve DENTRO de cada imagem, casando o modelo do
-  disco (§4.5) — e este dispositivo acabou de nascer, entao nao ha imagem
-  nenhuma de onde lê-lo. Um `arca backup` aqui RECUSA, dizendo isso.
+  Windows nao conhece esse nome. O ARCA o descobre lendo um `blkdev.list`,
+  casando o modelo do disco (§4.5) — e este dispositivo acabou de nascer,
+  entao nao ha nenhum aqui. Um `arca backup` agora RECUSA, dizendo isso.
 
   O ARCA nao pergunta o nome nem o deduz do indice: um `nvme1n1` digitado
   por engano entraria numa receita que apaga um disco, e nao ha nada do
   lado Windows contra o que conferi-lo.
 
-  ENTAO, uma vez so, faca assim:
+  `arca sondar` resolve isso num reinicio: ele NAO faz backup nem
+  restauracao — roda o `lsblk` no Linux do Clonezilla, grava a saida no
+  ARCAVAULT e desliga. Depois de `arca resultado`, `arca backup <nome>`
+  funciona.
 
-    1. reinicie e escolha este dispositivo no menu de boot (F12)
-    2. no menu do Clonezilla, faca um backup pelo caminho normal dele
-       (device-image, savedisk) — §6.4
-    3. dali em diante `arca backup <nome>` funciona, para sempre
-
-  O passo 1 tambem responde a unica coisa que o `arca prepare` NAO
-  consegue conferir sozinho: se este dispositivo boota mesmo (P-26).
+  E ele responde, de quebra, a unica coisa que o `arca prepare` NAO consegue
+  conferir sozinho: se este dispositivo boota mesmo, pela entrada de firmware
+  que acabou de ser criada (P-26).
 ```
 
-> **O fim desta tela mudou depois do marco, e o que ele dizia era falso.** Ele
-> terminava em `Primeiro backup: arca backup <nome>` — e **esse comando recusa**
-> num dispositivo recém-preparado, porque o nome do disco no Linux sai do
-> `blkdev.list` de dentro de uma imagem e não há imagem nenhuma (§4.5). O mesmo
-> vale para `arca restore` e `arca verify --completo`: **nenhum dos três
-> comandos que armam funciona num dispositivo recém-nascido.**
+> **O fim desta tela mudou duas vezes, e as duas por motivo registrado.**
 >
-> É o padrão que este documento nomeia no §11 pela sexta vez — peça nova
-> encaixada em peça antiga que ninguém releu ao encaixar —, e desta vez a peça
-> antiga é uma decisão de dois etapas atrás. As duas capturas em
-> `recursos/capturas/` são de antes da correção e ficam como estão: elas são o
-> que a tela imprimiu, e reescrevê-las seria confundir o que rodou com o que se
-> quis.
+> **A primeira versão dizia `Primeiro backup: arca backup <nome>`, e era
+> falsa**: esse comando **recusa** num dispositivo recém-preparado, porque o
+> nome do disco no Linux sai do `blkdev.list` de dentro de uma imagem e não há
+> imagem nenhuma (§4.5). O mesmo vale para `arca restore` e `arca verify
+> --completo` — **nenhum dos três comandos que armam funciona num dispositivo
+> recém-nascido**. É o padrão que o §11 nomeia: peça nova encaixada em peça
+> antiga que ninguém releu ao encaixar, e a peça antiga aqui é uma decisão de
+> duas etapas atrás.
+>
+> **A segunda mandava para o menu do Clonezilla** — F12, backup manual pelo
+> §6.4, e daí em diante o ARCA. Ela não estava errada sobre os fatos, e continua
+> sendo o caminho manual quando tudo o mais falhar. O que ela era: exatamente
+> aquilo que este app existe para não precisar, cobrado logo na primeira vez que
+> alguém usa um dispositivo novo — dois reinícios e cerca de quarenta minutos.
+> **Ela nasceu com data de validade escrita no plano de etapas**, para não
+> sobreviver ao motivo dela como a primeira quase sobreviveu.
+>
+> **A terceira é a de cima**, e é da E12: `arca sondar` custa um reinício e
+> nenhuma tela do Clonezilla ([ADR-0019](../docs/adr/0019-a-sondagem-e-a-quarta-operacao.md)).
+>
+> As duas capturas em `recursos/capturas/` são de antes das correções e ficam
+> como estão: elas são o que a tela imprimiu, e reescrevê-las seria confundir o
+> que rodou com o que se quis.
 
 > **Esta tela é execução real**, de 23/08/2026, e é a montagem de **duas**: a
 > primeira execução do comando produziu tudo, e a linha `Entrada de firmware`
@@ -1282,15 +1355,36 @@ arca list                 # imagens no dispositivo conectado
 arca restore [<nome>]     # lista, confirma e reinicia para restaurar
 arca verify <nome>        # confere os MD5SUMS, sem reiniciar (~3,5 min em 39,7 GB)
                           #   --completo  arma boot unico para o ocs-chkimg (V-2)
+arca sondar               # arma boot unico que so roda `lsblk` e desliga (SD-1)
+                          #   e o que da ao §4.5 um oraculo sem exigir imagem
 arca status               # diagnostico: dispositivo, firmware, job pendente
 arca desarmar             # devolve o dispositivo ao estado inerte (§4.4)
 ```
 
-> **Desde a etapa E10 todos os oito fazem o trabalho.** Eles existem na
+> **Desde a etapa E10 os oito primeiros fazem o trabalho.** Eles existem na
 > superfície da linha de comando desde a E0, e até aqui os que ainda não tinham
 > etapa construída respondiam dizendo qual etapa os entregava — o que fez a
 > fundação ser executável de verdade desde o primeiro dia. O `prepare` era o
 > último da lista, e ela esvaziou.
+
+> **O nono nasceu na E12, e ele é o único que não estava na superfície desde a
+> E0.** `arca sondar` não foi previsto pelo plano: ele nasceu de uma pergunta na
+> mesa em 23/08/2026 — *"e quando o outro SSD não estiver lá?"* —, cuja resposta
+> expôs que **nenhum dos três comandos que armam funciona num dispositivo
+> recém-preparado** (§4.5). A tela do `arca prepare` mandava, então, fazer o
+> primeiro backup pelo menu do Clonezilla: exatamente aquilo que este app existe
+> para não precisar.
+>
+> Ele é o **quarto que arma** e o mais barato de todos: a receita dele não chama
+> programa nenhum do Clonezilla — nem `ocs-sr`, nem `ocs-chkimg` —, e nada é
+> escrito fora do `ARCAVAULT`. Ver §9.7 e
+> [ADR-0019](../docs/adr/0019-a-sondagem-e-a-quarta-operacao.md).
+>
+> **E ele não aceita argumento nenhum**, o que o separa dos outros três que
+> armam: eles nomeiam uma imagem, e a sondagem pergunta *"que discos há nesta
+> máquina?"* — uma pergunta sem sujeito a escolher, feita justamente no
+> dispositivo que ainda não tem imagem. A confirmação, por isso, é uma tecla e
+> não um nome digitado (SD-6).
 
 > **`--dispositivo <índice>` é obrigatório, e a obrigatoriedade é P1 revisado
 > na letra**: *o ARCA destrói dados quando o usuário nomeou o alvo, e nunca por
@@ -1506,6 +1600,46 @@ existência é o sistema de arquivos, antes de o `certutil` ser chamado.
 | PR-4 | **`arca prepare` imprime o plano inteiro antes de agir, pergunta se pode continuar, e só então escreve.** O plano nomeia o disco — índice, modelo, `MediaType`, tamanho — e **o que existe nele hoje**, com rótulo, sistema de arquivos e tamanho de cada partição: quem vai perder dados tem de poder reconhecê-los na tela antes. A escrita só começa depois da confirmação digitada de S-2. *(Pedido em 23/08/2026. O sujeito mudou junto com P1: as instruções eram "como particionar no Gerenciamento de Disco" e passaram a ser "o que vai acontecer com este disco".)* *(Etapa E10, construído: são **quatro tempos**, e o terceiro é o que faz os outros valerem — o plano; a pergunta; **a conferência, que é do ARCA e não do usuário**; e a confirmação digitada. O ARCA relê o disco entre o "sim" e a primeira escrita, e compara modelo e tamanho com o que imprimiu: a resposta do usuário diz que ele **quer** prosseguir, e não é evidência sobre o disco. O índice muda quando se conecta um cabo, medido nesta mesa. E o plano diz também **o que não é o disco**: que uma entrada de boot vai ser criada no firmware e tirada da ordem permanente, e que o `arca.exe` vai para o `ARCABOOT` — quem lê um plano antes de apagar um disco tem o direito de saber que o plano não para no disco.)* |
 | PR-5 | **`arca prepare` cria as duas partições e as rotula**, transcrevendo a estrutura medida em §7.1 — MBR, NTFS grande para o `ARCAVAULT`, FAT32 de ≥ 1 GB no fim para o `ARCABOOT`. **Sete defesas, e nenhuma opcional**: `MediaType` removível ou externo; não ser o disco do `%SystemDrive%`, nem `IsSystem`, nem `IsBoot`; disco escolhido por `--dispositivo <índice>` e **nunca deduzido**, mesmo havendo um só candidato; o plano na tela (PR-4); confirmação digitada (S-2); `--dry-run` de primeira classe; e releitura do disco depois de escrever, no espírito de C-3. **Disco fixo é recusa dura, sem opção de forçar** — o modo de falha apaga o Windows de alguém, e nenhuma confirmação compra isso. *(Ver [ADR-0014](../docs/adr/0014-o-arca-particiona-o-dispositivo.md). A objeção que ficou registrada e virou esta lista: o perigo não é particionar, é acertar em qual disco — e `arca prepare` roda antes de existirem os rótulos que B-1, S-3 e C-10 usariam.)* *(Etapa E10, construído e **rodado em 23/08/2026**. Três coisas que a medição à mão mudou no desenho: o `New-Partition` cria as duas com `MbrType 6`, e **quem acerta para 7 e 12 é o `Format-Volume`** — o tipo é efeito colateral de outra operação, e é por isso que a releitura importa; as duas nascem **sem letra**, e quem atribui é o `Add-PartitionAccessPath -AssignDriveLetter`, que **não é idempotente** e cuja recusa não muda nada, como o `bcdedit /deletevalue` do ADR-0005; e `IsActive` sai `False` sozinho, que é o que a captura registra. A releitura confere a estrutura inteira — os dois rótulos, os dois sistemas de arquivos, os dois `MbrType`, a unidade 4096, **nenhuma partição ativa** e a ordem das duas no disco. A defesa por `MediaType` recusa também o **desconhecido**: supor que o que não se classifica é externo faria a defesa passar batido justamente onde ela mais importa. E a do disco de sistema tem **dois canais** — o `IsSystem`/`IsBoot` do `MSFT_Disk`, que fala do boot corrente, e a letra do `%SystemDrive%`, que fala de onde este Windows mora: numa máquina com dois Windows as duas divergem, e o vão entre canais de identidade é onde este projeto já errou.)* |
 
+### 9.7 — Sondagem
+
+Acrescentada na etapa E12. Ela existe por uma consequência do §4.5 que só
+apareceu quando o ARCA passou a **criar** dispositivos: o nome do disco no Linux
+sai do `blkdev.list` de dentro de uma imagem, e um dispositivo recém-preparado
+não tem imagem — logo `arca backup` recusa, e `arca restore` e `arca verify
+--completo` também.
+
+| ID | Requisito |
+|---|---|
+| SD-1 | **`arca sondar` arma um boot único que não faz backup nem restauração**: a receita roda `lsblk`, grava a saída no `ARCAVAULT` e desliga. Ela **não chama programa nenhum do Clonezilla** — sem `ocs-sr` não há `savedisk` nem `restoredisk`, e sem `ocs-chkimg` não há escrita dentro de pasta de imagem —, e **nada é escrito fora do `ARCAVAULT`**. É a única operação deste projeto cujo pior caso não envolve gravação: o pior é a máquina parar num menu (§3.2, §4.4) |
+| SD-2 | **A saída sai no formato que o §4.5 já sabe ler**, e pelo **mesmo parser**: `crate::blkdev` continua sendo o único lugar do ARCA que lê aquele formato, e o arquivo leva o mesmo nome — `blkdev.list`. As colunas são **reconstruídas** a partir do cabeçalho capturado (`KNAME NAME SIZE TYPE FSTYPE MOUNTPOINT MODEL`), e não transcritas de linha de comando nenhuma: a que produziu aqueles arquivos mora nos scripts do Clonezilla, dentro do `filesystem.squashfs`. O código diz que é reconstrução, e o `--dry-run` diz na tela |
+| SD-3 | **O `lsblk` roda dentro de um `if`** (R-5), escrevendo `ARCA_PROBE=OK` ou `ARCA_PROBE=FALHOU`. Encadear com `;` — a forma proposta na mesa — escreveria `OK` sobre um `lsblk` que falhou, e a contradição apareceria na mesma sessão: o `arca resultado` diria que a sondagem concluiu, e a tela seguinte diria `Disco de origem … POR DETERMINAR`. **E o `2>&1` aponta para o próprio `blkdev.list`**: uma flag recusada deixa a mensagem do `lsblk` no dispositivo em vez de sumir com o `poweroff`, o que é o que torna a reconstrução de SD-2 aceitável — o modo de falha custa um reinício e diz o que consertar |
+| SD-4 | **A sondagem grava em pasta fixa** — `ARCA-LOGS\sondagem\`, com o `arca-fim.txt` e o `blkdev.list` juntos —, e a sondagem anterior é **substituída**. Ela não nomeia imagem, então o `nome` do `Pedido` e do `estado.json` é ausente, com a **string vazia** como sentinela (o mesmo argumento do `disco` da E11: `Nome::novo("")` recusa desde a E1). Substituir é o certo aqui, e a diferença é o que se perde: entre backup e restauração perdia-se o desfecho de **outro job**; aqui perde-se a **medição anterior da mesma pergunta**, e a mais recente é a que vale |
+| SD-5 | **Havendo sondagem e `blkdev.list` de imagem, a sondagem ganha**, e a divergência é **dita na tela** — nunca resolvida em silêncio. A sondagem descreve a máquina de agora; a imagem descreve a de quando o backup foi feito. A saída sempre diz de qual das duas o nome veio, e **quando** a sondagem foi feita. `SemOraculo` é a única recusa da sondagem que deixa as imagens falar: as outras são afirmações sobre a máquina de agora, e `ModeloAmbiguo` resolvido por uma imagem antiga seria o chute que aquela recusa existe para não dar |
+| SD-6 | **A confirmação é uma tecla, com o padrão no não**, e não o texto por extenso de S-2. A decisão sobrevive à pergunta *"o que essa confirmação impede?"*: ela impede o **reinício** de quem digitou o comando sem saber que ele reinicia, e a tela diz isso imediatamente acima dela. S-2 pede o **alvo** por extenso e existe para custar lê-lo; a sondagem não tem alvo — não apaga nada e não escolhe nada. Pedir a palavra `sondar` por extenso seria ecoar o comando, e uma confirmação que só ecoa ensina a digitar sem ler |
+
+> **O que a sondagem mediu de graça, e nenhuma etapa tinha medido:** quanto custa
+> o boot do Clonezilla live nesta máquina, **isolado**. Todas as execuções
+> anteriores tinham uma operação longa depois dele — 39,7 GB gravados, uma
+> restauração, um `ocs-chkimg` de 312 s —, e o boot ficou embutido em cada total.
+>
+> **1 min 40 s** do reinício ao desligamento, cronometrado à mão em 24/08/2026.
+> Dois pedaços desse total vêm de outra medição:
+>
+> ```text
+> 1 min 40 s   do reinicio ao desligamento (cronometrado)
+>    − 30 s    o menu do grub, parado (o `set timeout` do grub.cfg)
+>    − 20 s    o `sleep` antes do poweroff (a receita)
+>    ────────
+>    ≈ 50 s    POST + kernel + initrd + `toram` + o live subir + o `lsblk`
+> ```
+>
+> **Os 50 s são aritmética sobre um número cronometrado**, e não uma terceira
+> medição — valem como ordem de grandeza, e não como o `202,6 s` de V-1.
+>
+> **E a tela do `arca sondar` continua sem prometer tempo nenhum**, com teste
+> cobrando isso: o número vive aqui, com a decomposição à vista, e não numa
+> frase que promete o mesmo para qualquer máquina.
+
 ## 10. Implementação
 
 > **A receita não é um script.** As versões anteriores deste documento
@@ -1622,6 +1756,83 @@ que escreve o `ARCA_VEREDITO=` rodou em 22/08/2026.
 > não abre a janela em que o `>` deixaria o log em zero byte
 > ([ADR-0016](../docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md)).
 
+### 10.2.5 — Receita de sondagem
+
+Acrescentada na etapa E12, e é a menor das quatro. Gerada por `src/receita.rs`
+com um selo de exemplo:
+
+```text
+mkdir -p /home/partimag/ARCA-LOGS/sondagem;
+echo ARCA_SELO=a3f1c9e07b2d4856 > /home/partimag/ARCA-LOGS/sondagem/arca-fim.txt;
+if lsblk -i -o KNAME,NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL > /home/partimag/ARCA-LOGS/sondagem/blkdev.list 2>&1;
+  then echo ARCA_PROBE=OK >> /home/partimag/ARCA-LOGS/sondagem/arca-fim.txt;
+  else echo ARCA_PROBE=FALHOU >> /home/partimag/ARCA-LOGS/sondagem/arca-fim.txt;
+fi;
+echo ARCA_FIM >> /home/partimag/ARCA-LOGS/sondagem/arca-fim.txt;
+sleep 20;
+poweroff
+```
+
+**Ela não chama programa nenhum do Clonezilla**, e é a única das quatro assim.
+Não há `ocs-sr`, logo não há `savedisk` nem `restoredisk`; não há `ocs-chkimg`,
+logo não há escrita dentro de pasta de imagem. Tudo o que ela escreve mora no
+`ARCAVAULT` (SD-1).
+
+**Ela também não nomeia imagem**, e é a única das quatro assim. É por isso que a
+pasta do log é fixa — `sondagem`, e não `sondagem-<nome>` — e que o campo `nome`
+do `estado.json` passou a ser opcional na E12, com a string vazia dizendo
+"nenhuma". O vazio foi escolhido pelo mesmo argumento do `disco` da E11:
+`Nome::novo("")` recusa desde a E1, então ele nunca poderia colidir com um nome
+que B-2 aceite — e `sondagem`, que seria o sentinela óbvio, **colidiria**
+([ADR-0019](../docs/adr/0019-a-sondagem-e-a-quarta-operacao.md)).
+
+**O `if` é R-5, e a primeira forma escrita desta receita não o tinha.** A
+proposta encadeava com `;`, e o `;` não olha código de saída: com o `lsblk`
+falhando — uma flag que esta versão do util-linux não conheça basta —, o desfecho
+diria `OK` assim mesmo. Medido num bash de verdade: `recursos/ensaio-da-receita.sh`
+roda as duas formas lado a lado, e a com `;` escreve `ARCA_PROBE=OK` sobre um
+`lsblk` que saiu com código diferente de zero.
+
+**O `2>&1` aponta para o próprio `blkdev.list`**, e não para um log à parte. Com
+o `lsblk` falhando, o arquivo fica com a mensagem de erro dele em vez de vazio, e
+a próxima sessão lê **qual** flag foi recusada. Um arquivo assim não é lido como
+oráculo: o cabeçalho não bate, e o parser devolve lista vazia.
+
+#### As flags do `lsblk` são uma terceira procedência
+
+O §10.2.2 tem duas: **transcrito** (há captura da linha de comando) e **código
+novo** (não há original nenhum). A sondagem estreia a terceira:
+
+> **Reconstrução** — há original do **resultado**, e não da linha que o produziu.
+
+O `blkdev.list` de dentro de cada imagem traz o cabeçalho
+`KNAME NAME SIZE TYPE FSTYPE MOUNTPOINT MODEL`, e o `-o` reproduz exatamente
+essas sete colunas, nessa ordem. A linha que o Clonezilla usou mora nos scripts
+dele, dentro do `filesystem.squashfs`, que este repositório nunca abriu.
+
+O `-i` (`--ascii`) é parte da reconstrução e tem razão própria: o arquivo
+capturado desenha a árvore com `|-` e `` ` ``, e o `lsblk` só escolhe esses
+símbolos quando o `CODESET` do locale não é UTF-8. A receita boota com
+`locales=en_US.UTF-8`, que §3.2 torna obrigatório — sem `-i`, a árvore sairia em
+Unicode e o arquivo deixaria de ter a forma do que ele imita.
+
+#### O pressuposto novo já tinha original, e ninguém tinha notado
+
+Esta receita escreve em `/home/partimag` **antes** de qualquer comando do
+Clonezilla. Se o repositório não estivesse montado nesse instante, o `mkdir`
+criaria a pasta no tmpfs da RAM e o `poweroff` levaria tudo embora.
+
+Está provado, e a prova é da E11: a receita de verificação (§10.2.4) tem
+exatamente esta forma, rodou em 23/08/2026 às 16:53, e os 51 bytes de
+`recursos/capturas/arca-fim-verificacao-2026-08-22_Apps.txt` saíram dos dois
+primeiros passos dela. **Quem monta o `/home/partimag` é o `ocs_repository=` do
+boot, e não o `ocs-sr`.**
+
+E há um segundo sinal, de graça: o `lsblk` roda com o repositório montado, então
+a linha da partição do `ARCAVAULT` sai com `/home/partimag` no `MOUNTPOINT` —
+como já sai nos `blkdev.list` capturados. O próprio arquivo testemunha que foi
+escrito no lugar certo.
+
 ### 10.2.3 — O orçamento da linha de comando
 
 A receita inteira vira uma linha só, e o `COMMAND_LINE_SIZE` do kernel no x86_64 é **2048 caracteres**. Estourar não dá erro: o kernel **trunca em silêncio**, e uma receita truncada é uma string inválida — o caso do §3.2, em que o Clonezilla descarta tudo e abre o menu.
@@ -1727,6 +1938,8 @@ qualquer das linhas acima:
 | O `ARCA_VEREDITO=` no `arca-check.log` | **Era código novo** — ADR-0003. Rodou em 22/08/2026, e o original está em `recursos/capturas/arca-check-2026-08-22_Apps.log` |
 | O `sleep 20` | **Era código novo** — nenhuma captura o tem. Rodou em 22/08/2026 |
 | O `ARCA_VERIFY=`, e o `ocs-chkimg` fora de um `savedisk` | **Era código novo** — acrescentado na etapa E11 (§10.2.4). **Rodou em 23/08/2026**, e o original está em `recursos/capturas/arca-fim-verificacao-2026-08-22_Apps.txt`. Fecha P-24 |
+| O `lsblk` como comando principal, e o `ARCA_PROBE=` | **Código novo** — acrescentado na etapa E12 (§10.2.5). Nenhuma receita deste projeto chamou o `lsblk` |
+| As flags do `lsblk` | **Reconstrução** — a terceira procedência, e ela estreia aqui: há original do **resultado** (o `blkdev.list` de dentro das imagens) e não da linha que o produziu (§10.2.5) |
 | O `>>` no `arca-check.log` da verificação | **Rodou, e não fez o que se esperava**: o log saiu com uma execução só, e o do backup sumiu. É P-25 — a única linha desta tabela cujo comportamento em hardware **divergiu** do que a receita diz |
 
 Ver [ADR-0004](../docs/adr/0004-a-receita-transcreve-o-que-rodou.md).
@@ -1805,6 +2018,13 @@ Cada uma custou uma execução real para aparecer.
 | **Testes de hardware que descreviam um dispositivo, e não o conceito** | Cinco testes das etapas E1, E4, E7 e E11 rodavam contra o dispositivo da mesa e afirmavam coisas que eram verdade **daquele**: que o `ARCAVAULT` tem imagens, que ao lado do `grub.cfg` há três cópias armadas de agosto, e que o `grub.cfg` é byte a byte a captura do repositório. Nenhuma delas é verdade num dispositivo que o `arca prepare` acabou de fazer — ele nasce vazio, sem cópias, e com o `grub.cfg` do **zip**. Os cinco ficaram vermelhos assim que o dispositivo novo ficou sozinho na mesa | Distinguir **"não há o que conferir"** de **"conferi e reprovou"**, e dizer qual dos dois — um teste de hardware que sai calado é indistinguível de um que passou. Os que dependem de imagem saem cedo explicando; os do `grub.cfg` passaram a aceitar **os dois inertes conhecidos**, com o teste da E10 provando que são equivalentes. O que nenhum deles faz é afrouxar: o que provavam continua provado assim que houver o que provar |
 | **Uma recusa rara que deixou de ser rara** | C-10 recusa dois `ARCAVAULT`, e a mensagem dizia *"Desconecte os demais"* — o que bastava enquanto ter dois dispositivos exigia **comprar** dois. Desde a E10 o ARCA **faz** o segundo: um `arca prepare` bem-sucedido deixa dois conectados por definição, e a partir dali todo comando cai na recusa — **inclusive o `arca status`**, que é o que alguém rodaria para entender o que está acontecendo | A mensagem nomeia **as letras** e a causa provável: `ha 2 volumes com o rotulo ARCAVAULT conectados (D:, E:) … Se voce acabou de preparar um dispositivo, sao os dois`. Achado **rodando o comando de verdade** depois do marco, e a lição é a de sempre: uma peça nova encaixada numa peça antiga que ninguém releu ao encaixar |
 
+| **Uma pergunta plausível no lugar da certa** | `julgar_o_conjunto` só julga a operação pelo veredito da pasta quando aquele veredito **fala daquela operação** — a E9 achou isso na restauração, onde a pasta é a imagem de origem. Ao acrescentar a sondagem, a formulação que vem à cabeça é *"as que **produzem** imagem"* — e ela deixaria a **verificação** de fora, que é justamente uma das que devem entrar: o `arca-check.log` que ela lê é o `ocs-chkimg` daquela execução. A formulação errada passava pela suíte inteira, e o estrago era **toda sondagem bem-sucedida sair com código de erro** | Nomear a pergunta em vez do critério: `o_veredito_fala_desta_operacao`, com a tabela das quatro no doc e teste sobre as quatro. Achado **falsificando** — mutando o código de produção e vendo a suíte calar |
+| **Um conselho dito duas vezes na mesma tela** | O pré-voo imprime a recusa de `SemNome` e, logo abaixo, um aviso fixo que explica por que o nome do disco importa. A E12 acrescentou `Para produzi-lo: arca sondar` **nos dois**, e a tela passou a repetir a mesma frase em quatro linhas — o começo do ruído que treina quem lê a pular o parágrafo | Cada recusa diz a saída **dela**, e o aviso fixo não repete. E a saída não é a mesma para todas: `arca sondar` resolve `SemOraculo`, `ModeloNaoCasa` e `NomeInvalido`, e **não** resolve `ModeloAmbiguo` — sondar de novo veria os dois discos outra vez. Achado **rodando o comando de verdade**, com a suíte verde |
+| **Duas linhas da mesma tela afirmando fontes diferentes** | O `arca backup --dry-run` do marco da E12 imprimiu, no pré-voo, `Disco de origem ..... lido da sondagem de 24/08 11:58` — e **quatro linhas abaixo**, no ensaio, `Disco de origem: nvme0n1 · lido do blkdev.list de uma imagem`. A segunda era uma **frase fixa**, de antes de a sondagem existir: o `Ensaio` carregava um `de_exemplo: bool`, que sabia dizer *se* o nome fora determinado e nunca *por quem*. É o padrão de sempre, e a peça antiga aqui é um `bool` de duas etapas atrás | Não ter mais frase fixa: o campo virou `origem: Option<&NomeDoDisco>`, e a linha do ensaio é **literalmente** a que o pré-voo imprime — o `Display` de `NomeDoDisco`, que é quem sabe de onde o nome veio. Achado **rodando o comando de verdade**, com a suíte verde |
+| **O `mtime` de um arquivo que o Linux escreveu, com o dono do relógio trocado** | O campo `quando` da sondagem sai do `mtime` do `blkdev.list`, e a doc dele dizia que vinha do relógio **do Windows, e não do live**. É o contrário: quem escreve o arquivo é o `lsblk`, do outro lado do reinício, e o valor sai **três horas atrás** do relógio daqui. A tela imprimiu `lido da sondagem de 24/08 11:58` para uma sondagem armada às **14:56:55**. Quem comparasse com o `armado_em` do `estado.json` concluiria que a sondagem é mais velha do que é — que é exatamente a conta que S-6 existe para ninguém fazer | Dizer **de quem é o carimbo** na própria linha: `(carimbo do Clonezilla, P-7)`. E **não corrigir o valor**: somar três horas fabricaria um instante que ninguém mediu. Para o que o campo existe — separar uma sondagem da anterior — o deslocamento não atrapalha, porque as duas vêm do mesmo relógio |
+| **Uma ponte USB dando outro nome ao disco** | O `lsblk` chama o dispositivo desta mesa de `Maxtor Z1 SSD 480GB`; o WMI o chama de `JMicron Generic SCSI Disk Device`. A ponte USB responde ao Windows com o nome **dela**, e o Linux lê o disco atrás dela. O disco de origem casa nas duas fontes — é o que o backup precisa —, e o que **não** casa é o dispositivo: com isso a **segunda** barreira de R-8 (resolver o nome Linux do dispositivo pelo mesmo oráculo e comparar com o do destino) fica **inerte**. No dispositivo antigo os dois lados casavam (`KGSSE100 256 SCSI Disk Device` ↔ `KGSSE100256`), e ninguém tinha razão para suspeitar | Saber que ela pode ficar inerte, e por quê. Ela não falha errado — só não dispara —, e a primeira barreira, por **letra do Windows**, continua valendo; o ADR-0015 já previa que a segunda viraria redundante. O que o marco acrescentou foi a **causa**: um canal de identidade que passa por uma ponte não fala do disco |
+| **Um teste de sincronia que a forma errada satisfaz** | `recursos/ensaio-da-receita.sh` guarda a forma **proposta e não escrita** da receita de sondagem — a com `;` — para mostrar, num bash de verdade, o que ela escreveria. O teste `o_ensaio_em_bash_ensaia_a_receita_de_hoje` confere que a receita do código aparece no script; com a forma errada lá dentro, **trocar o `if` pelo `;` no código passa por ele** | Saber disso antes de confiar naquele teste, e é o que o comentário da string diz. A mutação é pega por outros três, que olham a receita e não o script. **É o custo de guardar contraexemplo junto do exemplo**, e ele vale a pena: o contraexemplo é a única coisa neste repositório que mostra o `;` mentindo |
+
 ## 12. Decisões e pendências
 
 ### Decisões fechadas
@@ -1871,7 +2091,8 @@ Cada uma custou uma execução real para aparecer.
 | P-23 | **Por que o `arca-restore.log` começa no meio?** — ver §3.5. Aberta no marco da E9. O §6.3 aponta esse arquivo a quem quer saber o que aconteceu, e ele não traz a operação inteira. Fecha na próxima restauração |
 | ~~P-24~~ | ~~A verificação armada (V-2) nunca rodou.~~ **Fechada em 23/08/2026, etapa E11** — armada às 16:53:30, colhida `concluida` com veredito `APROVADA`. Ver §3.5 |
 | P-25 | **Por que o `arca-check.log` foi substituído, se a receita usa `>>`?** — ver §3.5. Aberta no marco da E11, e é uma previsão deste documento que a execução real desmentiu |
-| P-26 | **Um dispositivo preparado pelo `arca prepare` boota?** Aberta no marco da E10, 23/08/2026. O comando produziu um dispositivo com o Clonezilla instalado, o `grub.cfg` inerte e a entrada de firmware apontando para ele — e **nada disso foi bootado**. O que se conferiu foi tudo o que se pode conferir sem reiniciar: a estrutura de partições relida do disco, os quatro caminhos obrigatórios dentro do pacote, o `set default` de volta em `live-default`, e a entrada de boot relida do `bcdedit`. **O que falta é o firmware honrar aquela entrada**, e isso custa um reinício — o único da E10, e ela é a primeira etapa deste projeto cujo marco não precisou de nenhum. Fecha com um `arca backup` no dispositivo novo, que exercita o caminho inteiro: armar, bootar, gravar, colher. O risco é baixo e conhecido: com o `grub.cfg` inerte o pior caso é a máquina parar no menu do Clonezilla (§3.2, §4.4) |
+| ~~P-26~~ | **Fechada em 24/08/2026, no marco da E12** — ver §3.5. ~~Um dispositivo preparado pelo `arca prepare` boota?~~ Aberta no marco da E10, 23/08/2026. O comando produziu um dispositivo com o Clonezilla instalado, o `grub.cfg` inerte e a entrada de firmware apontando para ele — e **nada disso foi bootado**. O que se conferiu foi tudo o que se pode conferir sem reiniciar: a estrutura de partições relida do disco, os quatro caminhos obrigatórios dentro do pacote, o `set default` de volta em `live-default`, e a entrada de boot relida do `bcdedit`. **O que falta é o firmware honrar aquela entrada**, e isso custa um reinício — o único da E10, e ela é a primeira etapa deste projeto cujo marco não precisou de nenhum. ~~Fecha com um `arca backup` no dispositivo novo~~ — **ele recusa**, e a razão é o §4.5: não há imagem de onde ler o nome do disco. **Fecha com o marco da E12**, `arca sondar`, que responde as **duas** metades de uma vez: (a) o dispositivo boota, e (b) a entrada que o ARCA criou leva a ele — porque o boot é o **único**, disparado pelo `bootsequence`, sobre uma entrada que está fora da ordem permanente. Um F12 responderia só (a). O risco é o menor de todos os marcos deste projeto: a receita da sondagem não tem `ocs-sr`, e nada é escrito fora do `ARCAVAULT` |
+| ~~P-27~~ | **Fechada em 24/08/2026, no mesmo marco** — `ARCA_PROBE=OK`, e a arvore saiu em ASCII, o que diz que o `-i` foi aceito. ~~As flags do `lsblk` da sondagem são reconstrução, e o util-linux daquele live pode recusar alguma.~~ Aberta na E12, 23/08/2026. As sete colunas saem do cabeçalho do `blkdev.list` capturado, e o `-i` sai do fato de a árvore vir em ASCII; a **linha de comando** que o Clonezilla usa mora nos scripts dentro do `filesystem.squashfs`, que este repositório nunca abriu. Fecha no primeiro `arca sondar` que rodar: `ARCA_PROBE=OK` diz que as flags passaram. Custa o mesmo reinício que já se ia gastar, e o modo de falha é barato e visível — `ARCA_PROBE=FALHOU`, com a mensagem do `lsblk` dentro do próprio `blkdev.list` (SD-2, SD-3) |
 
 ---
 

@@ -422,9 +422,33 @@ fn avisos(prevoo: &PreVoo) -> String {
             "\n  O NOME DO DISCO DE ORIGEM NAO FOI DETERMINADO.\n\
              \x20 {porque}\n\
              \x20 A receita nomeia o disco pelo nome que o **Linux** lhe da, e o Windows\n\
-             \x20 nao conhece esse nome. O ARCA o lê do `blkdev.list` de uma imagem ja\n\
-             \x20 existente; ele nao deriva o nome de indice nem de tipo de barramento,\n\
-             \x20 porque o indice do Windows nao e o do Linux.\n"
+             \x20 nao conhece esse nome. O ARCA o lê de um `blkdev.list` — o da sondagem,\n\
+             \x20 ou o de dentro de uma imagem ja existente.\n\
+             \x20 Ele nao deriva o nome de indice nem de tipo de barramento, porque o\n\
+             \x20 indice do Windows nao e o do Linux.\n"
+        ));
+    }
+
+    // A divergencia de SD-5, dita fora da linha e nao so dentro dela.
+    //
+    // A linha `Disco de origem` ja carrega o `DIVERGE de ...`, e a linha e
+    // curta: quem lê uma tela inteira pode passar por ela sem notar. Isto aqui
+    // e o que a **explica** — que ha duas fontes, que elas falam de instantes
+    // diferentes, e qual delas o ARCA usou. Nunca resolvida em silencio.
+    if let DiscoDeOrigem::Descoberto(achado) = prevoo.disco
+        && let crate::blkdev::Origem::LidoDaSondagem {
+            divergencia: Some(divergencia),
+            ..
+        } = &achado.origem
+    {
+        saida.push_str(&format!(
+            "\n  AS DUAS FONTES DO NOME DO DISCO DISCORDAM.\n\
+             \x20 A sondagem diz `{}`; o `blkdev.list` de `{}` diz `{}`.\n\
+             \x20 O ARCA usou o da SONDAGEM, que descreve esta maquina agora — a imagem\n\
+             \x20 descreve a maquina de quando aquele backup foi feito, e um disco trocado\n\
+             \x20 entre as duas muda o nome que o Linux da a ele.\n\
+             \x20 Se a sondagem for antiga, rode `arca sondar` de novo antes de armar.\n",
+            achado.disco, divergencia.imagem, divergencia.disco
         ));
     }
 
@@ -1011,6 +1035,71 @@ mod testes {
             saida.contains("2026-08-21_WindowsCompleto"),
             "faltou dizer de que imagem:\n{saida}"
         );
+    }
+
+    #[test]
+    fn a_divergencia_entre_as_duas_fontes_sai_explicada_e_nao_so_na_linha() {
+        // **SD-5, e o que a falsificacao mostrou faltando.** A linha
+        // `Disco de origem` ja carrega o `DIVERGE de ...`, e a linha e curta:
+        // quem lê uma tela inteira pode passar por ela sem notar. O aviso e o
+        // que a **explica** — que ha duas fontes, que elas falam de instantes
+        // diferentes, e qual delas o ARCA usou.
+        //
+        // "Nunca resolvida em silencio" so vira propriedade testavel aqui: uma
+        // divergencia que sai so na linha ja e quase silencio.
+        let saida = montar_com(
+            InicializacaoRapida::Desativada,
+            Chkdsk::Limpo,
+            DiscoDeOrigem::Descoberto(NomeDoDisco {
+                disco: Disco::novo("nvme0n1").unwrap(),
+                origem: Origem::LidoDaSondagem {
+                    modelo: "KINGSTON SNV3S500G".to_string(),
+                    quando: Some(crate::duplos::momento("2026-08-23T21:14:07")),
+                    divergencia: Some(crate::blkdev::Divergencia {
+                        imagem: "2026-08-21_WindowsCompleto".to_string(),
+                        disco: "nvme1n1".to_string(),
+                    }),
+                },
+            }),
+        );
+
+        assert!(saida.contains("AS DUAS FONTES"), "{saida}");
+        assert!(saida.contains("nvme1n1"), "o que a imagem diz: {saida}");
+        assert!(
+            saida.contains("2026-08-21_WindowsCompleto"),
+            "e qual imagem diz: {saida}"
+        );
+        assert!(
+            saida.contains("SONDAGEM"),
+            "a tela tem de dizer qual das duas o ARCA usou: {saida}"
+        );
+        assert!(
+            saida.contains("arca sondar"),
+            "e o que fazer se a sondagem for antiga: {saida}"
+        );
+    }
+
+    #[test]
+    fn concordando_as_duas_fontes_a_tela_nao_fala_de_divergencia() {
+        // Aviso que aparece sempre vira ruido, e a E10 ja pagou por essa licao
+        // no `arca resultado`. O caso normal — uma fonte so, ou as duas
+        // concordando — nao tem o que explicar.
+        let saida = montar_com(
+            InicializacaoRapida::Desativada,
+            Chkdsk::Limpo,
+            DiscoDeOrigem::Descoberto(NomeDoDisco {
+                disco: Disco::novo("nvme0n1").unwrap(),
+                origem: Origem::LidoDaSondagem {
+                    modelo: "KINGSTON SNV3S500G".to_string(),
+                    quando: Some(crate::duplos::momento("2026-08-23T21:14:07")),
+                    divergencia: None,
+                },
+            }),
+        );
+
+        assert!(saida.contains("lido da sondagem de 23/08 21:14"), "{saida}");
+        assert!(!saida.contains("AS DUAS FONTES"), "{saida}");
+        assert!(!saida.contains("DIVERGE"), "{saida}");
     }
 
     #[test]

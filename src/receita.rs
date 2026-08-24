@@ -33,6 +33,13 @@
 //! | O `if/then/else` de R-5 | **Codigo novo** — nenhuma receita real o usou |
 //! | O `arca-fim.txt`, o selo, o `ARCA_FIM` | **Codigo novo** — nenhuma receita real o escreveu |
 //! | O `ARCA_VEREDITO=` no `arca-check.log` | **Codigo novo** — ver ADR-0003 |
+//! | O `lsblk` da sondagem, e o `ARCA_PROBE=` | **Codigo novo** — ver [`montar_sondagem`] |
+//! | As flags do `lsblk` | **Reconstrucao**, e ha uma terceira coluna para isso — ver [`FLAGS_DE_SONDAGEM`] |
+//!
+//! A terceira procedencia nasceu na etapa E12, e ela nao e nenhuma das duas
+//! anteriores: das outras receitas se tem a **linha de comando** que rodou; da
+//! sondagem se tem o **resultado** que se quer reproduzir, e a linha e
+//! reconstruida a partir dele.
 //!
 //! O `ARCA_RESTORE=OK` que existe no dispositivo, e o `ARCA_VEREDITO=APROVADA`
 //! que o ADR-0003 encontrou, **nao saem de receita nenhuma**: sairam do
@@ -135,6 +142,58 @@ const FLAGS_DE_RESTAURACAO: &str = "-e1 auto -e2 -batch -j2 -k0 -iefi -p true";
 /// `recursos/capturas/grub-backup-arca-teste-03.cfg`.
 const FLAGS_DE_VERIFICACAO: &str = "-b -or";
 
+/// As flags do `lsblk` da sondagem — e elas sao **reconstrucao**, nao
+/// transcricao.
+///
+/// # A diferenca, e por que ela e dita aqui e nao so num documento
+///
+/// Das outras tres receitas temos a **linha de comando** que rodou: ela esta
+/// dentro do `ocs_live_run` das capturas de `grub.cfg`, e o codigo acima a
+/// copia caractere a caractere. Da sondagem temos o **resultado** — o
+/// `blkdev.list` de dentro das imagens, com o cabecalho
+/// `KNAME NAME SIZE TYPE FSTYPE MOUNTPOINT MODEL` — e nao temos a linha: ela
+/// mora nos scripts do Clonezilla, dentro do `filesystem.squashfs`, que este
+/// repositorio nunca abriu.
+///
+/// Reconstruir as colunas a partir do cabecalho e honesto. Chamar isso de
+/// transcricao nao seria, e o §3.5 do PRD conta cinco vezes em que esse
+/// segundo movimento custou caro.
+///
+/// # O que a reconstrucao decidiu, item a item
+///
+/// - **As sete colunas, nesta ordem**, saem do cabecalho do arquivo capturado
+///   — ver `DO_DISPOSITIVO` em [`crate::blkdev`], que e a copia dele.
+///   [`crate::blkdev::ler`] usa tres delas (`NAME`, `TYPE`, `MODEL`) e acha
+///   cada uma **pelo cabecalho**; as outras quatro ficam porque o arquivo que
+///   se quer reproduzir as tem, e porque quem for olhar o arquivo a mao
+///   procura o `MOUNTPOINT` para saber se o repositorio estava montado.
+/// - **`-i`, que e `--ascii`.** O arquivo capturado desenha a arvore com
+///   `|-` e `` ` `` — ASCII. O `lsblk` so escolhe esses simbolos quando o
+///   `CODESET` do locale nao e UTF-8, e a receita boota com
+///   `locales=en_US.UTF-8` (§3.2, obrigatorio): sem `-i` a arvore sairia com
+///   os simbolos de caixa do Unicode, e o arquivo deixaria de ter a forma do
+///   que ele imita. Nao muda o que o parser lê — as linhas de `disk` nao tem
+///   prefixo de arvore nenhum —, e muda o que uma pessoa vê ao abrir o
+///   arquivo ao lado de um `blkdev.list` de imagem.
+///
+/// # O modo de falha, que e o que torna a reconstrucao aceitavel
+///
+/// Uma flag que esta versao do util-linux nao conheca faz o `lsblk` sair com
+/// codigo diferente de zero, e o `if` de [`montar_sondagem`] escreve
+/// `ARCA_PROBE=FALHOU`. O `2>&1` manda a mensagem de erro para dentro do
+/// proprio `blkdev.list`, entao **qual** flag foi recusada fica escrito no
+/// dispositivo em vez de sumir com o `poweroff`. Custa um reinicio, e diz o
+/// que consertar.
+const FLAGS_DE_SONDAGEM: &str = "-i -o KNAME,NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL";
+
+/// O arquivo que a sondagem escreve no `ARCAVAULT`.
+///
+/// Importado de [`crate::blkdev`] em vez de repetido, pela razao de
+/// [`ARCA_FIM`] e de [`crate::imagens::CHECK_LOG`]: quem escreve e a receita,
+/// deste lado do reinicio, e quem lê e o parser, do outro. Um nome so, num
+/// lugar so.
+use crate::blkdev::ARQUIVO as ARQUIVO_DA_SONDAGEM;
+
 /// O `COMMAND_LINE_SIZE` do kernel Linux no x86_64.
 ///
 /// E o tamanho maximo da linha que o `grub` entrega ao kernel. Estourar nao
@@ -185,6 +244,17 @@ const ESPERA_ANTES_DE_DESLIGAR: u32 = 20;
 /// da operacao e isto aqui.
 ///
 /// Ver `docs/adr/0016-a-verificacao-armada-e-a-terceira-operacao.md`.
+///
+/// # A quarta nasceu na etapa E12, e ela e a primeira que nao nomeia imagem
+///
+/// As tres primeiras operam sobre uma imagem — duas a escrevem ou a leem, a
+/// terceira a confere. A **sondagem** nao: ela roda `lsblk`, grava a saida e
+/// desliga, e existe justamente para o dispositivo que **nao tem imagem
+/// nenhuma** (§4.5, P-26). Por isso o `nome` do [`Pedido`] e do
+/// [`crate::estado::Estado`] passa a ser opcional, como o `disco` passou a ser
+/// na E11 — e pelo mesmo argumento, que esta em [`Operacao::nomeia_imagem`].
+///
+/// Ver `docs/adr/0019-a-sondagem-e-a-quarta-operacao.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operacao {
     Backup,
@@ -192,6 +262,10 @@ pub enum Operacao {
 
     /// `arca verify --completo` (V-2): so o `ocs-chkimg`, e desliga.
     Verificacao,
+
+    /// `arca sondar` (SD-1): so o `lsblk`, e desliga. Nao chama o `ocs-sr`
+    /// nem o `ocs-chkimg`, e nao escreve fora do `ARCAVAULT`.
+    Sondagem,
 }
 
 impl Operacao {
@@ -207,6 +281,11 @@ impl Operacao {
             Operacao::Backup => "ARCA_BACKUP",
             Operacao::Restauracao => "ARCA_RESTORE",
             Operacao::Verificacao => "ARCA_VERIFY",
+            // Mesma forma dos tres, e mesma procedencia: `ARCA_` mais o nome
+            // da operacao em ingles, maiusculo. `PROBE` e nao `SONDAR` porque
+            // os outros tres estao em ingles, e um marcador em portugues no
+            // meio de tres em ingles seria o comeco de duas convencoes.
+            Operacao::Sondagem => "ARCA_PROBE",
         }
     }
 
@@ -215,18 +294,41 @@ impl Operacao {
             Operacao::Backup => "backup",
             Operacao::Restauracao => "restauracao",
             Operacao::Verificacao => "verificacao",
+            Operacao::Sondagem => "sondagem",
         }
     }
 
     /// Se esta operacao nomeia um disco na receita.
     ///
     /// O `savedisk` e o `restoredisk` nomeiam; o `ocs-chkimg` opera sobre a
-    /// **imagem**, e nao sobre disco nenhum. E o que faz o `disco` do
-    /// [`Pedido`] e do [`crate::estado::Estado`] ser opcional a partir da E11.
+    /// **imagem**, e nao sobre disco nenhum, e o `lsblk` da sondagem olha
+    /// todos. E o que faz o `disco` do [`Pedido`] e do
+    /// [`crate::estado::Estado`] ser opcional a partir da E11.
     pub fn nomeia_disco(self) -> bool {
         match self {
             Operacao::Backup | Operacao::Restauracao => true,
-            Operacao::Verificacao => false,
+            Operacao::Verificacao | Operacao::Sondagem => false,
+        }
+    }
+
+    /// Se esta operacao nomeia uma imagem.
+    ///
+    /// # Por que isto e um segundo eixo, e nao o mesmo de [`nomeia_disco`]
+    ///
+    /// Os dois separam coisas diferentes, e a verificacao e a prova: ela **nao**
+    /// nomeia disco e **nomeia** imagem. Juntar os dois num campo so faria a
+    /// coerencia do `estado.json` parar de cobrir metade das combinacoes.
+    ///
+    /// A sondagem e a unica que nao nomeia nenhuma das duas: ela pergunta
+    /// *"que discos ha nesta maquina?"*, e a pergunta nao tem sujeito a
+    /// escolher. E por isso que a pasta do log dela nao leva nome
+    /// ([`pasta_do_log`]) e que o `nome` do [`Pedido`] e opcional.
+    ///
+    /// [`nomeia_disco`]: Operacao::nomeia_disco
+    pub fn nomeia_imagem(self) -> bool {
+        match self {
+            Operacao::Backup | Operacao::Restauracao | Operacao::Verificacao => true,
+            Operacao::Sondagem => false,
         }
     }
 }
@@ -385,6 +487,13 @@ pub enum RecusaDaReceita {
         operacao: Operacao,
         tem_disco: bool,
     },
+
+    /// A operacao e a imagem nao combinam: um `savedisk` sem nome, ou uma
+    /// sondagem com um.
+    NomeIncoerente {
+        operacao: Operacao,
+        tem_nome: bool,
+    },
 }
 
 impl fmt::Display for RecusaDaReceita {
@@ -447,6 +556,22 @@ impl fmt::Display for RecusaDaReceita {
                 "a operacao `{}` nomeia um disco na receita e nenhum foi dado",
                 operacao.nome()
             ),
+            RecusaDaReceita::NomeIncoerente {
+                operacao,
+                tem_nome: true,
+            } => write!(
+                f,
+                "a operacao `{}` nao opera sobre imagem nenhuma — ela lê os discos da maquina —, e veio um nome. Um nome carregado ate uma receita que nao o usa e um valor que ninguem confere",
+                operacao.nome()
+            ),
+            RecusaDaReceita::NomeIncoerente {
+                operacao,
+                tem_nome: false,
+            } => write!(
+                f,
+                "a operacao `{}` opera sobre uma imagem e nenhuma foi nomeada",
+                operacao.nome()
+            ),
         }
     }
 }
@@ -455,7 +580,15 @@ impl fmt::Display for RecusaDaReceita {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pedido {
     pub operacao: Operacao,
-    pub nome: Nome,
+
+    /// A imagem sobre a qual a receita opera, quando ha uma.
+    ///
+    /// `None` **so** na sondagem, e [`Receita::montar`] cobra a coerencia nos
+    /// dois sentidos, como ja faz com o [`Pedido::disco`]. A sondagem pergunta
+    /// *"que discos ha nesta maquina?"*, e a pergunta nao tem imagem por
+    /// sujeito — ela existe justamente para o dispositivo que ainda nao tem
+    /// nenhuma (§4.5, P-26).
+    pub nome: Option<Nome>,
 
     /// O disco que a receita nomeia, quando a operacao nomeia algum.
     ///
@@ -515,11 +648,25 @@ impl Receita {
         // receita nasce, e um `Option` destravado dentro de `montar_backup`
         // deixaria a incoerencia virar um `unwrap` em vez de uma recusa com
         // nome.
-        let comando = match (pedido.operacao, &pedido.disco) {
-            (Operacao::Backup, Some(disco)) => montar_backup(pedido, disco),
-            (Operacao::Restauracao, Some(disco)) => montar_restauracao(pedido, disco),
-            (Operacao::Verificacao, None) => montar_verificacao(pedido),
-            (operacao, disco) => {
+        // A coerencia da **imagem** vem primeiro, e por um motivo pratico: as
+        // tres montagens que nomeiam imagem recebem o `Nome` ja destravado, e
+        // sem esta porta cada uma teria de destrava-lo por conta — que e o
+        // `unwrap` que este bloco existe para nao haver.
+        if pedido.operacao.nomeia_imagem() != pedido.nome.is_some() {
+            return Err(RecusaDaReceita::NomeIncoerente {
+                operacao: pedido.operacao,
+                tem_nome: pedido.nome.is_some(),
+            });
+        }
+
+        let comando = match (pedido.operacao, &pedido.nome, &pedido.disco) {
+            (Operacao::Backup, Some(nome), Some(disco)) => montar_backup(pedido, nome, disco),
+            (Operacao::Restauracao, Some(nome), Some(disco)) => {
+                montar_restauracao(pedido, nome, disco)
+            }
+            (Operacao::Verificacao, Some(nome), None) => montar_verificacao(pedido, nome),
+            (Operacao::Sondagem, None, None) => montar_sondagem(pedido),
+            (operacao, _, disco) => {
                 return Err(RecusaDaReceita::DiscoIncoerente {
                     operacao,
                     tem_disco: disco.is_some(),
@@ -623,16 +770,40 @@ impl Receita {
 /// [`crate::desfecho`], dentro de um caminho Windows que o ARCA lê na volta.
 /// Devolve so o nome da pasta, e nao o caminho, justamente para que nenhum dos
 /// dois lados precise conhecer o do outro.
-pub fn pasta_do_log(operacao: Operacao, nome: &Nome) -> String {
-    format!("{}-{nome}", operacao.nome())
+///
+/// # A sondagem tem pasta **fixa**, e a anterior e substituida
+///
+/// Ela nao nomeia imagem ([`Operacao::nomeia_imagem`]), entao nao ha o que pôr
+/// depois do hifen: a pasta e `sondagem`, e duas sondagens escrevem no mesmo
+/// lugar. **Aqui isso e o comportamento certo**, e nao o defeito que a revisao
+/// da E3 pegou entre o backup e a restauracao.
+///
+/// O que se perdia la era o desfecho de **outro job**, sobre outra pergunta,
+/// que ninguem mais ia reproduzir. O que se perde aqui e a **medicao anterior
+/// da mesma pergunta** — *que discos ha nesta maquina?* —, e a resposta mais
+/// recente e a que vale: uma sondagem velha descrevendo uma maquina que mudou
+/// e pior do que nenhuma. Ela e barata de refazer, ao contrario de um backup.
+///
+/// O que isto custa esta dito e e o mesmo das outras tres com o mesmo nome:
+/// uma sondagem armada por cima de outra ainda **nao colhida** trunca o
+/// `arca-fim.txt` dela. So ha um `estado.json` por dispositivo, entao aquele
+/// job ja estava perdido antes de a pasta ser tocada.
+///
+/// `sondagem` nao colide com nenhuma das outras tres: as delas sao
+/// `{operacao}-{nome}`, e [`Nome`] nunca e vazio.
+pub fn pasta_do_log(operacao: Operacao, nome: Option<&Nome>) -> String {
+    match nome {
+        Some(nome) => format!("{}-{nome}", operacao.nome()),
+        None => operacao.nome().to_string(),
+    }
 }
 
-fn log_do_job(operacao: Operacao, nome: &Nome) -> String {
+fn log_do_job(operacao: Operacao, nome: Option<&Nome>) -> String {
     format!("{PARTIMAG}/{ARCA_LOGS}/{}", pasta_do_log(operacao, nome))
 }
 
 /// Onde a receita grava o desfecho (S-4, C-11).
-fn arquivo_do_desfecho(operacao: Operacao, nome: &Nome) -> String {
+fn arquivo_do_desfecho(operacao: Operacao, nome: Option<&Nome>) -> String {
     format!("{}/{ARCA_FIM}", log_do_job(operacao, nome))
 }
 
@@ -653,12 +824,12 @@ fn arquivo_do_desfecho(operacao: Operacao, nome: &Nome) -> String {
 /// 5. o `ARCA_FIM`, que e o que separa um desfecho completo de um truncado
 ///    por desligamento no meio (§5.5);
 /// 6. a espera e o `poweroff`.
-fn montar_backup(pedido: &Pedido, disco: &Disco) -> String {
-    let Pedido { nome, selo, .. } = pedido;
+fn montar_backup(pedido: &Pedido, nome: &Nome, disco: &Disco) -> String {
+    let Pedido { selo, .. } = pedido;
 
     let marcador = pedido.operacao.marcador();
-    let log = log_do_job(pedido.operacao, nome);
-    let desfecho = arquivo_do_desfecho(pedido.operacao, nome);
+    let log = log_do_job(pedido.operacao, Some(nome));
+    let desfecho = arquivo_do_desfecho(pedido.operacao, Some(nome));
     let veredito = format!("{PARTIMAG}/{nome}/{}", CHECK_LOG);
 
     let passos = [
@@ -686,12 +857,12 @@ fn montar_backup(pedido: &Pedido, disco: &Disco) -> String {
 /// E por isso que P-6 — o `ocs-sr` devolver zero ao falhar — dói mais deste
 /// lado: no backup o `ocs-chkimg` e um segundo sinal independente, e aqui o
 /// unico juiz e o Windows subir ou nao.
-fn montar_restauracao(pedido: &Pedido, disco: &Disco) -> String {
-    let Pedido { nome, selo, .. } = pedido;
+fn montar_restauracao(pedido: &Pedido, nome: &Nome, disco: &Disco) -> String {
+    let Pedido { selo, .. } = pedido;
 
     let marcador = pedido.operacao.marcador();
-    let log = log_do_job(pedido.operacao, nome);
-    let desfecho = arquivo_do_desfecho(pedido.operacao, nome);
+    let log = log_do_job(pedido.operacao, Some(nome));
+    let desfecho = arquivo_do_desfecho(pedido.operacao, Some(nome));
 
     // §10.2: o log mora no `ARCAVAULT`, que a restauracao nao toca. A imagem
     // substitui o `nvme0n1`, e o desfecho sobrevive num disco que nao estava
@@ -771,12 +942,12 @@ fn montar_restauracao(pedido: &Pedido, disco: &Disco) -> String {
 /// o lado conservador de proposito — mídia que falha de forma intermitente e o
 /// caso em que a segunda leitura mente —, e e o que S-5 pede. Continua sem
 /// original, como o ADR-0003 ja registrava.
-fn montar_verificacao(pedido: &Pedido) -> String {
-    let Pedido { nome, selo, .. } = pedido;
+fn montar_verificacao(pedido: &Pedido, nome: &Nome) -> String {
+    let Pedido { selo, .. } = pedido;
 
     let marcador = pedido.operacao.marcador();
-    let log = log_do_job(pedido.operacao, nome);
-    let desfecho = arquivo_do_desfecho(pedido.operacao, nome);
+    let log = log_do_job(pedido.operacao, Some(nome));
+    let desfecho = arquivo_do_desfecho(pedido.operacao, Some(nome));
     let veredito = format!("{PARTIMAG}/{nome}/{}", CHECK_LOG);
 
     let passos = [
@@ -788,6 +959,92 @@ fn montar_verificacao(pedido: &Pedido) -> String {
              echo {marcador}=OK >> {desfecho}; \
              else echo ARCA_VEREDITO=REPROVADA >> {veredito}; \
              echo {marcador}=FALHOU >> {desfecho}; fi"
+        ),
+        format!("echo {MARCA_DO_FIM} >> {desfecho}"),
+        format!("sleep {ESPERA_ANTES_DE_DESLIGAR}"),
+        "poweroff".to_string(),
+    ];
+
+    passos.join("; ")
+}
+
+/// A receita da sondagem (SD-1 a SD-3), e a unica das quatro que nao chama
+/// programa nenhum do Clonezilla.
+///
+/// # O que aqui e transcricao, o que rodou, e o que e codigo novo
+///
+/// | Parte | Origem |
+/// |---|---|
+/// | O `mkdir -p`, o `ARCA_SELO=` com `>`, o `ARCA_FIM`, o `sleep`, o `poweroff` | Transcrito das tres receitas que rodaram |
+/// | A forma `bash -c '...'` com `;` e os cinco parametros | Transcrito das tres capturas |
+/// | O `if` sobre o comando principal, escrevendo `OK` ou `FALHOU` | Transcrito das tres |
+/// | Escrever em `/home/partimag` **antes** de qualquer comando do Clonezilla | **Rodou** — a verificacao armada da E11, em 23/08/2026 |
+/// | O **formato** do arquivo de saida | Transcrito do `blkdev.list` de dentro das imagens |
+/// | **O `lsblk` como comando principal** | **Codigo novo** — nenhuma receita deste projeto o chamou |
+/// | **O `ARCA_PROBE=`** | **Codigo novo** |
+/// | **As flags do `lsblk`** | **Reconstrucao** — ver [`FLAGS_DE_SONDAGEM`] |
+///
+/// # O pressuposto perigoso ja tinha original, e ninguem tinha notado
+///
+/// Esta receita escreve em `/home/partimag` **antes** de qualquer comando do
+/// Clonezilla — as outras tres so escrevem ali depois de o `ocs-sr` ou o
+/// `ocs-chkimg` terem rodado. Se o repositorio nao estivesse montado nesse
+/// instante, o `mkdir` criaria a pasta no tmpfs da RAM e o `poweroff` levaria
+/// tudo embora: falha silenciosa, sem nada no dispositivo para investigar.
+///
+/// Esta provado, e a prova e da E11. [`montar_verificacao`] tem exatamente
+/// esta forma — passo 1 `mkdir -p`, passo 2 `echo ARCA_SELO= >`, e so no passo
+/// 3 o `ocs-chkimg` —, rodou em 23/08/2026 as 16:53, e o resultado esta em
+/// `recursos/capturas/arca-fim-verificacao-2026-08-22_Apps.txt`: cinquenta e
+/// um bytes que sairam daqueles dois primeiros passos. **Quem monta o
+/// `/home/partimag` e o `ocs_repository=` do boot, e nao o `ocs-sr`.**
+///
+/// E ha um segundo sinal, de graca: o `lsblk` roda com o repositorio montado,
+/// entao a linha da particao do `ARCAVAULT` sai com `/home/partimag` no
+/// `MOUNTPOINT` — como ja sai nos `blkdev.list` capturados. O proprio arquivo
+/// testemunha que foi escrito no lugar certo.
+///
+/// # O `if` nao e enfeite, e a primeira forma escrita desta receita nao o tinha
+///
+/// A forma proposta na mesa encadeava com `;`:
+///
+/// ```text
+/// lsblk -o ... > .../blkdev.list; echo ARCA_PROBE=OK >> .../arca-fim.txt;
+/// ```
+///
+/// O `;` nao olha codigo de saida. Com o `lsblk` falhando — uma flag que esta
+/// versao do util-linux nao conheca basta —, o desfecho diria **`OK`** assim
+/// mesmo. E R-5, e e o passo 3 de [`montar_backup`] desde a E3.
+///
+/// O estrago nao e abstrato: [`crate::blkdev::ler`] devolveria lista vazia, o
+/// disco de origem sairia `POR DETERMINAR`, e a tela diria isso **logo depois**
+/// de o `arca resultado` ter dito que a sondagem concluiu com sucesso. Duas
+/// afirmacoes contraditorias, as duas do ARCA, na mesma sessao.
+///
+/// # O `2>&1` aponta para o proprio `blkdev.list`, e nao para um log a parte
+///
+/// As outras receitas mandam o erro para o log da operacao. Aqui nao ha log
+/// separado, e mandar o erro para o arquivo de saida e melhor do que parece:
+/// falhando o `lsblk`, o `blkdev.list` fica com a mensagem dele em vez de
+/// vazio, e a proxima sessao lê **qual** flag foi recusada em vez de deduzir.
+/// Um arquivo com a mensagem de erro nao e lido como oraculo — o cabecalho nao
+/// bate, e [`crate::blkdev::ler`] devolve lista vazia, que e o que ela devolve
+/// para tudo o que nao entende.
+fn montar_sondagem(pedido: &Pedido) -> String {
+    let Pedido { selo, .. } = pedido;
+
+    let marcador = pedido.operacao.marcador();
+    let log = log_do_job(pedido.operacao, None);
+    let desfecho = arquivo_do_desfecho(pedido.operacao, None);
+    let saida = format!("{log}/{ARQUIVO_DA_SONDAGEM}");
+
+    let passos = [
+        format!("mkdir -p {log}"),
+        format!("echo {MARCA_DO_SELO}{selo} > {desfecho}"),
+        format!(
+            "if lsblk {FLAGS_DE_SONDAGEM} > {saida} 2>&1; \
+             then echo {marcador}=OK >> {desfecho}; \
+             else echo {marcador}=FALHOU >> {desfecho}; fi"
         ),
         format!("echo {MARCA_DO_FIM} >> {desfecho}"),
         format!("sleep {ESPERA_ANTES_DE_DESLIGAR}"),
@@ -876,7 +1133,7 @@ mod testes {
     fn pedido(operacao: Operacao, nome: &str, disco: &str) -> Pedido {
         Pedido {
             operacao,
-            nome: Nome::novo(nome).expect("nome valido"),
+            nome: Some(Nome::novo(nome).expect("nome valido")),
             disco: Some(Disco::novo(disco).expect("disco valido")),
             selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
         }
@@ -894,7 +1151,7 @@ mod testes {
     fn verificacao() -> Receita {
         Receita::montar(&Pedido {
             operacao: Operacao::Verificacao,
-            nome: Nome::novo("2026-08-22_Apps").expect("nome valido"),
+            nome: Some(Nome::novo("2026-08-22_Apps").expect("nome valido")),
             disco: None,
             selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
         })
@@ -1224,8 +1481,8 @@ mod testes {
         let nome = Nome::novo("2026-08-22_Apps").unwrap();
 
         assert_ne!(
-            arquivo_do_desfecho(Operacao::Backup, &nome),
-            arquivo_do_desfecho(Operacao::Restauracao, &nome)
+            arquivo_do_desfecho(Operacao::Backup, Some(&nome)),
+            arquivo_do_desfecho(Operacao::Restauracao, Some(&nome))
         );
     }
 
@@ -1422,17 +1679,229 @@ mod testes {
         // desfecho **encontrado**.
         let nome = Nome::novo("2026-08-22_Apps").unwrap();
         assert_eq!(
-            pasta_do_log(Operacao::Verificacao, &nome),
+            pasta_do_log(Operacao::Verificacao, Some(&nome)),
             "verificacao-2026-08-22_Apps"
         );
 
-        let tres = [
-            pasta_do_log(Operacao::Backup, &nome),
-            pasta_do_log(Operacao::Restauracao, &nome),
-            pasta_do_log(Operacao::Verificacao, &nome),
+        let quatro = [
+            pasta_do_log(Operacao::Backup, Some(&nome)),
+            pasta_do_log(Operacao::Restauracao, Some(&nome)),
+            pasta_do_log(Operacao::Verificacao, Some(&nome)),
+            pasta_do_log(Operacao::Sondagem, None),
         ];
-        let unicas: std::collections::BTreeSet<&String> = tres.iter().collect();
-        assert_eq!(unicas.len(), 3, "as tres pastas tem de ser diferentes");
+        let unicas: std::collections::BTreeSet<&String> = quatro.iter().collect();
+        assert_eq!(unicas.len(), 4, "as quatro pastas tem de ser diferentes");
+    }
+
+    // ─────────────────── a quarta receita, da etapa E12 ───────────────────
+
+    /// A sondagem. Sem nome e sem disco: ela lê os discos da maquina.
+    fn sondagem() -> Receita {
+        Receita::montar(&Pedido {
+            operacao: Operacao::Sondagem,
+            nome: None,
+            disco: None,
+            selo: Selo::novo("a3f1c9e07b2d4856").expect("selo valido"),
+        })
+        .expect("a receita da sondagem monta")
+    }
+
+    #[test]
+    fn a_sondagem_nao_chama_programa_nenhum_do_clonezilla() {
+        // SD-1, e e o que faz esta ser a unica etapa deste projeto cujo pior
+        // caso nao envolve gravacao: sem `ocs-sr` nao ha `savedisk` nem
+        // `restoredisk`, e nada e escrito fora do `ARCAVAULT`.
+        let comando = sondagem().comando().to_string();
+
+        for programa in ["ocs-sr", "ocs-chkimg", "savedisk", "restoredisk"] {
+            assert!(
+                !comando.contains(programa),
+                "a sondagem chama `{programa}`: {comando}"
+            );
+        }
+        assert!(comando.contains("lsblk"), "{comando}");
+    }
+
+    #[test]
+    fn a_sondagem_poe_o_lsblk_dentro_de_um_if() {
+        // **R-5, e a primeira forma escrita desta receita nao o tinha.** A
+        // proposta encadeava com `;`, e o `;` nao olha codigo de saida: com o
+        // `lsblk` falhando — uma flag que esta versao do util-linux nao conheca
+        // basta —, o desfecho diria `OK` assim mesmo.
+        //
+        // O estrago e uma contradicao dentro da mesma sessao: o `arca resultado`
+        // diria que a sondagem concluiu, e a tela seguinte diria
+        // `Disco de origem ... POR DETERMINAR`.
+        let comando = sondagem().comando().to_string();
+
+        assert!(comando.contains("if lsblk "), "{comando}");
+        assert!(comando.contains("then echo ARCA_PROBE=OK"), "{comando}");
+        assert!(comando.contains("else echo ARCA_PROBE=FALHOU"), "{comando}");
+
+        // E a forma que a proposta tinha nao pode voltar por descuido: um
+        // `lsblk ... > ...; echo OK` e exatamente o que este teste proibe.
+        assert!(
+            !comando.contains(&format!("{ARQUIVO_DA_SONDAGEM}; echo")),
+            "o `;` voltou entre o lsblk e o echo: {comando}"
+        );
+    }
+
+    #[test]
+    fn as_colunas_do_lsblk_sao_as_do_cabecalho_capturado() {
+        // **Reconstrucao, e nao transcricao.** Temos o resultado — o
+        // `blkdev.list` de dentro das imagens — e nao a linha de comando que o
+        // produziu, que mora nos scripts dentro do `filesystem.squashfs`.
+        //
+        // O teste confere a reconstrucao contra o **original**: cada coluna do
+        // cabecalho capturado tem de estar no `-o`, e na mesma ordem. Escrever
+        // as colunas a mao aqui provaria que eu sei copiar a constante; ler do
+        // arquivo prova que ela reproduz o que o Clonezilla escreveu.
+        const CABECALHO: &str =
+            "KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL";
+
+        let comando = sondagem().comando().to_string();
+        let colunas: Vec<&str> = CABECALHO.split_whitespace().collect();
+
+        assert!(
+            comando.contains(&format!("-o {}", colunas.join(","))),
+            "as colunas nao batem com o cabecalho de `{CABECALHO}`: {comando}"
+        );
+
+        // E o `-i`, que e o que mantem a arvore em ASCII: o boot passa
+        // `locales=en_US.UTF-8`, e sem ele o `lsblk` desenharia a arvore com os
+        // simbolos de caixa do Unicode — o arquivo deixaria de ter a forma do
+        // que ele imita.
+        assert!(comando.contains("lsblk -i "), "{comando}");
+    }
+
+    #[test]
+    fn a_sondagem_escreve_o_erro_do_lsblk_dentro_do_proprio_arquivo() {
+        // O que torna a reconstrucao das flags aceitavel: o modo de falha e
+        // **barato e visivel**. Com `2>&1` apontando para o `blkdev.list`, uma
+        // flag recusada deixa a mensagem do `lsblk` no dispositivo em vez de
+        // sumir com o `poweroff` — e a proxima sessao lê qual foi.
+        let comando = sondagem().comando().to_string();
+        assert!(
+            comando.contains(&format!("{ARQUIVO_DA_SONDAGEM} 2>&1")),
+            "{comando}"
+        );
+    }
+
+    #[test]
+    fn a_sondagem_escreve_no_partimag_antes_de_qualquer_outra_coisa() {
+        // **O unico pressuposto genuinamente novo da sondagem**, e ele ja tinha
+        // original: se o repositorio nao estivesse montado neste instante, o
+        // `mkdir` criaria a pasta no tmpfs da RAM e o `poweroff` levaria tudo
+        // embora — falha silenciosa, sem nada no dispositivo para investigar.
+        //
+        // Quem monta o `/home/partimag` e o `ocs_repository=` do boot, e nao o
+        // `ocs-sr`. A prova e da E11: a receita da verificacao tem esta mesma
+        // forma e rodou em 23/08/2026, e os 51 bytes de
+        // `recursos/capturas/arca-fim-verificacao-2026-08-22_Apps.txt` sairam
+        // dos dois primeiros passos dela.
+        let comando = sondagem().comando().to_string();
+        let passos: Vec<&str> = comando.split("; ").collect();
+
+        assert!(
+            passos[0].starts_with("mkdir -p /home/partimag/"),
+            "{comando}"
+        );
+        assert!(passos[1].starts_with("echo ARCA_SELO="), "{comando}");
+        assert!(passos[2].starts_with("if lsblk"), "{comando}");
+    }
+
+    #[test]
+    fn a_sondagem_grava_o_blkdev_list_ao_lado_do_proprio_desfecho() {
+        // SD-4: pasta fixa, os dois arquivos juntos. `ARCA-LOGS\sondagem\` esta
+        // **fora** da listagem de imagens (`imagens::RESERVADAS`), e por isso
+        // um `blkdev.list` ali nao vira imagem nem residuo no `arca list`.
+        let comando = sondagem().comando().to_string();
+
+        assert!(
+            comando.contains("/home/partimag/ARCA-LOGS/sondagem/blkdev.list"),
+            "{comando}"
+        );
+        assert!(
+            comando.contains("/home/partimag/ARCA-LOGS/sondagem/arca-fim.txt"),
+            "{comando}"
+        );
+    }
+
+    #[test]
+    fn a_sondagem_termina_como_as_outras_tres() {
+        // O que ela **transcreve**: o `ARCA_FIM` que separa desfecho completo
+        // de truncado (§5.5), a espera que deixa o `echo` chegar ao disco e o
+        // `poweroff`. Nada disto e novo, e por isso nada disto se reescreve.
+        let comando = sondagem().comando().to_string();
+        assert!(comando.ends_with("; sleep 20; poweroff"), "{comando}");
+        assert!(comando.contains("echo ARCA_FIM >>"), "{comando}");
+    }
+
+    #[test]
+    fn a_sondagem_com_nome_de_imagem_e_recusada() {
+        // A coerencia do **nome**, no sentido que quase ninguem testa: a
+        // sondagem nao opera sobre imagem nenhuma, e um nome carregado ate uma
+        // receita que nao o usa e um valor que ninguem confere. E o mesmo
+        // argumento do `disco` da E11, no outro eixo.
+        let erro = Receita::montar(&Pedido {
+            operacao: Operacao::Sondagem,
+            nome: Some(Nome::novo("2026-08-22_Apps").unwrap()),
+            disco: None,
+            selo: Selo::novo("a3f1c9e07b2d4856").unwrap(),
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            erro,
+            RecusaDaReceita::NomeIncoerente {
+                operacao: Operacao::Sondagem,
+                tem_nome: true
+            }
+        );
+    }
+
+    #[test]
+    fn as_tres_que_nomeiam_imagem_sem_nome_sao_recusadas() {
+        // O outro sentido, e e o que dói: a pasta do desfecho sai do nome, e um
+        // backup sem nome escreveria o desfecho na pasta da sondagem.
+        for operacao in [
+            Operacao::Backup,
+            Operacao::Restauracao,
+            Operacao::Verificacao,
+        ] {
+            let erro = Receita::montar(&Pedido {
+                operacao,
+                nome: None,
+                disco: operacao
+                    .nomeia_disco()
+                    .then(|| Disco::novo("nvme0n1").unwrap()),
+                selo: Selo::novo("a3f1c9e07b2d4856").unwrap(),
+            })
+            .unwrap_err();
+
+            assert_eq!(
+                erro,
+                RecusaDaReceita::NomeIncoerente {
+                    operacao,
+                    tem_nome: false
+                },
+                "`{}` sem nome tinha de ser recusada",
+                operacao.nome()
+            );
+        }
+    }
+
+    #[test]
+    fn a_sondagem_passa_pelo_porteiro_de_c2_e_cabe_na_linha() {
+        // A receita mais curta das quatro, e ainda assim ela passa pelas mesmas
+        // barreiras: sem pipe, sem aspa, sem substituicao de comando, e dentro
+        // do orcamento do `COMMAND_LINE_SIZE`.
+        let receita = sondagem();
+        assert!(validar(receita.comando()).is_ok());
+        assert!(
+            receita.parametros_do_grub().chars().count() < TETO_DOS_PARAMETROS,
+            "a receita mais curta das quatro estourou o orcamento"
+        );
     }
 
     #[test]
@@ -1442,7 +1911,7 @@ mod testes {
         // recusar e a unica porta por onde uma receita nasce.
         let erro = Receita::montar(&Pedido {
             operacao: Operacao::Verificacao,
-            nome: Nome::novo("2026-08-22_Apps").unwrap(),
+            nome: Some(Nome::novo("2026-08-22_Apps").unwrap()),
             disco: Some(Disco::novo("nvme0n1").unwrap()),
             selo: Selo::novo("a3f1c9e07b2d4856").unwrap(),
         })
@@ -1462,7 +1931,7 @@ mod testes {
         for operacao in [Operacao::Backup, Operacao::Restauracao] {
             let erro = Receita::montar(&Pedido {
                 operacao,
-                nome: Nome::novo("2026-08-22_Apps").unwrap(),
+                nome: Some(Nome::novo("2026-08-22_Apps").unwrap()),
                 disco: None,
                 selo: Selo::novo("a3f1c9e07b2d4856").unwrap(),
             })
@@ -1508,7 +1977,7 @@ mod testes {
 
     #[test]
     fn o_ensaio_em_bash_ensaia_a_receita_de_hoje() {
-        for receita in [backup(), restauracao(), verificacao()] {
+        for receita in [backup(), restauracao(), verificacao(), sondagem()] {
             let comando = receita
                 .comando()
                 .replace("2026-08-22_Apps", "ARCA-TESTE-02");
@@ -1538,7 +2007,7 @@ mod testes {
         for operacao in [Operacao::Backup, Operacao::Restauracao] {
             let receita = Receita::montar(&Pedido {
                 operacao,
-                nome: Nome::novo(&mais_longo).expect("o nome mais longo que B-2 aceita"),
+                nome: Some(Nome::novo(&mais_longo).expect("o nome mais longo que B-2 aceita")),
                 disco: Some(Disco::novo("nvme0n1").unwrap()),
                 selo: Selo::de_ensaio(),
             })
@@ -1593,7 +2062,7 @@ mod testes {
         // fica **depois** dela.
         let receita = Receita::montar(&Pedido {
             operacao: Operacao::Backup,
-            nome: Nome::sem_julgar_para_teste(&"n".repeat(400)),
+            nome: Some(Nome::sem_julgar_para_teste(&"n".repeat(400))),
             disco: Some(Disco::novo("nvme0n1").unwrap()),
             selo: Selo::de_ensaio(),
         });

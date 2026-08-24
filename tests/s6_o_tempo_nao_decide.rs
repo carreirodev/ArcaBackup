@@ -21,6 +21,21 @@
 //! 2. `src/desfecho.rs` — o modulo que julga a quem um `arca-fim.txt`
 //!    pertence — nao menciona tempo em forma nenhuma. Nao e disciplina: e que
 //!    o tipo nao esta la para ser usado.
+//!
+//! # Uma terceira frente nasceu na E12, e ela **nao** e uma varredura daqui
+//!
+//! `src/blkdev.rs` decide **qual disco entra numa receita destrutiva**, e a
+//! sondagem pôs um `DateTime` dentro de `Origem` — a hora em que ela rodou, que
+//! a tela imprime. A regra que se escreve sem pensar seria *"a fonte mais
+//! recente ganha"*, e ela seria errada duas vezes: a sondagem ganha **por ser
+//! sondagem** (ela descreve a maquina de agora por construcao), e comparar o
+//! `mtime` de uma imagem com o de uma sondagem seria comparar uma data escrita
+//! pelo Clonezilla — 3 h adiantada, P-7 — com uma escrita pelo Windows.
+//!
+//! Ali a varredura por texto nao serve: o tipo **precisa** estar no arquivo. O
+//! que guarda a propriedade e um teste de comportamento em `src/blkdev.rs` —
+//! `a_precedencia_e_por_fonte_e_nunca_pela_data` —, que põe uma sondagem de
+//! 2020 contra uma imagem de hoje e cobra que a sondagem ganhe.
 
 use std::path::{Path, PathBuf};
 

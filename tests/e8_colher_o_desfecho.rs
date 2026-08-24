@@ -196,7 +196,7 @@ fn aquele_arca_fim_continua_inalcancavel_pelo_arca_de_hoje() {
 
     let nome = Nome::novo("2026-08-21_WindowsCompleto").expect("nome valido");
     for operacao in [Operacao::Backup, Operacao::Restauracao] {
-        let onde = estado::caminho_do_desfecho(&raiz, operacao, &nome);
+        let onde = estado::caminho_do_desfecho(&raiz, operacao, Some(&nome));
         assert!(
             !ArquivosDoSistema.existe(&onde),
             "o ARCA de hoje alcanca {}, e o §5.5 supoe que nao",
@@ -229,9 +229,8 @@ fn nao_ha_job_pendente_neste_dispositivo() {
         .expect("o estado.json do dispositivo tem de ser legivel por este binario");
 
     eprintln!(
-        "ha estado no dispositivo: {} `{}` · selo {} · {}",
-        lido.comando.nome(),
-        lido.nome,
+        "ha estado no dispositivo: {} · selo {} · {}",
+        lido.descricao(),
         lido.selo,
         lido.situacao
     );

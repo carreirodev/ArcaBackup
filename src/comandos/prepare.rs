@@ -889,23 +889,21 @@ pub fn montar_o_fim(feitas: &ParticoesFeitas) -> String {
          \x20 SE VOCE TEM OUTRO DISPOSITIVO ARCA CONECTADO, desconecte um dos dois: o\n\
          \x20 ARCA opera um por vez, e com dois `arca backup` e `arca restore` recusam\n\
          \x20 por rotulo repetido (C-10).\n\n\
-         \x20 O PRIMEIRO BACKUP DESTE DISPOSITIVO NAO PODE SER PELO ARCA, e isso nao e\n\
-         \x20 defeito — e o preco de uma decisao que protege voce.\n\n\
+         \x20 ANTES DO PRIMEIRO BACKUP, RODE:  arca sondar\n\n\
          \x20 A receita nomeia o disco pelo nome que o LINUX lhe da (`nvme0n1`), e o\n\
-         \x20 Windows nao conhece esse nome. O ARCA o descobre lendo o `blkdev.list`\n\
-         \x20 que o Clonezilla escreve DENTRO de cada imagem, casando o modelo do\n\
-         \x20 disco (§4.5) — e este dispositivo acabou de nascer, entao nao ha imagem\n\
-         \x20 nenhuma de onde lê-lo. Um `arca backup` aqui RECUSA, dizendo isso.\n\n\
+         \x20 Windows nao conhece esse nome. O ARCA o descobre lendo um `blkdev.list`,\n\
+         \x20 casando o modelo do disco (§4.5) — e este dispositivo acabou de nascer,\n\
+         \x20 entao nao ha nenhum aqui. Um `arca backup` agora RECUSA, dizendo isso.\n\n\
          \x20 O ARCA nao pergunta o nome nem o deduz do indice: um `nvme1n1` digitado\n\
          \x20 por engano entraria numa receita que apaga um disco, e nao ha nada do\n\
          \x20 lado Windows contra o que conferi-lo.\n\n\
-         \x20 ENTAO, uma vez so, faca assim:\n\n\
-         \x20   1. reinicie e escolha este dispositivo no menu de boot (F12)\n\
-         \x20   2. no menu do Clonezilla, faca um backup pelo caminho normal dele\n\
-         \x20      (device-image, savedisk) — §6.4\n\
-         \x20   3. dali em diante `arca backup <nome>` funciona, para sempre\n\n\
-         \x20 O passo 1 tambem responde a unica coisa que o `arca prepare` NAO\n\
-         \x20 consegue conferir sozinho: se este dispositivo boota mesmo (P-26).\n",
+         \x20 `arca sondar` resolve isso num reinicio: ele NAO faz backup nem\n\
+         \x20 restauracao — roda o `lsblk` no Linux do Clonezilla, grava a saida no\n\
+         \x20 ARCAVAULT e desliga. Depois de `arca resultado`, `arca backup <nome>`\n\
+         \x20 funciona.\n\n\
+         \x20 E ele responde, de quebra, a unica coisa que o `arca prepare` NAO consegue\n\
+         \x20 conferir sozinho: se este dispositivo boota mesmo, pela entrada de firmware\n\
+         \x20 que acabou de ser criada (P-26).\n",
         feitas.vault.letra, feitas.boot.letra
     )
 }
@@ -930,16 +928,12 @@ fn rotulo_da_midia(disco: &DiscoParaPreparar) -> &'static str {
 /// Trocar as duas por uma só perderia uma das duas coisas: ou se pergunta cedo
 /// e barato, sem o peso de S-2, ou se pergunta caro e a pessoa que ia desistir
 /// digita o modelo por inércia.
+///
+/// O julgamento saiu daqui na E12, quando o `arca sondar` passou a precisar da
+/// mesma pergunta — ver [`crate::confirmacao::perguntar_se_pode`], inclusive
+/// para por que lá ela aparece **sozinha**.
 fn perguntar_se_pode(contexto: &Contexto) -> Resultado<bool> {
-    use std::io::Write;
-
-    print!("\nPodemos continuar? (s/N): ");
-    let _ = std::io::stdout().flush();
-
-    let resposta = contexto.console.ler_linha()?;
-    println!();
-
-    Ok(matches!(resposta.trim(), "s" | "S" | "sim" | "SIM"))
+    crate::confirmacao::perguntar_se_pode(contexto, "Podemos continuar?")
 }
 
 #[cfg(test)]
@@ -1474,40 +1468,56 @@ mod testes {
         // antiga (§4.5, decidida na E6 e na E7) que ninguém releu ao encaixar.
         // E fere o critério que o próprio projeto usa — *nenhuma tela afirma o
         // que o repositório não pode mostrar tendo acontecido*.
+        // **E a terceira versao desta tela, que a E12 previu e produziu.** A
+        // segunda mandava para o menu do Clonezilla — F12, backup manual pelo
+        // §6.4 — e nao estava errada sobre os fatos; ela era *exatamente aquilo
+        // que este app existe para nao precisar*, cobrado logo na primeira vez
+        // que alguem usa um dispositivo novo. O `arca sondar` da E12 resolve o
+        // mesmo buraco num reinicio, e a tela passou a mandar isso.
+        //
+        // O plano de etapas registrou a troca **antes** de ela acontecer, para
+        // que a segunda versao nao sobrevivesse ao motivo dela — a primeira
+        // quase sobreviveu.
         let saida = montar_o_fim(&o_que_o_particionamento_deixou());
 
         assert!(
             !saida.contains("Primeiro backup:  arca backup"),
             "a tela voltou a prometer um backup que o ARCA recusaria:\n{saida}"
         );
-        assert!(saida.contains("NAO PODE SER PELO ARCA"), "{saida}");
+        assert!(
+            saida.contains("arca sondar"),
+            "a tela tem de mandar sondar: {saida}"
+        );
         assert!(
             saida.contains("§4.5"),
             "a tela tem de dizer por que: {saida}"
         );
-        assert!(saida.contains("F12"), "e como resolver: {saida}");
         assert!(
-            saida.contains("§6.4"),
-            "e para onde o §6.4 manda ir: {saida}"
+            !saida.contains("menu do Clonezilla, faca um backup"),
+            "a tela voltou a mandar para o menu do Clonezilla:\n{saida}"
+        );
+        assert!(
+            !saida.contains("§6.4"),
+            "o §6.4 e o caminho de quando o Windows nao boota, e nao o do primeiro backup:\n{saida}"
         );
     }
 
     #[test]
     fn o_fim_explica_a_razao_em_vez_de_so_mandar_fazer() {
-        // Um aviso que só diz "faça pelo menu do Clonezilla" empurra o
-        // problema de volta para quem não sabe por que ele existe — e este
-        // tem uma razão boa, que é a mesma pela qual o ARCA não pergunta o
-        // nome do disco.
+        // Um aviso que só diz "rode `arca sondar`" empurra o problema de volta
+        // para quem não sabe por que ele existe — e este tem uma razão boa, que
+        // é a mesma pela qual o ARCA não pergunta o nome do disco.
         let saida = montar_o_fim(&o_que_o_particionamento_deixou());
 
         assert!(saida.contains("blkdev.list"), "{saida}");
         assert!(saida.contains("nvme1n1"), "o risco de digitar: {saida}");
-        // A frase quebra de linha na tela, entao o teste procura as duas
-        // metades — do mesmo jeito que o aviso do reaponte da entrada.
-        assert!(saida.contains("e isso nao e"), "{saida}");
         assert!(
-            saida.contains("defeito — e o preco de uma decisao que protege voce"),
-            "a tela tem de dizer que isto e o preco de uma decisao: {saida}"
+            saida.contains("RECUSA"),
+            "a tela diz o que acontece se alguem tentar antes: {saida}"
+        );
+        assert!(
+            saida.contains("NAO faz backup nem\n"),
+            "e diz o que a sondagem nao faz, que e o que a torna barata: {saida}"
         );
     }
 

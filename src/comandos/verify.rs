@@ -471,7 +471,7 @@ fn armada(
         &armar::Pedir {
             dispositivo,
             operacao: Operacao::Verificacao,
-            nome,
+            nome: Some(nome),
             // A verificacao nao nomeia disco: o `ocs-chkimg` opera sobre a
             // imagem. Quem cobra essa coerencia e `Receita::montar`.
             disco: None,
@@ -496,7 +496,7 @@ fn armada(
 
 /// O que se imprime depois de armado, com o aviso de C-9 no fim.
 ///
-/// As cinco linhas do meio sao as mesmas dos outros dois comandos que armam —
+/// As cinco linhas do meio sao as mesmas dos outros tres comandos que armam —
 /// [`armar::montar_as_linhas`] —, e o que muda e o que vem depois. Aqui o
 /// aviso e mais curto do que o do `arca restore`: nada esta sendo apagado, e a
 /// janela do ADR-0009 leva a uma verificacao, e nao a uma restauracao.
@@ -523,7 +523,7 @@ fn ensaio_da_receita(nome: &Nome) -> Resultado<String> {
     // O selo de verdade nasce ao armar. Este e de ensaio, e a saida o diz.
     let receita = Receita::montar(&Pedido {
         operacao: Operacao::Verificacao,
-        nome: nome.clone(),
+        nome: Some(nome.clone()),
         disco: None,
         selo: Selo::de_ensaio(),
     })

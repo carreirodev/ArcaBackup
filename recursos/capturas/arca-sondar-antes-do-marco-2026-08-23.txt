@@ -1,0 +1,112 @@
+Capturas do estado do dispositivo ANTES do marco da E12, em 23/08/2026.
+
+Dispositivo preparado pelo rca prepare em 23/08 (JMicron Generic, USB, MBR),
+com o Clonezilla 3.3.3-15 instalado, o grub.cfg inerte e o ARCAVAULT VAZIO DE
+IMAGENS. O binario em F:\arca\arca.exe e o da E12, copiado do
+target\release\arca.exe desta sessao.
+
+O que estas tres telas fixam, e que o marco vai desmentir ou confirmar:
+
+  1. rca backup --dry-run diz Disco de origem ... POR DETERMINAR e manda
+     rodar rca sondar — e o dispositivo nao tem lkdev.list nenhum;
+  2. rca sondar --dry-run imprime a receita que sera armada, com o selo de
+     ensaio (dezesseis zeros);
+  3. rca status mostra a entrada ARCA apontando para partition=F: e
+     **fora da ordem permanente** — o que torna o boot unico a UNICA forma de a
+     maquina chegar ao dispositivo, e e isso que faz o marco responder as duas
+     metades de P-26 de uma vez.
+
+===== 1. arca backup 2026-08-23_Teste --dry-run =====
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Origem: KINGSTON SNV3S500G · 465,8 GB · 109,4 GB em uso
+Imagem estimada: ~49,2 GB · espaco suficiente
+Imagem: 2026-08-23_Teste
+
+  Desarmando receita anterior ..... nao, e ensaio · F:\boot\grub\grub.cfg
+  Inicializacao rapida ............ desativada   ok
+  chkdsk /scan .................... limpo        ok
+  Nome disponivel ................. ok
+  Disco de origem ................. POR DETERMINAR
+
+  O NOME DO DISCO DE ORIGEM NAO FOI DETERMINADO.
+  nao ha `blkdev.list` legivel no dispositivo — nem de sondagem, nem dentro de imagem nenhuma —, e e dele que sai o nome que o Linux da ao disco. O Windows nao conhece esse nome, e o ARCA nao o inventa. Para produzi-lo:  arca sondar
+  A receita nomeia o disco pelo nome que o **Linux** lhe da, e o Windows
+  nao conhece esse nome. O ARCA o lê de um `blkdev.list` — o da sondagem,
+  ou o de dentro de uma imagem ja existente.
+  Ele nao deriva o nome de indice nem de tipo de barramento, porque o
+  indice do Windows nao e o do Linux.
+
+Pre-voo concluido, e o dispositivo esta inerte. Nenhuma receita foi armada
+e nenhum boot unico foi marcado: e ensaio, e ensaio nao arma.
+
+Ensaio (--dry-run): nada e gravado, nada e armado.
+
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+Imagem: 2026-08-23_Teste
+Disco de origem: nvme0n1 · DE EXEMPLO: o nome de verdade nao foi determinado, e esta receita nao serviria
+
+  Nome validado (B-2) ............. ok
+  Receita validada (C-2) .......... ok
+
+Receita de backup — e esta que o comando sem --dry-run armaria
+
+  O que o Clonezilla executa:
+
+    mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-23_Teste nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-23_Teste > /home/partimag/2026-08-23_Teste/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-23_Teste/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-23_Teste/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste/arca-fim.txt; sleep 20; poweroff
+
+  Como entra na linha do grub.cfg:
+
+    locales=en_US.UTF-8 keyboard-layouts=NONE ocs_repository="dev:///LABEL=ARCAVAULT" ocs_live_run="bash -c 'mkdir -p /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste/arca-fim.txt; if ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-23_Teste nvme0n1; then echo ARCA_BACKUP=OK >> /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste/arca-fim.txt; if ocs-chkimg -b -or /home/partimag 2026-08-23_Teste > /home/partimag/2026-08-23_Teste/arca-check.log 2>&1; then echo ARCA_VEREDITO=APROVADA >> /home/partimag/2026-08-23_Teste/arca-check.log; else echo ARCA_VEREDITO=REPROVADA >> /home/partimag/2026-08-23_Teste/arca-check.log; fi; else echo ARCA_BACKUP=FALHOU >> /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/backup-2026-08-23_Teste/arca-fim.txt; sleep 20; poweroff'" ocs_live_batch="yes"
+
+O selo acima e de ensaio (so zeros), e por isso esta receita nao serviria: o
+de verdade nasce **ao armar**, de uma fonte de entropia do sistema. E ele que
+liga o job ao desfecho que voltar.
+
+Nada foi armado, e o dispositivo nao foi nem desarmado — no ensaio, C-1 nao
+acontece. O mesmo comando sem `--dry-run` desarma, pede a confirmacao por
+extenso, arma e reinicia.
+
+A receita de restauracao nao sai mais daqui: ela e montada com o disco de
+DESTINO, que este comando nao escolhe. Para ve-la:  arca restore --dry-run
+
+===== 2. arca sondar --dry-run =====
+
+Dispositivo ARCA: ARCAVAULT (E:) · 445 GB livres
+
+  Desarmando receita anterior ..... nao, e ensaio · F:\boot\grub\grub.cfg
+  Sondagem de hoje ................ nenhuma · esta sera a primeira
+
+Ensaio: nada foi armado e o dispositivo nao foi desarmado.
+
+A receita da sondagem, como iria para o grub.cfg:
+
+mkdir -p /home/partimag/ARCA-LOGS/sondagem; echo ARCA_SELO=0000000000000000 > /home/partimag/ARCA-LOGS/sondagem/arca-fim.txt; if lsblk -i -o KNAME,NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL > /home/partimag/ARCA-LOGS/sondagem/blkdev.list 2>&1; then echo ARCA_PROBE=OK >> /home/partimag/ARCA-LOGS/sondagem/arca-fim.txt; else echo ARCA_PROBE=FALHOU >> /home/partimag/ARCA-LOGS/sondagem/arca-fim.txt; fi; echo ARCA_FIM >> /home/partimag/ARCA-LOGS/sondagem/arca-fim.txt; sleep 20; poweroff
+
+O selo acima e de ensaio — dezesseis zeros. O de verdade nasce ao armar.
+
+AS FLAGS DO `lsblk` SAO RECONSTRUCAO, e nao transcricao: temos o formato do
+arquivo que se quer produzir — o `blkdev.list` de dentro das imagens — e nao
+a linha de comando que o produziu, que mora nos scripts do Clonezilla. Uma
+flag recusada vira `ARCA_PROBE=FALHOU`, e a mensagem do `lsblk` fica dentro
+do proprio `blkdev.list` para a proxima sessao lê.
+
+===== 3. arca status =====
+Dispositivo ARCA
+  ARCAVAULT ....................... E: · NTFS · 445,6 GB
+  ARCABOOT ........................ F: · FAT32 · 1,6 GB
+
+Nenhuma imagem em ARCAVAULT.
+
+445 GB livres
+
+Entrada de firmware
+  Descricao ....................... ARCA
+  Identificador ................... {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+  Aponta para ..................... partition=F: · o ARCABOOT deste dispositivo
+  Carrega ......................... \EFI\boot\bootx64.efi
+  Ordem de boot ................... 1 entrada(s), nenhuma para o dispositivo · so o boot unico leva a ele
+
+Job
+  Boot unico ...................... nao armado
+  Estado no ARCABOOT .............. nenhum
+

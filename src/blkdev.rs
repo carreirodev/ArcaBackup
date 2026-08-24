@@ -47,7 +47,19 @@
 //! receita destrutiva e o pior desfecho possivel deste modulo.
 
 use crate::receita::Disco;
+use chrono::{DateTime, Local};
 use std::fmt;
+
+/// O nome do arquivo que carrega este formato, nas **duas** fontes.
+///
+/// Dentro de cada imagem quem o escreve e o Clonezilla; em
+/// `ARCA-LOGS\sondagem\` quem o escreve e a receita da sondagem (E12). O nome
+/// e o mesmo de proposito: e o mesmo formato e o mesmo parser — este modulo —,
+/// e um nome diferente sugeriria um segundo formato, que nao existe.
+///
+/// Mora aqui, e nao em quem escreve, porque quem lê e um so e quem escreve sao
+/// dois.
+pub const ARQUIVO: &str = "blkdev.list";
 
 /// Uma linha do `blkdev.list` que descreve um disco inteiro.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,11 +184,73 @@ fn achar_coluna(cabecalho: &str, coluna: &str) -> Option<usize> {
 /// A E3 estabeleceu o padrao: ela imprime `disco nvme0n1 (suposto)` e diz de
 /// onde ele veio. Uma receita destrutiva que nomeie um disco sem dizer a
 /// origem do nome e pior do que nao imprimir nada.
+///
+/// # A segunda variante nasceu na E12, e ela **tinha** de nascer
+///
+/// Ate a E12 havia uma fonte so, e a tela imprimia `lido de <imagem>/blkdev.list`
+/// literalmente. Com a sondagem, uma segunda fonte responde a mesma pergunta —
+/// e deixa-la se apresentar como imagem seria a falha que o `arca prepare`
+/// acabou de pagar na E10: uma tela afirmando o que nao aconteceu. Nao ha
+/// imagem nenhuma no dispositivo em que a sondagem mais importa.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Origem {
     /// Lido do `blkdev.list` de uma imagem, casando o modelo com o que o WMI
     /// diz do disco onde o `C:` mora.
     LidoDaImagem { imagem: String, modelo: String },
+
+    /// Lido do `blkdev.list` que **a sondagem** gravou (SD-2, SD-5).
+    LidoDaSondagem {
+        modelo: String,
+
+        /// Quando o arquivo da sondagem foi escrito — o `mtime` que o sistema
+        /// de arquivos devolve, **carimbado pelo relogio do Clonezilla**.
+        ///
+        /// # Por que a tela precisa disto, e por que ele nao decide nada
+        ///
+        /// Uma sondagem descreve a maquina do instante em que rodou. Sem a
+        /// data, `lido da sondagem` nao distingue a de cinco minutos atras da
+        /// de um mês, e a segunda pode estar descrevendo um disco que nao esta
+        /// mais na maquina.
+        ///
+        /// **E informativo, nunca comparado** (S-6): quem julga se o disco
+        /// achado e o certo continua sendo o **modelo**, e nao o tempo. Este
+        /// campo so e impresso, como o `dia_e_mes` das imagens no `arca list`.
+        /// `None` quando o sistema de arquivos nao soube responder.
+        ///
+        /// # De quem e este relogio, e a primeira versao disto errou
+        ///
+        /// **Quem escreve o arquivo e o `lsblk`, do outro lado do reinicio**, e
+        /// o Windows so o lê. A doc deste campo dizia *"pelo relogio do
+        /// Windows, e nao do live"* — exatamente ao contrario —, e o marco de
+        /// 24/08/2026 desmentiu em uma linha: a sondagem foi armada as
+        /// **14:56:55** e a tela imprimiu `lido da sondagem de 24/08 11:58`.
+        /// Tres horas atras, que e P-7 pelo lado de sempre.
+        ///
+        /// O valor fica como esta, e **nao** se soma nada a ele: corrigir por
+        /// deducao seria fabricar um instante que ninguem mediu. O que muda e a
+        /// tela, que passa a dizer de quem e o carimbo — ver [`NomeDoDisco`].
+        /// Para o que este campo existe, o deslocamento nao atrapalha: duas
+        /// sondagens vem do **mesmo** relogio, e a distancia entre elas e real.
+        quando: Option<DateTime<Local>>,
+
+        /// O que as imagens diziam do mesmo modelo, quando elas dizem outra
+        /// coisa (SD-5).
+        ///
+        /// A sondagem ganha — ela descreve a maquina de **agora**, e a imagem
+        /// descreve a de quando o backup foi feito —, e a divergencia e
+        /// **dita**, nunca resolvida em silencio. `None` e o caso normal: ou
+        /// nao ha imagem, ou as duas concordam.
+        divergencia: Option<Divergencia>,
+    },
+}
+
+/// Duas fontes do §4.5 respondendo nomes diferentes para o mesmo modelo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Divergencia {
+    /// A imagem cujo `blkdev.list` diz outra coisa.
+    pub imagem: String,
+    /// O nome que ela da ao disco daquele modelo.
+    pub disco: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,6 +267,35 @@ impl fmt::Display for NomeDoDisco {
                 "{} · lido de {imagem}/blkdev.list, casando o modelo `{modelo}`",
                 self.disco
             ),
+            Origem::LidoDaSondagem {
+                modelo,
+                quando,
+                divergencia,
+            } => {
+                // O carimbo vem nomeado, e não é zelo: ele está **três horas
+                // atrás** do relógio do Windows (P-7), porque quem escreveu o
+                // arquivo foi o `lsblk` do outro lado do reinício. Sem dizer de
+                // quem é, quem comparasse com o `armado_em` do `estado.json`
+                // concluiria que a sondagem é mais velha do que é — e essa é a
+                // conta que S-6 existe para ninguém fazer.
+                write!(
+                    f,
+                    "{} · lido da sondagem de {} (carimbo do Clonezilla, P-7), casando o modelo `{modelo}`",
+                    self.disco,
+                    crate::formato::dia_e_hora(*quando)
+                )?;
+                // A divergencia sai na **mesma linha** de propósito: quem lê o
+                // nome do disco tem de lê junto que ha outra fonte dizendo
+                // outra coisa. Uma linha separada seria pulavel.
+                if let Some(divergencia) = divergencia {
+                    write!(
+                        f,
+                        " · DIVERGE de {}/blkdev.list, que diz `{}`",
+                        divergencia.imagem, divergencia.disco
+                    )?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -204,7 +307,14 @@ impl fmt::Display for NomeDoDisco {
 /// casa, ha alguma coisa a olhar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SemNome {
-    /// Nenhuma imagem no dispositivo traz um `blkdev.list` legivel.
+    /// Nenhuma das duas fontes traz um `blkdev.list` legivel: nao ha sondagem,
+    /// e nenhuma imagem tem um.
+    ///
+    /// **Desde a E12 esta recusa tem saida**, e e por isso que ela e a unica
+    /// da sondagem que deixa as imagens falar: quem cai aqui roda
+    /// `arca sondar`, e um reinicio depois o oraculo existe. Ate a E11 a saida
+    /// era um backup pelo menu do Clonezilla — que e o que este app existe
+    /// para nao precisar.
     SemOraculo,
 
     /// Ha `blkdev.list`, e nenhum disco nele casa com o modelo do disco de
@@ -224,11 +334,11 @@ impl fmt::Display for SemNome {
         match self {
             SemNome::SemOraculo => write!(
                 f,
-                "nenhuma imagem do dispositivo traz um `blkdev.list` legivel, e e dele que sai o nome que o Linux da ao disco. O Windows nao conhece esse nome, e o ARCA nao o inventa"
+                "nao ha `blkdev.list` legivel no dispositivo — nem de sondagem, nem dentro de imagem nenhuma —, e e dele que sai o nome que o Linux da ao disco. O Windows nao conhece esse nome, e o ARCA nao o inventa. Para produzi-lo:  arca sondar"
             ),
             SemNome::ModeloNaoCasa { modelo } => write!(
                 f,
-                "nenhum disco dos `blkdev.list` das imagens tem o modelo `{modelo}`, que e o do disco onde o Windows esta. As imagens deste dispositivo vieram de outra maquina"
+                "nenhum disco dos `blkdev.list` do dispositivo tem o modelo `{modelo}`, que e o do disco onde o Windows esta. O que ha ali foi escrito noutra maquina. Para descrever esta:  arca sondar"
             ),
             SemNome::ModeloAmbiguo { modelo, quantos } => write!(
                 f,
@@ -236,21 +346,141 @@ impl fmt::Display for SemNome {
             ),
             SemNome::NomeInvalido { tem } => write!(
                 f,
-                "o `blkdev.list` traz `{tem}` como nome de disco, e ele nao tem a forma de um nome do Linux"
+                "o `blkdev.list` traz `{tem}` como nome de disco, e ele nao tem a forma de um nome do Linux. Para gravar um arquivo novo:  arca sondar"
             ),
         }
     }
 }
 
+/// Um `blkdev.list` lido, e de onde ele veio.
+///
+/// # Por que a fonte viaja junto do texto
+///
+/// Desde a E12 ha **duas** fontes para o mesmo formato, e a tela tem de dizer
+/// qual respondeu ([`Origem`]). Passar so os textos obrigaria quem chama a
+/// lembrar a ordem em que os pôs na lista, e "lembrar a ordem" e como se
+/// escreve um erro que nenhum teste pega.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lista {
+    pub fonte: Fonte,
+    pub texto: String,
+}
+
+/// De onde um [`Lista`] veio.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Fonte {
+    /// O `blkdev.list` de dentro de uma imagem, pelo nome dela.
+    Imagem(String),
+
+    /// O `blkdev.list` que a sondagem gravou, com o `mtime` do arquivo.
+    Sondagem { quando: Option<DateTime<Local>> },
+}
+
 /// O nome Linux do disco de `modelo`, procurado nos `blkdev.list` dados.
 ///
-/// Recebe os arquivos ja lidos, com o nome da imagem de onde cada um veio, e
-/// nao os lê: manter isto puro e o que permite testar as quatro recusas sem
-/// dispositivo conectado.
-pub fn nome_do_disco(
+/// Recebe os arquivos ja lidos, com a fonte de cada um, e nao os lê: manter
+/// isto puro e o que permite testar as quatro recusas sem dispositivo
+/// conectado.
+///
+/// # A sondagem ganha das imagens, e a divergencia e dita (SD-5)
+///
+/// As duas fontes respondem a mesma pergunta sobre instantes diferentes: a
+/// sondagem descreve a maquina de **agora**, e a imagem descreve a de quando o
+/// backup foi feito. Um disco trocado entre as duas faz a imagem responder o
+/// nome de um disco que nao esta mais la.
+///
+/// Entao a sondagem e consultada primeiro, sozinha. Respondendo, e a resposta
+/// — e o que as imagens dizem do mesmo modelo entra como
+/// [`Origem::LidoDaSondagem::divergencia`], para a tela. **Nao** respondendo —
+/// nao ha sondagem, ela esta ilegivel, ou o modelo nao casa nela —, as imagens
+/// respondem exatamente como respondiam antes da E12.
+///
+/// Vale registrar que a defesa velha continua embaixo desta: o casamento e por
+/// **modelo**, e uma sondagem obsoleta que descrevesse outro disco cai em
+/// [`SemNome::ModeloNaoCasa`], que e recusa e nao palpite.
+/// # E `SemOraculo` e a **unica** recusa da sondagem que deixa as imagens falar
+///
+/// As outras tres sao afirmacoes sobre a maquina de agora, e nao a ausencia de
+/// uma. `ModeloAmbiguo` diz *"ha dois discos deste modelo aqui, neste
+/// instante"* — resolver isso por um `blkdev.list` de um backup antigo e
+/// exatamente o chute que aquela recusa existe para nao dar. Entao ela vence,
+/// e o comando para.
+pub fn nome_do_disco(modelo_do_windows: &str, listas: &[Lista]) -> Result<NomeDoDisco, SemNome> {
+    let da_sondagem = |lista: &&Lista| matches!(lista.fonte, Fonte::Sondagem { .. });
+
+    let sondagens: Vec<&Lista> = listas.iter().filter(da_sondagem).collect();
+    let imagens: Vec<&Lista> = listas.iter().filter(|lista| !da_sondagem(lista)).collect();
+
+    let pelas_imagens = procurar(modelo_do_windows, &imagens);
+
+    match procurar(modelo_do_windows, &sondagens) {
+        Ok((disco, Fonte::Sondagem { quando })) => {
+            // A divergencia so existe quando as imagens **respondem** outra
+            // coisa. Elas nao responderem e o caso normal do dispositivo
+            // recem-preparado, e nao uma discordancia.
+            let divergencia = match &pelas_imagens {
+                Ok((outro, Fonte::Imagem(imagem))) if *outro != disco => Some(Divergencia {
+                    imagem: imagem.clone(),
+                    disco: outro.como_texto().to_string(),
+                }),
+                _ => None,
+            };
+
+            Ok(NomeDoDisco {
+                disco,
+                origem: Origem::LidoDaSondagem {
+                    modelo: modelo_do_windows.to_string(),
+                    quando,
+                    divergencia,
+                },
+            })
+        }
+        // Inalcancavel: so entraram sondagens, e [`procurar`] devolve a fonte
+        // que achou. Cai para as imagens em vez de entrar em panico — e o que
+        // esta certo se um dia a filtragem acima mudar.
+        Ok((_, Fonte::Imagem(_))) => achado(modelo_do_windows, pelas_imagens),
+
+        // A sondagem nao tem o que dizer: e o dispositivo sem sondagem, que e
+        // o caminho de antes da E12, e as imagens decidem.
+        Err(SemNome::SemOraculo) => achado(modelo_do_windows, pelas_imagens),
+
+        // A sondagem falou, e o que ela disse foi uma recusa.
+        Err(recusa) => Err(recusa),
+    }
+}
+
+/// O par que [`procurar`] devolve, virando o [`NomeDoDisco`] que a tela lê.
+fn achado(
     modelo_do_windows: &str,
-    listas: &[(String, String)],
+    procurado: Result<(Disco, Fonte), SemNome>,
 ) -> Result<NomeDoDisco, SemNome> {
+    let (disco, fonte) = procurado?;
+    Ok(NomeDoDisco {
+        disco,
+        origem: match fonte {
+            Fonte::Imagem(imagem) => Origem::LidoDaImagem {
+                imagem,
+                modelo: modelo_do_windows.to_string(),
+            },
+            Fonte::Sondagem { quando } => Origem::LidoDaSondagem {
+                modelo: modelo_do_windows.to_string(),
+                quando,
+                divergencia: None,
+            },
+        },
+    })
+}
+
+/// A procura de sempre, sobre um conjunto de listas.
+///
+/// Separada de [`nome_do_disco`] na E12, quando passou a haver duas fontes: o
+/// que mudou foi **quem se consulta primeiro**, e nao como se procura. Duas
+/// copias desta funcao — uma por fonte — divergiriam na primeira mudanca, e
+/// uma delas passaria a resolver um nome de disco por outra regra.
+///
+/// Devolve o disco e a **fonte que o respondeu**; quem monta a [`Origem`] e
+/// quem tem as duas fontes em maos, porque so ele sabe se ha divergencia.
+fn procurar(modelo_do_windows: &str, listas: &[&Lista]) -> Result<(Disco, Fonte), SemNome> {
     let procurado = normalizar(modelo_do_windows);
     if procurado.is_empty() {
         return Err(SemNome::ModeloNaoCasa {
@@ -259,10 +489,10 @@ pub fn nome_do_disco(
     }
 
     let mut houve_oraculo = false;
-    let mut achados: Vec<(String, String)> = Vec::new();
+    let mut achados: Vec<(String, Fonte)> = Vec::new();
 
-    for (imagem, texto) in listas {
-        let discos = ler(texto);
+    for lista in listas {
+        let discos = ler(&lista.texto);
         if discos.is_empty() {
             continue;
         }
@@ -272,7 +502,7 @@ pub fn nome_do_disco(
             if normalizar(&disco.modelo) == procurado
                 && !achados.iter().any(|(nome, _)| *nome == disco.nome)
             {
-                achados.push((disco.nome, imagem.clone()));
+                achados.push((disco.nome, lista.fonte.clone()));
             }
         }
     }
@@ -286,15 +516,9 @@ pub fn nome_do_disco(
             modelo: modelo_do_windows.to_string(),
         }),
         1 => {
-            let (nome, imagem) = achados.remove(0);
+            let (nome, fonte) = achados.remove(0);
             match Disco::novo(&nome) {
-                Ok(disco) => Ok(NomeDoDisco {
-                    disco,
-                    origem: Origem::LidoDaImagem {
-                        imagem,
-                        modelo: modelo_do_windows.to_string(),
-                    },
-                }),
+                Ok(disco) => Ok((disco, fonte)),
                 Err(_) => Err(SemNome::NomeInvalido { tem: nome }),
             }
         }
@@ -361,11 +585,24 @@ mod testes {
 "nvme0n1p4 `-nvme0n1p4     1G part ntfs                                          \n",
     );
 
-    fn listas() -> Vec<(String, String)> {
-        vec![(
-            "2026-08-21_WindowsCompleto".to_string(),
-            DO_DISPOSITIVO.to_string(),
-        )]
+    fn listas() -> Vec<Lista> {
+        vec![da_imagem("2026-08-21_WindowsCompleto", DO_DISPOSITIVO)]
+    }
+
+    fn da_imagem(imagem: &str, texto: &str) -> Lista {
+        Lista {
+            fonte: Fonte::Imagem(imagem.to_string()),
+            texto: texto.to_string(),
+        }
+    }
+
+    fn da_sondagem(texto: &str) -> Lista {
+        Lista {
+            fonte: Fonte::Sondagem {
+                quando: Some(crate::duplos::momento("2026-08-23T21:14:07")),
+            },
+            texto: texto.to_string(),
+        }
     }
 
     #[test]
@@ -473,7 +710,7 @@ mod testes {
 
     #[test]
     fn blkdev_list_ilegivel_conta_como_nao_haver_oraculo() {
-        let lixo = vec![("X".to_string(), "alguma coisa\nque nao e um lsblk\n".to_string())];
+        let lixo = vec![da_imagem("X", "alguma coisa\nque nao e um lsblk\n")];
         assert_eq!(
             nome_do_disco("KINGSTON SNV3S500G", &lixo),
             Err(SemNome::SemOraculo)
@@ -499,7 +736,7 @@ mod testes {
             "nvme1n1 nvme1n1 465G disk                  IGUAL\n",
         );
 
-        match nome_do_disco("IGUAL", &[("X".to_string(), dois.to_string())]).unwrap_err() {
+        match nome_do_disco("IGUAL", &[da_imagem("X", dois)]).unwrap_err() {
             SemNome::ModeloAmbiguo { quantos, .. } => assert_eq!(quantos, 2),
             outro => panic!("esperava a ambiguidade, veio {outro}"),
         }
@@ -511,8 +748,8 @@ mod testes {
         // duas vezes o mesmo `nvme0n1` faria a descoberta recusar justamente o
         // caso normal.
         let duas = vec![
-            ("2026-08-21_WindowsCompleto".to_string(), DO_DISPOSITIVO.to_string()),
-            ("ARCA-TESTE-03".to_string(), DO_DISPOSITIVO.to_string()),
+            da_imagem("2026-08-21_WindowsCompleto", DO_DISPOSITIVO),
+            da_imagem("ARCA-TESTE-03", DO_DISPOSITIVO),
         ];
 
         assert_eq!(
@@ -545,7 +782,7 @@ mod testes {
         );
 
         assert!(matches!(
-            nome_do_disco("KINGSTON SNV3S500G", &[("X".to_string(), torto)]),
+            nome_do_disco("KINGSTON SNV3S500G", &[da_imagem("X", &torto)]),
             Err(SemNome::NomeInvalido { .. })
         ));
     }
@@ -574,6 +811,47 @@ mod testes {
         }
     }
 
+    #[test]
+    fn cada_recusa_manda_sondar_so_quando_sondar_resolve() {
+        // **Conselho que sai sempre vira ruido**, e a E10 pagou por essa licao
+        // no `arca resultado`. Cada recusa diz a saida **dela**, e a sondagem
+        // nao e saida para todas:
+        //
+        // | recusa | `arca sondar` resolve? |
+        // |---|---|
+        // | `SemOraculo` — nao ha `blkdev.list` nenhum | **sim**, e e para isso que ele existe |
+        // | `ModeloNaoCasa` — o que ha descreve outra maquina | **sim**: a sondagem descreve esta |
+        // | `NomeInvalido` — o arquivo traz nome torto | **sim**: ele grava um novo |
+        // | `ModeloAmbiguo` — dois discos do mesmo modelo | **nao**: sondar de novo veria os dois outra vez |
+        //
+        // O aviso do pre-voo **nao** repete isto, e a razao apareceu rodando o
+        // comando de verdade: com a linha fixa la e a mensagem aqui, a tela
+        // dizia `arca sondar` duas vezes em quatro linhas.
+        for resolve in [
+            SemNome::SemOraculo,
+            SemNome::ModeloNaoCasa {
+                modelo: "KINGSTON SNV3S500G".to_string(),
+            },
+            SemNome::NomeInvalido {
+                tem: "NVME0N1".to_string(),
+            },
+        ] {
+            assert!(
+                resolve.to_string().contains("arca sondar"),
+                "{resolve:?} nao diz a saida"
+            );
+        }
+
+        let ambiguo = SemNome::ModeloAmbiguo {
+            modelo: "KINGSTON SNV3S500G".to_string(),
+            quantos: 2,
+        };
+        assert!(
+            !ambiguo.to_string().contains("arca sondar"),
+            "sondar de novo nao desfaz uma ambiguidade: {ambiguo}"
+        );
+    }
+
     // ──────────────────────── a normalizacao ────────────────────────
 
     #[test]
@@ -589,5 +867,218 @@ mod testes {
         // distintos casarem, e ai a receita nomearia o errado.
         assert_ne!(normalizar("SAMSUNG 990 PRO"), normalizar("SAMSUNG 980 PRO"));
         assert_ne!(normalizar("WDC WD10"), normalizar("WDC WD100"));
+    }
+
+    // ─────────── a segunda fonte, e a precedencia (E12, SD-5) ───────────
+
+    /// O que a sondagem veria nesta maquina hoje: o mesmo par nome-modelo do
+    /// `blkdev.list` das imagens.
+    const DA_SONDAGEM: &str = concat!(
+"KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
+"sda       sda         238.5G disk                                               KGSSE100256\n",
+"nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G\n",
+    );
+
+    #[test]
+    fn a_sondagem_sozinha_ja_responde_o_nome_do_disco() {
+        // **O buraco que a E12 fecha, em um teste.** Ate ela, um dispositivo
+        // sem imagem nenhuma nao tinha oraculo, e os tres comandos que armam
+        // recusavam. Agora a sondagem responde sozinha.
+        let achado = nome_do_disco("KINGSTON SNV3S500G", &[da_sondagem(DA_SONDAGEM)])
+            .expect("a sondagem responde sem imagem nenhuma");
+
+        assert_eq!(achado.disco.como_texto(), "nvme0n1");
+        assert!(
+            matches!(achado.origem, Origem::LidoDaSondagem { .. }),
+            "{:?}",
+            achado.origem
+        );
+    }
+
+    #[test]
+    fn a_saida_diz_que_o_nome_veio_da_sondagem_e_quando() {
+        // Uma sondagem que se apresentasse como imagem seria a mesma falha que
+        // o `arca prepare` pagou na E10: uma tela afirmando o que nao
+        // aconteceu — nao ha imagem nenhuma no dispositivo em que a sondagem
+        // mais importa.
+        //
+        // E a **hora** vai junto porque uma sondagem de um mês atras pode estar
+        // descrevendo um disco que nao esta mais na maquina.
+        let dito = nome_do_disco("KINGSTON SNV3S500G", &[da_sondagem(DA_SONDAGEM)])
+            .unwrap()
+            .to_string();
+
+        assert!(dito.contains("nvme0n1"), "{dito}");
+        assert!(dito.contains("sondagem"), "{dito}");
+        assert!(dito.contains("23/08 21:14"), "{dito}");
+        assert!(
+            !dito.contains("imagem"),
+            "a sondagem se apresentou como imagem: {dito}"
+        );
+    }
+
+    #[test]
+    fn com_as_duas_fontes_concordando_a_sondagem_e_a_que_responde() {
+        // A sondagem descreve a maquina de **agora**; a imagem descreve a de
+        // quando o backup foi feito. Concordando, o nome e o mesmo — e quem o
+        // respondeu importa para a tela, que diz de onde ele veio.
+        let listas = vec![
+            da_sondagem(DA_SONDAGEM),
+            da_imagem("2026-08-21_WindowsCompleto", DO_DISPOSITIVO),
+        ];
+
+        let achado = nome_do_disco("KINGSTON SNV3S500G", &listas).unwrap();
+
+        assert_eq!(achado.disco.como_texto(), "nvme0n1");
+        assert_eq!(
+            achado.origem,
+            Origem::LidoDaSondagem {
+                modelo: "KINGSTON SNV3S500G".to_string(),
+                quando: Some(crate::duplos::momento("2026-08-23T21:14:07")),
+                divergencia: None,
+            },
+            "concordando, nao ha divergencia a dizer"
+        );
+    }
+
+    #[test]
+    fn discordando_a_sondagem_ganha_e_a_divergencia_e_dita() {
+        // **SD-5.** O disco foi trocado depois do backup: a imagem guarda o
+        // nome que o Linux dava ao disco de então, e a sondagem sabe o de
+        // agora. A sondagem ganha — e a divergencia sai na tela, nunca
+        // resolvida em silencio.
+        let na_imagem = DO_DISPOSITIVO.replace("nvme0n1   nvme0n1", "nvme1n1   nvme1n1");
+        let listas = vec![
+            da_sondagem(DA_SONDAGEM),
+            da_imagem("2026-08-21_WindowsCompleto", &na_imagem),
+        ];
+
+        let achado = nome_do_disco("KINGSTON SNV3S500G", &listas).unwrap();
+
+        assert_eq!(achado.disco.como_texto(), "nvme0n1", "a sondagem ganhou");
+        assert_eq!(
+            achado.origem,
+            Origem::LidoDaSondagem {
+                modelo: "KINGSTON SNV3S500G".to_string(),
+                quando: Some(crate::duplos::momento("2026-08-23T21:14:07")),
+                divergencia: Some(Divergencia {
+                    imagem: "2026-08-21_WindowsCompleto".to_string(),
+                    disco: "nvme1n1".to_string(),
+                }),
+            }
+        );
+
+        let dito = achado.to_string();
+        assert!(dito.contains("DIVERGE"), "{dito}");
+        assert!(dito.contains("nvme1n1"), "{dito}");
+    }
+
+    #[test]
+    fn sem_sondagem_as_imagens_respondem_como_antes_da_e12() {
+        // A garantia de que a E12 nao mexeu no caminho que ja existia: um
+        // dispositivo com imagens e sem sondagem responde exatamente o que
+        // respondia — inclusive na `Origem`, que e o que a tela imprime.
+        let achado = nome_do_disco("KINGSTON SNV3S500G", &listas()).unwrap();
+
+        assert_eq!(
+            achado.origem,
+            Origem::LidoDaImagem {
+                imagem: "2026-08-21_WindowsCompleto".to_string(),
+                modelo: "KINGSTON SNV3S500G".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn uma_sondagem_ilegivel_deixa_as_imagens_responderem() {
+        // O `lsblk` falhou e o `2>&1` deixou a mensagem de erro dentro do
+        // arquivo: o cabecalho nao bate, `ler` devolve lista vazia, e a
+        // sondagem simplesmente **nao participa**. Ela nao pode engolir o
+        // oraculo que as imagens ja davam.
+        let listas = vec![
+            da_sondagem("lsblk: unknown column: FLAGQUENAOEXISTE\n"),
+            da_imagem("2026-08-21_WindowsCompleto", DO_DISPOSITIVO),
+        ];
+
+        let achado = nome_do_disco("KINGSTON SNV3S500G", &listas).unwrap();
+
+        assert_eq!(achado.disco.como_texto(), "nvme0n1");
+        assert!(
+            matches!(achado.origem, Origem::LidoDaImagem { .. }),
+            "a sondagem quebrada respondeu no lugar das imagens: {:?}",
+            achado.origem
+        );
+    }
+
+    #[test]
+    fn uma_ambiguidade_vista_pela_sondagem_nao_e_resolvida_pela_imagem() {
+        // **A unica recusa da sondagem que NAO deixa as imagens falar é
+        // `SemOraculo`; as outras vencem.** `ModeloAmbiguo` diz *"ha dois
+        // discos deste modelo aqui, neste instante"* — e resolver isso por um
+        // `blkdev.list` de um backup antigo e exatamente o chute que aquela
+        // recusa existe para nao dar.
+        //
+        // O caso concreto: alguem conectou um segundo disco igual ao de
+        // origem. A imagem, feita antes, so conhece um.
+        let com_gemeo = DA_SONDAGEM.replace(
+            "sda       sda         238.5G disk                                               KGSSE100256",
+            "sdb       sdb         465.8G disk                                               KINGSTON SNV3S500G",
+        );
+        let listas = vec![
+            da_sondagem(&com_gemeo),
+            da_imagem("2026-08-21_WindowsCompleto", DO_DISPOSITIVO),
+        ];
+
+        match nome_do_disco("KINGSTON SNV3S500G", &listas).unwrap_err() {
+            SemNome::ModeloAmbiguo { quantos, .. } => assert_eq!(quantos, 2),
+            outro => panic!("a imagem antiga desfez a ambiguidade de agora: {outro}"),
+        }
+    }
+
+    #[test]
+    fn a_precedencia_e_por_fonte_e_nunca_pela_data() {
+        // **S-6 no lugar onde ele quase deixou de valer.** A E12 pôs um
+        // `DateTime` dentro de [`Origem`], e este modulo e quem decide **qual
+        // disco entra numa receita destrutiva**. A regra que se escreve sem
+        // pensar seria *"a fonte mais recente ganha"* — e ela e errada por
+        // dois motivos, nesta ordem:
+        //
+        // 1. **A sondagem ganha por ser sondagem**, e nao por ser nova: ela
+        //    descreve a maquina de agora **por construcao**, e uma imagem
+        //    gravada cinco minutos atras continua descrevendo a maquina de
+        //    quando aquele backup rodou.
+        // 2. As duas datas viriam do `mtime` — e o `mtime` de uma imagem foi
+        //    escrito pelo Clonezilla, que roda 3 h adiantado (P-7). Compara-las
+        //    e literalmente o que S-6 proibe.
+        //
+        // O teste e de comportamento, e nao uma varredura de texto: uma
+        // sondagem **mais antiga** que a imagem continua ganhando.
+        let antiga = Lista {
+            fonte: Fonte::Sondagem {
+                quando: Some(crate::duplos::momento("2020-01-01T00:00:00")),
+            },
+            texto: DA_SONDAGEM.to_string(),
+        };
+        let recente = DO_DISPOSITIVO.replace("nvme0n1   nvme0n1", "nvme1n1   nvme1n1");
+
+        let achado =
+            nome_do_disco("KINGSTON SNV3S500G", &[antiga, da_imagem("de-hoje", &recente)]).unwrap();
+
+        assert_eq!(
+            achado.disco.como_texto(),
+            "nvme0n1",
+            "a fonte mais recente ganhou: a precedencia virou temporal"
+        );
+    }
+
+    #[test]
+    fn sem_fonte_nenhuma_a_recusa_manda_sondar() {
+        // A recusa passou a ter saida na E12, e ela e um comando — nao mais um
+        // backup pelo menu do Clonezilla, que era a resposta anterior e que
+        // este app existe para nao precisar.
+        let recusa = nome_do_disco("KINGSTON SNV3S500G", &[]).unwrap_err();
+
+        assert_eq!(recusa, SemNome::SemOraculo);
+        assert!(recusa.to_string().contains("arca sondar"), "{recusa}");
     }
 }

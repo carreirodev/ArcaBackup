@@ -89,7 +89,7 @@ fn main() {
     let original = Estado {
         selo,
         comando: Operacao::Backup,
-        nome: Nome::novo("2026-08-22_Medicao").expect("nome valido"),
+        nome: Some(Nome::novo("2026-08-22_Medicao").expect("nome valido")),
         disco: Some(Disco::novo("nvme0n1").expect("disco valido")),
         armado_em: MomentoDoArmar::agora(&RelogioDoSistema),
         situacao: Situacao::Armado,

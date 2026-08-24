@@ -99,6 +99,13 @@ pub struct Colheita<'a> {
     /// boot nao aconteceu nao tem pasta nenhuma.
     pub pasta: Option<&'a Pasta>,
 
+    /// Os discos que a sondagem viu, quando o job era uma sondagem.
+    ///
+    /// `None` nas outras tres operacoes **e** quando a sondagem nao deixou
+    /// arquivo — e a tela distingue as duas, porque na sondagem a segunda e
+    /// falha e nas outras nem pergunta se faz.
+    pub sondagem: Option<&'a [crate::blkdev::DiscoDaImagem]>,
+
     pub desarme: &'a Desarme,
     pub encerramento: &'a Encerramento,
 
@@ -174,8 +181,11 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
         return ja_colhido(contexto, &dispositivo, &estado_do_job);
     }
 
-    let onde =
-        estado::caminho_do_desfecho(&raiz_do_vault, estado_do_job.comando, &estado_do_job.nome);
+    let onde = estado::caminho_do_desfecho(
+        &raiz_do_vault,
+        estado_do_job.comando,
+        estado_do_job.nome.as_ref(),
+    );
     let desfecho = ler_o_desfecho(contexto.arquivos, &onde, &estado_do_job);
 
     // Desarmar acontece **depois** de lê o desfecho e antes de encerrar o
@@ -201,10 +211,15 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
     // novo. Na ordem inversa, o job sairia encerrado e ninguem teria visto o
     // desfecho: o ARCA teria lido o resultado do backup e o perdido.
     let pastas = imagens::enumerar(contexto.arquivos, &raiz_do_vault)?;
-    let pasta = pastas.iter().find(|pasta| {
-        pasta
-            .nome
-            .eq_ignore_ascii_case(estado_do_job.nome.como_texto())
+
+    // Sem nome de imagem nao ha pasta a procurar, e nao e falta: a sondagem
+    // nao opera sobre imagem nenhuma. Procurar assim mesmo faria o `find`
+    // comparar contra a string vazia — e `Nome` nunca e vazia, entao daria
+    // `None` por acaso em vez de por decisao.
+    let pasta = estado_do_job.nome.as_ref().and_then(|nome| {
+        pastas
+            .iter()
+            .find(|pasta| pasta.nome.eq_ignore_ascii_case(nome.como_texto()))
     });
 
     // O job so se encerra quando houve veredito sobre ele. Ver o cabecalho e
@@ -229,12 +244,20 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
     };
 
     contexto.registro.info(format!(
-        "colhido {} `{}` · selo {} · desfecho: {desfecho} · veredito: {} · job {encerramento:?}",
-        estado_do_job.comando.nome(),
-        estado_do_job.nome,
+        "colhido {} · selo {} · desfecho: {desfecho} · veredito: {} · job {encerramento:?}",
+        estado_do_job.descricao(),
         estado_do_job.selo,
         descrever_veredito(pasta),
     ));
+
+    // O que a sondagem produziu, lido **depois** de o job ser encerrado: ele e
+    // para a tela, e uma leitura que falhe nao pode desfazer uma colheita que
+    // ja aconteceu. `None` quando o job nao e sondagem — as outras tres nao
+    // escrevem naquele lugar.
+    let sondagem = (estado_do_job.comando == Operacao::Sondagem)
+        .then(|| crate::sondagem::ler(contexto.arquivos, &raiz_do_vault))
+        .flatten()
+        .map(|lista| crate::blkdev::ler(&lista.texto));
 
     print!(
         "{}",
@@ -242,6 +265,7 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
             estado: &estado_do_job,
             desfecho: &desfecho,
             pasta,
+            sondagem: sondagem.as_deref(),
             desarme: &desarme,
             ordem: &ordem,
             encerramento: &encerramento,
@@ -329,6 +353,28 @@ fn encerra_o_job(desfecho: &Encontrado) -> bool {
 /// Achada relendo **esta funcao** procurando o que a restauracao muda nela, e
 /// nao lendo o codigo novo procurando defeitos. E a mesma defesa que funcionou
 /// na E4 e na E7.
+/// Se o veredito da pasta e um parecer **sobre esta operacao**.
+///
+/// # A pergunta certa nao e "esta operacao mexe numa imagem?"
+///
+/// A E9 aprendeu isso na restauracao, e a E12 quase a desaprendeu escrevendo
+/// "as que produzem imagem": pela producao, a **verificacao** ficaria de fora,
+/// e ela e justamente uma das que devem entrar. Ela nao produz imagem nenhuma
+/// e o `arca-check.log` que se lê e o `ocs-chkimg` **daquela** execucao.
+///
+/// | Operacao | A pasta e | Julga? |
+/// |---|---|---|
+/// | backup | o que a operacao acabou de gravar | **sim** |
+/// | verificacao | a imagem que o `ocs-chkimg` acabou de julgar | **sim** |
+/// | restauracao | a imagem de **origem**, de dias antes | nao |
+/// | sondagem | nao ha pasta: ela nao opera sobre imagem | nao |
+fn o_veredito_fala_desta_operacao(operacao: Operacao) -> bool {
+    match operacao {
+        Operacao::Backup | Operacao::Verificacao => true,
+        Operacao::Restauracao | Operacao::Sondagem => false,
+    }
+}
+
 fn julgar_o_conjunto(
     desfecho: &Encontrado,
     pasta: Option<&Pasta>,
@@ -338,7 +384,7 @@ fn julgar_o_conjunto(
         return Some(format!("a operacao nao foi concluida: {desfecho}"));
     }
 
-    if operacao == Operacao::Restauracao {
+    if !o_veredito_fala_desta_operacao(operacao) {
         return None;
     }
 
@@ -393,11 +439,15 @@ fn descrever_veredito(pasta: Option<&Pasta>) -> String {
 pub fn montar(colheita: &Colheita) -> String {
     let mut saida = String::new();
 
-    // O cabecalho nomeia a operacao e a imagem, como no §5.4.
+    // O cabecalho nomeia a operacao e a imagem, como no §5.4. Sem imagem — a
+    // sondagem — sobra a operacao sozinha, que e o que ela e.
     saida.push_str(&format!(
-        "{} {}\n",
+        "{}{}\n",
         com_inicial_maiuscula(colheita.estado.comando.nome()),
-        colheita.estado.nome
+        match &colheita.estado.nome {
+            Some(nome) => format!(" {nome}"),
+            None => String::new(),
+        }
     ));
 
     match colheita.pasta {
@@ -406,7 +456,14 @@ pub fn montar(colheita: &Colheita) -> String {
             dia_e_mes(pasta.modificado_em),
             tamanho(pasta.tamanho_bytes)
         )),
-        None => saida.push_str("  nao ha pasta com este nome no ARCAVAULT\n"),
+        // Duas ausencias diferentes, e dize-las igual seria dizer que faltou
+        // alguma coisa numa operacao a que nao falta nada: um backup sem pasta
+        // e um problema — o que a receita disse ter gravado nao esta la —, e
+        // uma sondagem sem pasta e o normal, porque ela nao grava imagem.
+        None if colheita.estado.comando.nomeia_imagem() => {
+            saida.push_str("  nao ha pasta com este nome no ARCAVAULT\n")
+        }
+        None => saida.push_str("  nao opera sobre imagem nenhuma\n"),
     }
 
     // As duas linhas que S-5 exige lado a lado. Nenhuma esconde a outra: um
@@ -434,6 +491,23 @@ pub fn montar(colheita: &Colheita) -> String {
         Operacao::Verificacao => format!(
             "  Veredito: {} — mesmo sinal do desfecho acima, e nao um segundo\n",
             descrever_veredito(colheita.pasta)
+        ),
+        // A sondagem nao tem segunda linha sobre imagem, porque nao ha imagem.
+        // O que ela produziu e o que a linha diz: um nome de disco, que os
+        // outros comandos vao lê. Imprimir `Verificacao: nao ha pasta` aqui
+        // seria a mesma confusao de sujeito que [`julgar_o_conjunto`] cometia
+        // na restauracao ate a E9.
+        Operacao::Sondagem => format!(
+            "  Discos vistos: {}\n",
+            match colheita.sondagem {
+                Some(discos) if !discos.is_empty() => discos
+                    .iter()
+                    .map(|disco| format!("{} ({})", disco.nome, disco.modelo))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                Some(_) => "nenhum — o `blkdev.list` esta la e nao traz disco nenhum".to_string(),
+                None => "nao ha `blkdev.list` no lugar onde a sondagem o grava".to_string(),
+            }
         ),
     });
 
@@ -471,6 +545,53 @@ pub fn montar(colheita: &Colheita) -> String {
 ///
 /// Uma linha que so diz o que aconteceu empurra o problema de volta para quem
 /// nao sabe resolve-lo — e a mesma regra que os avisos do pre-voo seguem.
+/// O nome da pasta da imagem, para as frases que falam dela.
+///
+/// Os dois ramos que a usam so sao alcancaveis por operacao que nomeia imagem
+/// — o `Concluida` sem veredito e o `Truncado` —, e o vazio aqui e a rede que
+/// impede uma frase falando de `` ` ` `` se um dia deixarem de ser.
+fn nome_da_pasta(colheita: &Colheita) -> String {
+    colheita
+        .estado
+        .nome
+        .as_ref()
+        .map(|nome| nome.to_string())
+        .unwrap_or_default()
+}
+
+/// O que a sondagem entrega, dito onde alguem lê depois de ela rodar.
+///
+/// Ela nao produz imagem e nao tem veredito: o que ela produz e o nome que o
+/// **Linux** da ao disco desta maquina, e o valor disso e um comando que
+/// recusava passar a funcionar. Sem esta linha, quem colhesse uma sondagem
+/// leria `ARCA_PROBE=OK` e nao saberia o que fazer com aquilo.
+fn conselho_da_sondagem(colheita: &Colheita) -> String {
+    match colheita.sondagem {
+        Some(discos) if !discos.is_empty() => concat!(
+            "\n  O ORACULO DO §4.5 EXISTE AGORA. O `blkdev.list` da sondagem esta em\n",
+            "  ARCA-LOGS\\sondagem\\, e e dele que sai o nome que o LINUX da ao disco —\n",
+            "  aquele que o Windows nao conhece e que o ARCA nao inventa.\n",
+            "\n",
+            "  Para conferir o que o `arca backup` vai nomear, sem armar nada:\n",
+            "    arca backup <nome> --dry-run\n"
+        )
+        .to_string(),
+
+        // O desfecho diz `OK` e nao ha lista: as duas afirmacoes nao cabem
+        // juntas, e quem lê precisa saber que a segunda vale. E o caso que o
+        // `if` da receita existe para tornar raro — com o `lsblk` falhando o
+        // desfecho diria `FALHOU` —, e este ramo cobre o que sobra dele.
+        _ => concat!(
+            "\n  O DESFECHO DIZ QUE A SONDAGEM CONCLUIU, E NAO HA LISTA DE DISCOS.\n",
+            "  O `blkdev.list` devia estar em ARCA-LOGS\\sondagem\\ e nao esta la, ou nao\n",
+            "  traz disco nenhum. O nome do disco continua por determinar, e `arca backup`\n",
+            "  vai continuar recusando — olhe o arquivo antes de sondar de novo: se o\n",
+            "  `lsblk` recusou alguma flag, a mensagem dele esta dentro dele.\n"
+        )
+        .to_string(),
+    }
+}
+
 fn conselho(colheita: &Colheita) -> String {
     // A falha ao encerrar fala primeiro, e nao por gravidade: e a unica que
     // pede uma acao **agora**. O desfecho ja esta dito nas linhas acima e nao
@@ -497,6 +618,16 @@ fn conselho(colheita: &Colheita) -> String {
         {
             conselho_da_restauracao(colheita)
         }
+
+        // A sondagem concluida tem conselho proprio, e ele e o que ela existe
+        // para dizer: o oraculo do §4.5 passou a existir, e o comando que
+        // recusava agora funciona.
+        Encontrado::Arquivo(Julgamento::Concluida)
+            if colheita.estado.comando == Operacao::Sondagem =>
+        {
+            conselho_da_sondagem(colheita)
+        }
+
         Encontrado::Arquivo(Julgamento::Concluida) => match colheita.pasta.map(|p| &p.especie) {
             Some(imagens::Especie::Imagem {
                 veredito: Some(Veredito::Aprovada),
@@ -506,14 +637,14 @@ fn conselho(colheita: &Colheita) -> String {
                  \x20 imagem nao esta aprovada. O ARCA nao apaga nada (B-10): a pasta\n\
                  \x20 `{}` continua no ARCAVAULT para quem quiser olhar.\n\
                  \x20 Para gravar de novo, use outro nome — o ARCA nunca escreve por cima.\n",
-                colheita.estado.nome
+                nome_da_pasta(colheita)
             ),
         },
         Encontrado::Arquivo(Julgamento::Truncado) => format!(
             "\n  A pasta `{}` e RESIDUO: o desligamento pegou a operacao no meio, e nao\n\
              \x20 ha imagem inteira ali. Ela nao aparece para restaurar (L-2), e o ARCA\n\
              \x20 nao a apaga (B-10) — apague a mao depois de olhar.\n",
-            colheita.estado.nome
+            nome_da_pasta(colheita)
         ),
         Encontrado::SemArquivo => concat!(
             "\n  O BOOT NAO ACONTECEU, ou o Clonezilla abriu o menu em vez de executar a\n",
@@ -532,7 +663,7 @@ fn conselho(colheita: &Colheita) -> String {
         Encontrado::Arquivo(Julgamento::Falhou) => format!(
             "\n  O CLONEZILLA FALHOU E DISSE. O log da operacao esta em\n\
              \x20 ARCA-LOGS\\{}\\, junto do proprio `arca-fim.txt`.\n",
-            crate::desfecho::pasta_do_job(colheita.estado.comando, &colheita.estado.nome)
+            crate::desfecho::pasta_do_job(colheita.estado.comando, colheita.estado.nome.as_ref())
         ),
         Encontrado::Arquivo(Julgamento::JobFantasma { .. })
         | Encontrado::Arquivo(Julgamento::NaoPertenceAoArca(_)) => concat!(
@@ -582,7 +713,7 @@ fn conselho_da_restauracao(colheita: &Colheita) -> String {
         "\x20 O log do Clonezilla desta operacao esta em\n\
          \x20 ARCA-LOGS\\{}\\arca-restore.log, no ARCAVAULT, que a restauracao nao\n\
          \x20 tocou.\n",
-        crate::desfecho::pasta_do_job(colheita.estado.comando, &colheita.estado.nome)
+        crate::desfecho::pasta_do_job(colheita.estado.comando, colheita.estado.nome.as_ref())
     ));
 
     saida.push_str(concat!(
@@ -651,8 +782,8 @@ fn ja_colhido(contexto: &Contexto, dispositivo: &Dispositivo, estado: &Estado) -
     let ordem = ordem::devolver_o_windows(contexto.firmware)?;
 
     contexto.registro.info(format!(
-        "resultado · o job `{}` ja estava colhido",
-        estado.nome
+        "resultado · o job {} ja estava colhido",
+        estado.descricao()
     ));
 
     print!(
@@ -671,7 +802,7 @@ pub fn montar_ja_colhido(
     let mut saida = String::from("Nao ha job a colher.\n\n");
     saida.push_str(&linha(
         "Ultimo job",
-        &format!("{} `{}` · ja colhido", estado.comando.nome(), estado.nome),
+        &format!("{} · ja colhido", estado.descricao()),
     ));
     saida.push_str(&linha("Selo", estado.selo.como_texto()));
     saida.push_str(&linha(
@@ -719,7 +850,7 @@ mod testes {
         Estado {
             selo: Selo::novo(DO_JOB).unwrap(),
             comando: Operacao::Backup,
-            nome: Nome::novo("2026-08-22_Apps").unwrap(),
+            nome: Some(Nome::novo("2026-08-22_Apps").unwrap()),
             disco: Some(Disco::novo("nvme0n1").unwrap()),
             armado_em: MomentoDoArmar::agora(&crate::duplos::RelogioParado::em(
                 "2026-08-22T19:14:03",
@@ -784,6 +915,7 @@ mod testes {
             estado: &estado,
             desfecho: &desfecho,
             pasta,
+            sondagem: None,
             desarme: &desarme,
             ordem: &ordem,
             encerramento: &encerramento,
@@ -934,6 +1066,7 @@ mod testes {
             estado: &estado,
             desfecho: &desfecho,
             pasta,
+            sondagem: None,
             desarme: &desarme,
             ordem: &ordem(),
             encerramento: &Encerramento::Encerrado,
@@ -977,6 +1110,7 @@ mod testes {
             estado: &estado,
             desfecho: &desfecho,
             pasta,
+            sondagem: None,
             desarme: &desarme,
             ordem: &ordem(),
             encerramento: &Encerramento::Encerrado,
@@ -1178,6 +1312,132 @@ mod testes {
         assert!(
             julgar_o_conjunto(&Encontrado::SemArquivo, None, Operacao::Restauracao).is_some(),
             "ausencia de desfecho e falha, nunca silencio (C-12)"
+        );
+    }
+
+    #[test]
+    fn numa_sondagem_a_falta_de_pasta_nao_reprova_a_operacao() {
+        // **A mutação que a falsificação pegou faltando.** Trocar a linha da
+        // sondagem em `o_veredito_fala_desta_operacao` por `true` passava por
+        // toda a suíte — e o estrago é grande: **toda sondagem bem-sucedida
+        // sairia com código de erro**, porque não há pasta de imagem para
+        // julgar e o ramo `None` diz *"o que a receita disse ter gravado não
+        // está lá"*.
+        //
+        // É a mesma confusão de sujeito que a E9 achou na restauração, na
+        // terceira operação em que ela aparece: a sondagem não produz imagem
+        // nenhuma, e exigir uma dela é julgar uma coisa pelo parecer de outra.
+        let concluida = Encontrado::Arquivo(Julgamento::Concluida);
+
+        assert!(
+            julgar_o_conjunto(&concluida, None, Operacao::Sondagem).is_none(),
+            "uma sondagem concluida saiu como falha por nao haver pasta de imagem"
+        );
+
+        // E o desfecho continua mandando, como em toda operação.
+        for desfecho in [
+            Encontrado::Arquivo(Julgamento::Falhou),
+            Encontrado::Arquivo(Julgamento::Truncado),
+            Encontrado::SemArquivo,
+        ] {
+            assert!(
+                julgar_o_conjunto(&desfecho, None, Operacao::Sondagem).is_some(),
+                "`{desfecho}` numa sondagem tem de reprovar"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pergunta_certa_nao_e_se_a_operacao_mexe_numa_imagem() {
+        // A tabela inteira num lugar só, e ela existe porque a formulação
+        // errada é **plausível**: "as que produzem imagem" deixaria a
+        // verificação de fora, e ela é justamente uma das que devem entrar — o
+        // `arca-check.log` que ela lê é o `ocs-chkimg` **daquela** execução.
+        assert!(o_veredito_fala_desta_operacao(Operacao::Backup));
+        assert!(o_veredito_fala_desta_operacao(Operacao::Verificacao));
+        assert!(!o_veredito_fala_desta_operacao(Operacao::Restauracao));
+        assert!(!o_veredito_fala_desta_operacao(Operacao::Sondagem));
+    }
+
+    #[test]
+    fn a_colheita_de_uma_sondagem_diz_os_discos_e_manda_seguir() {
+        // O que a sondagem entrega não é um veredito sobre imagem: é o nome
+        // que o **Linux** dá ao disco desta máquina. Sem esta linha, quem
+        // colhesse leria `ARCA_PROBE=OK` e não saberia o que fazer com aquilo.
+        let discos = crate::blkdev::ler(concat!(
+            "KNAME     NAME          SIZE TYPE FSTYPE MOUNTPOINT MODEL\n",
+            "nvme0n1   nvme0n1     465.8G disk                   KINGSTON SNV3S500G\n",
+        ));
+        let estado = Estado {
+            comando: Operacao::Sondagem,
+            nome: None,
+            disco: None,
+            ..estado(Situacao::Armado)
+        };
+        let desarme = desarme();
+        let desfecho = Encontrado::Arquivo(Julgamento::Concluida);
+
+        let saida = montar(&Colheita {
+            estado: &estado,
+            desfecho: &desfecho,
+            pasta: None,
+            sondagem: Some(&discos),
+            desarme: &desarme,
+            ordem: &OrdemDevolvida::JaEstavaNaFrente,
+            encerramento: &Encerramento::Encerrado,
+            pastas: &[],
+            livre_bytes: 176_000_000_000,
+        });
+
+        // O cabeçalho não inventa nome de imagem nenhum.
+        assert!(saida.starts_with("Sondagem\n"), "{saida}");
+        assert!(
+            !saida.contains("nao ha pasta com este nome"),
+            "a ausência de imagem virou queixa: {saida}"
+        );
+        assert!(saida.contains("nao opera sobre imagem nenhuma"), "{saida}");
+
+        // O que ela viu, e o que fazer com isso.
+        assert!(
+            saida.contains("Discos vistos: nvme0n1 (KINGSTON SNV3S500G)"),
+            "{saida}"
+        );
+        assert!(saida.contains("ORACULO DO §4.5 EXISTE AGORA"), "{saida}");
+        assert!(saida.contains("arca backup"), "{saida}");
+    }
+
+    #[test]
+    fn uma_sondagem_que_concluiu_sem_lista_diz_que_as_duas_coisas_nao_cabem_juntas() {
+        // O desfecho diz `OK` e não há `blkdev.list`: duas afirmações que não
+        // cabem juntas, e quem lê precisa saber que a segunda vale. É o caso
+        // que o `if` da receita torna raro — com o `lsblk` falhando o desfecho
+        // diria `FALHOU` —, e este ramo cobre o que sobra dele.
+        let estado = Estado {
+            comando: Operacao::Sondagem,
+            nome: None,
+            disco: None,
+            ..estado(Situacao::Armado)
+        };
+        let desarme = desarme();
+        let desfecho = Encontrado::Arquivo(Julgamento::Concluida);
+
+        let saida = montar(&Colheita {
+            estado: &estado,
+            desfecho: &desfecho,
+            pasta: None,
+            sondagem: None,
+            desarme: &desarme,
+            ordem: &OrdemDevolvida::JaEstavaNaFrente,
+            encerramento: &Encerramento::Encerrado,
+            pastas: &[],
+            livre_bytes: 176_000_000_000,
+        });
+
+        assert!(saida.contains("nao ha `blkdev.list`"), "{saida}");
+        assert!(saida.contains("NAO HA LISTA DE DISCOS"), "{saida}");
+        assert!(
+            saida.contains("a mensagem dele esta dentro dele"),
+            "a tela tem de dizer onde olhar: {saida}"
         );
     }
 

@@ -102,17 +102,13 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
         match &estado_do_job {
             EstadoDoJob::Nenhum => "nenhum".to_string(),
             EstadoDoJob::Pendente { estado, desfecho } => format!(
-                "{} `{}` · selo {} · desfecho: {desfecho}",
-                estado.comando.nome(),
-                estado.nome,
+                "{} · selo {} · desfecho: {desfecho}",
+                estado.descricao(),
                 estado.selo
             ),
-            EstadoDoJob::Colhido { estado } => format!(
-                "{} `{}` · selo {} · ja colhido",
-                estado.comando.nome(),
-                estado.nome,
-                estado.selo
-            ),
+            EstadoDoJob::Colhido { estado } => {
+                format!("{} · selo {} · ja colhido", estado.descricao(), estado.selo)
+            }
             EstadoDoJob::Ilegivel { motivo } => format!("estado ilegivel: {motivo}"),
             EstadoDoJob::SemOndeOlhar { motivo } => format!("sem onde olhar: {motivo}"),
         },
@@ -183,7 +179,7 @@ fn ler_o_job(
         return EstadoDoJob::Colhido { estado };
     }
 
-    let onde = estado::caminho_do_desfecho(raiz_do_vault, estado.comando, &estado.nome);
+    let onde = estado::caminho_do_desfecho(raiz_do_vault, estado.comando, estado.nome.as_ref());
 
     // Pelo mesmo caminho: "nao ha desfecho" quer dizer que o boot nao
     // aconteceu (C-12), e "nao consegui lê" nao diz nada sobre o boot.
@@ -212,12 +208,20 @@ fn ler_o_job(
 /// ali faria quem lê procurar o que se perdeu; a linha diz o que aconteceu, que
 /// e nao haver disco a nomear.
 fn disco_alvo(estado: &Estado) -> String {
-    match &estado.disco {
-        Some(disco) => disco.to_string(),
-        None => format!(
-            "nenhum · `{}` lê a imagem, e nao um disco",
-            estado.comando.nome()
-        ),
+    match (&estado.disco, estado.comando) {
+        (Some(disco), _) => disco.to_string(),
+
+        // **A frase da E11 nao servia para a quarta operacao**, e dizer
+        // `sondagem lê a imagem` seria falso duas vezes: a sondagem nao lê
+        // imagem nenhuma, e ela existe justamente para o dispositivo que nao
+        // tem uma. E o padrao de sempre — peca nova encaixada em peca antiga
+        // —, e aqui a peca antiga e um `format!` que supunha haver so um
+        // motivo para nao haver disco.
+        (None, crate::receita::Operacao::Sondagem) => {
+            "nenhum · a sondagem lê TODOS os discos, e nao nomeia nenhum".to_string()
+        }
+
+        (None, comando) => format!("nenhum · `{}` lê a imagem, e nao um disco", comando.nome()),
     }
 }
 
@@ -591,13 +595,11 @@ fn secao_do_job(leitura: &Leitura, estado: &EstadoDoJob) -> String {
         &match estado {
             EstadoDoJob::Nenhum => "nenhum".to_string(),
             EstadoDoJob::Pendente { estado, .. } => {
-                format!("{} `{}` · POR COLHER", estado.comando.nome(), estado.nome)
+                format!("{} · POR COLHER", estado.descricao())
             }
-            EstadoDoJob::Colhido { estado } => format!(
-                "{} `{}` · ja colhido, nada esperando",
-                estado.comando.nome(),
-                estado.nome
-            ),
+            EstadoDoJob::Colhido { estado } => {
+                format!("{} · ja colhido, nada esperando", estado.descricao())
+            }
             EstadoDoJob::Ilegivel { .. } => "presente e ILEGIVEL".to_string(),
             // O motivo vai na linha, e nao uma frase fixa: com o `ARCABOOT`
             // sem letra, dizer "sem ARCABOOT" mandaria alguem procurar um
@@ -618,7 +620,7 @@ fn secao_do_job(leitura: &Leitura, estado: &EstadoDoJob) -> String {
             ));
             saida.push_str(&linha(
                 "Pasta do desfecho",
-                &desfecho::pasta_do_job(estado.comando, &estado.nome),
+                &desfecho::pasta_do_job(estado.comando, estado.nome.as_ref()),
             ));
             saida.push_str(&linha("Desfecho", &desfecho.to_string()));
         }
@@ -677,7 +679,7 @@ mod testes {
         Estado {
             selo: Selo::novo(DO_JOB).unwrap(),
             comando: Operacao::Backup,
-            nome: Nome::novo("2026-08-22_Apps").unwrap(),
+            nome: Some(Nome::novo("2026-08-22_Apps").unwrap()),
             disco: Some(Disco::novo("nvme0n1").unwrap()),
             armado_em: MomentoDoArmar::agora(&RelogioParado::em("2026-08-22T18:14:03")),
             situacao: Situacao::Armado,
@@ -1131,6 +1133,44 @@ mod testes {
         assert!(
             saida.contains("verificacao-2026-08-22_Apps"),
             "a pasta do desfecho tem de levar a operacao:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn um_job_de_sondagem_nao_diz_que_ela_lê_a_imagem() {
+        // **A frase da E11 nao servia para a quarta operacao.** Ela dizia
+        // `nenhum · <operacao> lê a imagem, e nao um disco` — verdade para a
+        // verificacao, e **falsa duas vezes** para a sondagem: ela nao lê
+        // imagem nenhuma, e existe justamente para o dispositivo que nao tem
+        // uma. Peca nova encaixada em peca antiga, e a peca antiga e um
+        // `format!` que supunha um motivo so para nao haver disco.
+        let saida = com_estado(EstadoDoJob::Pendente {
+            estado: crate::estado::Estado {
+                comando: crate::receita::Operacao::Sondagem,
+                nome: None,
+                disco: None,
+                ..estado_gravado()
+            },
+            desfecho: Encontrado::SemArquivo,
+        });
+
+        assert!(
+            !saida.contains("`sondagem` lê a imagem"),
+            "a tela diz que a sondagem lê a imagem, e ela nao lê:\n{saida}"
+        );
+        assert!(
+            saida.contains("a sondagem lê TODOS os discos"),
+            "{saida}"
+        );
+
+        // E o job aparece sem par de crases vazio no lugar do nome.
+        assert!(saida.contains("sondagem · POR COLHER"), "{saida}");
+        assert!(!saida.contains("sondagem `` "), "{saida}");
+
+        // A pasta do desfecho e a fixa, sem nome de imagem.
+        assert!(
+            saida.contains("Pasta do desfecho ............... sondagem"),
+            "{saida}"
         );
     }
 

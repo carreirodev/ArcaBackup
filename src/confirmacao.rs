@@ -60,6 +60,48 @@ pub fn pedir_texto(contexto: &Contexto, pergunta: &str, esperado: &str) -> Resul
     Ok(())
 }
 
+/// A pergunta de uma tecla, com o padrao no **nao**.
+///
+/// # Ela nao e S-2, e nao finge ser
+///
+/// S-2 pede o **alvo** por extenso, e existe para custar lê-lo: o nome da
+/// imagem que vai ser gravada, o modelo do disco que vai ser apagado. O que
+/// ela impede e agir sobre a coisa errada.
+///
+/// Esta pergunta impede outra coisa: **agir sem ter lido a tela**. O
+/// `arca prepare` a usa como primeiro tempo de PR-4, antes de S-2, para dar a
+/// chance de sair depois de lê o plano; e o `arca sondar` a usa **sozinha**
+/// (SD-6), porque a sondagem nao tem alvo a confirmar — ela nao apaga nada e
+/// nao escolhe nada, e o que ela faz de irreversivel e reiniciar a maquina.
+///
+/// **Pedir a palavra `sondar` por extenso seria ruido**: quem acabou de
+/// digitar `arca sondar` a ecoaria sem lê nada, e uma confirmacao que so ecoa
+/// o comando ensina a digitar sem lê — que e o contrario do que S-2 compra.
+///
+/// Saiu de `src/comandos/prepare.rs` na E12, quando um segundo comando passou
+/// a precisar dela. Duas copias divergiriam na primeira mudanca, e uma delas
+/// passaria a aceitar um `sim` que a outra recusa.
+pub fn perguntar_se_pode(contexto: &Contexto, pergunta: &str) -> Resultado<bool> {
+    use std::io::Write;
+
+    print!("\n{pergunta} (s/N): ");
+    let _ = std::io::stdout().flush();
+
+    let resposta = contexto.console.ler_linha()?;
+    println!();
+
+    Ok(e_sim(&resposta))
+}
+
+/// Se a resposta e um sim.
+///
+/// Lista de permissao, como B-2 e pelo mesmo motivo: o que nao esta aqui e
+/// **nao**. Um Enter vazio, um `n`, um `talvez` e um `S1M` sao todos nao — e o
+/// padrao ser o nao e o que faz a tecla valer alguma coisa.
+pub fn e_sim(resposta: &str) -> bool {
+    matches!(resposta.trim(), "s" | "S" | "sim" | "SIM")
+}
+
 /// Se o texto digitado confirma este nome (S-2).
 ///
 /// # Exato, e nao "parecido"
@@ -113,5 +155,24 @@ mod testes {
     #[test]
     fn sufixo_a_mais_nao_confirma() {
         assert!(!bate("2026-08-22_Apps2", &nome()));
+    }
+
+    // ────────── a pergunta de uma tecla, e o padrao dela ──────────
+
+    #[test]
+    fn o_padrao_da_pergunta_de_uma_tecla_e_o_nao() {
+        // **E o que faz a tecla valer alguma coisa.** Ela e a unica barreira do
+        // `arca sondar` (SD-6), e o que ela impede e o reinicio de quem digitou
+        // o comando sem ler o que ele faz. Um Enter distraido que passasse por
+        // sim nao impediria nada.
+        assert!(e_sim("s"));
+        assert!(e_sim("S"));
+        assert!(e_sim("sim"));
+        assert!(e_sim("SIM"));
+        assert!(e_sim(" s \r\n"), "o Enter deixa `\\r\\n` para tras");
+
+        for nao in ["", "   ", "\r\n", "n", "N", "nao", "talvez", "sm", "y", "1"] {
+            assert!(!e_sim(nao), "`{nao}` passou por sim");
+        }
     }
 }

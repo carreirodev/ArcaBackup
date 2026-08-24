@@ -119,6 +119,17 @@ pub enum Comando {
         completo: bool,
     },
 
+    /// Descobre os discos desta maquina, sem fazer backup nem restauracao.
+    ///
+    /// # Por que ele nao tem argumento nenhum
+    ///
+    /// Os outros tres comandos que armam nomeiam uma imagem. A sondagem nao
+    /// opera sobre imagem nenhuma — ela pergunta *"que discos ha nesta
+    /// maquina?"* —, e ela existe justamente para o dispositivo que **ainda
+    /// nao tem imagem** (§4.5, P-26). Um argumento aqui seria um valor que
+    /// receita nenhuma usa.
+    Sondar,
+
     /// Diagnostico: dispositivo, firmware, job pendente.
     Status,
 
@@ -142,6 +153,7 @@ impl Comando {
             Comando::List => "list",
             Comando::Restore { .. } => "restore",
             Comando::Verify { .. } => "verify",
+            Comando::Sondar => "sondar",
             Comando::Status => "status",
             Comando::Desarmar => "desarmar",
         }
@@ -192,6 +204,7 @@ mod testes {
         assert_eq!(analisar(&["arca", "list"]).comando.nome(), "list");
         assert_eq!(analisar(&["arca", "restore"]).comando.nome(), "restore");
         assert_eq!(analisar(&["arca", "verify", "n"]).comando.nome(), "verify");
+        assert_eq!(analisar(&["arca", "sondar"]).comando.nome(), "sondar");
         assert_eq!(analisar(&["arca", "status"]).comando.nome(), "status");
         assert_eq!(analisar(&["arca", "desarmar"]).comando.nome(), "desarmar");
     }
@@ -293,6 +306,23 @@ mod testes {
     #[test]
     fn backup_exige_nome() {
         assert!(Cli::try_parse_from(["arca", "backup"]).is_err());
+    }
+
+    #[test]
+    fn sondar_nao_aceita_argumento_nenhum() {
+        // A sondagem nao opera sobre imagem nenhuma — ela pergunta *"que discos
+        // ha nesta maquina?"* —, e ela existe justamente para o dispositivo que
+        // ainda nao tem imagem. Um nome aqui seria um valor que receita nenhuma
+        // usa, e a superficie o recusa em vez de ignorar em silencio.
+        assert_eq!(analisar(&["arca", "sondar"]).comando, Comando::Sondar);
+        assert!(Cli::try_parse_from(["arca", "sondar", "2026-08-22_Apps"]).is_err());
+    }
+
+    #[test]
+    fn sondar_aceita_o_dry_run() {
+        // Ele arma, entao `--dry-run` e de primeira classe nele como nos outros
+        // tres: imprime a receita e nao arma nada (S-2).
+        assert!(analisar(&["arca", "sondar", "--dry-run"]).dry_run);
     }
 
     #[test]

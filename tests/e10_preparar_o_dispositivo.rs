@@ -221,7 +221,7 @@ fn o_bloco_do_arca_deriva_do_live_toram_do_pacote() {
     // sobre o `grub.cfg` do pacote.
     let receita = Receita::montar(&Pedido {
         operacao: Operacao::Backup,
-        nome: Nome::novo("2026-08-23_Novo").expect("nome valido por B-2"),
+        nome: Some(Nome::novo("2026-08-23_Novo").expect("nome valido por B-2")),
         disco: Some(Disco::novo("nvme0n1").expect("nome de disco valido")),
         selo: Selo::de_ensaio(),
     })
@@ -742,15 +742,26 @@ fn os_tres_comandos_que_armam_precisam_de_algo_que_o_dispositivo_novo_nao_tem() 
         );
     }
 
-    // E a tela do `arca prepare` diz isso, em vez de prometer o que recusaria.
+    // **E o quarto, que a E12 acrescentou, é o único que não precisa de nada
+    // disso — e é essa a razão de ele existir.** Ele não enumera imagens e não
+    // consulta `blkdev`: ele *produz* o que os outros três leem.
+    let sondar = include_str!("../src/comandos/sondar.rs");
+    assert!(
+        !sondar.contains("imagens::enumerar"),
+        "`arca sondar` passou a depender de imagem — e ele existe exatamente para o dispositivo que nao tem nenhuma"
+    );
+
+    // E a tela do `arca prepare` manda para ele, em vez de prometer um backup
+    // que recusaria — ou de mandar para o menu do Clonezilla, que era a
+    // resposta anterior e que este app existe para não precisar.
     let prepare = include_str!("../src/comandos/prepare.rs");
     assert!(
-        prepare.contains("NAO PODE SER PELO ARCA"),
-        "a tela do prepare voltou a prometer um primeiro backup pelo ARCA"
+        prepare.contains("ANTES DO PRIMEIRO BACKUP, RODE:  arca sondar"),
+        "a tela do prepare precisa mandar sondar antes do primeiro backup"
     );
     assert!(
-        prepare.contains("§6.4"),
-        "e tem de mandar para o menu do Clonezilla"
+        !prepare.contains("no menu do Clonezilla, faca um backup"),
+        "a tela do prepare voltou a mandar fazer o primeiro backup a mão"
     );
 }
 

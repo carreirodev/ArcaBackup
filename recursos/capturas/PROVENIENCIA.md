@@ -704,6 +704,78 @@ E1, quando ter dois dispositivos ARCA exigia comprá-los, e dizia *"Desconecte o
 demais"* sem dizer quais. Desde a E10 o ARCA faz o segundo, e o arquivo guarda a
 forma nova — com as letras e com a causa provável nomeada.
 
+## A etapa E12 — `arca sondar` (23/08/2026)
+
+### `arca-sondar-antes-do-marco-2026-08-23.txt`
+
+Três telas do binário da E12 rodando **de dentro do `ARCABOOT`**
+(`F:\arca\arca.exe`), no dispositivo que o `arca prepare` criou horas antes e que
+está **vazio de imagens**. Nenhuma delas arma nada.
+
+O arquivo existe para fixar o estado **antes** do marco, e o que ele fixa são
+três afirmações que o marco confirma ou desmente:
+
+| A tela | O que ela afirma |
+|---|---|
+| `arca backup … --dry-run` | `Disco de origem … POR DETERMINAR`, e a recusa manda `arca sondar` — não há `blkdev.list` nenhum no dispositivo |
+| `arca sondar --dry-run` | a receita que será armada, com o selo de ensaio (dezesseis zeros) |
+| `arca status` | a entrada `ARCA` `{f4057bd3-…}` apontando para `partition=F:`, e **`1 entrada(s), nenhuma para o dispositivo`** |
+
+**A terceira linha é a que faz o marco valer por P-26 inteira.** Com a entrada
+fora da ordem permanente, o boot único é a **única** forma de a máquina chegar
+ao dispositivo: se ela bootar, (a) o dispositivo boota e (b) a entrada que o
+`arca prepare` criou leva a ele — as duas metades de uma vez. Um F12 responderia
+só (a).
+
+> **Por que o binário foi copiado antes.** O `arca prepare` instala no
+> `ARCABOOT` o executável que está rodando, e o que estava lá era o da E10 — ele
+> **não conhece** `Operacao::Sondagem`. Armar com o binário novo e colher com
+> aquele deixaria o `arca resultado` recusando o `estado.json` do job que ele
+> mesmo tem de colher, e mandando rodar `arca desarmar`, que resolve o
+> dispositivo e **perde o desfecho**. A E11 já pagou exatamente por isso.
+>
+> Rodar o `--dry-run` **de lá** é como se confere que a cópia aconteceu, e é o
+> que estas três telas fazem: elas saíram do binário do dispositivo, e não do
+> `target\release`.
+
+### `arca-sondar-marco-2026-08-24.txt`
+
+O marco. Duas telas do lado Windows, **depois** de a máquina ter bootado pelo
+dispositivo, rodado o `lsblk` sozinha e desligado:
+
+| A tela | O que ela mostra |
+|---|---|
+| `arca resultado` | `Desfecho: concluida`, `Discos vistos: sda (Maxtor Z1 SSD 480GB), nvme0n1 (KINGSTON SNV3S500G)`, selo `354da624e7fa0d21` |
+| `arca backup … --dry-run` | `Disco de origem ..... nvme0n1 · lido da sondagem de 24/08 11:58 (carimbo do Clonezilla, P-7)` |
+
+O arquivo traz, no cabeçalho, o conteúdo dos dois arquivos que a receita
+escreveu — 50 bytes de `arca-fim.txt` e 852 de `blkdev.list` —, porque a
+colheita **desarma e encerra o job**, e a próxima operação vai truncar aquele
+`arca-fim.txt`.
+
+> **A segunda tela é a corrigida, e o arquivo diz isso.** A primeira versão dela
+> imprimiu duas linhas afirmando fontes diferentes para o mesmo nome: o pré-voo
+> dizia `lido da sondagem`, e o ensaio, quatro linhas abaixo, dizia `lido do
+> blkdev.list de uma imagem` — uma frase fixa de antes de a sondagem existir. O
+> defeito foi corrigido entre uma execução e outra, e o cabeçalho do arquivo o
+> registra em vez de escondê-lo.
+>
+> **É a mesma decisão das capturas do `arca prepare`**, tomada pelo outro lado:
+> lá o texto errado ficou preservado porque era o que a tela imprimiu; aqui a
+> execução foi refeita porque a captura existe para mostrar o comando **certo**,
+> e o registro do errado vive no cabeçalho e no plano de etapas.
+
+### O que este par de arquivos permite conferir, e nenhum outro permitia
+
+**Que o dispositivo boota pela entrada que o ARCA criou.** As três telas do
+arquivo de *antes* mostram a entrada `ARCA` `{f4057bd3-…}` apontando para
+`partition=F:` e **fora da ordem permanente** — `1 entrada(s), nenhuma para o
+dispositivo`. As duas telas do arquivo do *marco* mostram um desfecho escrito
+por uma receita que só roda se aquela entrada tiver sido honrada.
+
+Entre um e outro há um reinício e **nenhum F12**, e é isso que fecha as duas
+metades de P-26 de uma vez.
+
 ## O que nenhuma delas contém
 
 **Nenhum `bootsequence`.** As capturas de `bcdedit` deste diretório continuam

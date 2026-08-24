@@ -267,7 +267,7 @@ impl fmt::Display for Encontrado {
 }
 
 /// O nome da pasta em que este job escreveria o desfecho, para a tela.
-pub fn pasta_do_job(comando: Operacao, nome: &Nome) -> String {
+pub fn pasta_do_job(comando: Operacao, nome: Option<&Nome>) -> String {
     crate::receita::pasta_do_log(comando, nome)
 }
 
@@ -599,7 +599,7 @@ mod testes {
 
             let receita = Receita::montar(&Pedido {
                 operacao,
-                nome: nome.clone(),
+                nome: Some(nome.clone()),
                 // So as duas primeiras nomeiam disco; o `ocs-chkimg` opera
                 // sobre a imagem, e `Receita::montar` recusa a incoerencia.
                 disco: operacao
@@ -611,7 +611,7 @@ mod testes {
 
             let caminho = format!(
                 "/home/partimag/ARCA-LOGS/{}/arca-fim.txt",
-                pasta_do_job(operacao, &nome)
+                pasta_do_job(operacao, Some(&nome))
             );
             let arquivo = arca_fim_que_a_receita_produziria(receita.comando(), &caminho);
 
