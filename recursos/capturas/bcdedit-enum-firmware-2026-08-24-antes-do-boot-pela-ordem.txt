@@ -1,0 +1,37 @@
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+                        {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+timeout                 1
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {bootmgr}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             Windows Boot Manager
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+device                  partition=R:
+path                    \EFI\boot\bootx64.efi
+description             ARCA
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
