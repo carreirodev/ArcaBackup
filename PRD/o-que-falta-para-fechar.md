@@ -1,8 +1,8 @@
 # O que falta para o ARCA se considerar fechado
 
 23/08/2026, depois da etapa E10 — revisado no mesmo dia, quando a E12 foi
-planejada, e **revisado outra vez em 24/08/2026, quando ela rodou e P-26
-fechou**. Complementa o [PRD v5.1](PRD-ARCA-v5_1.md) e o [plano de
+planejada, e **revisado outra vez em 24/08/2026, quando ela rodou e P-26 e
+P-25 fecharam**. Complementa o [PRD v5.1](PRD-ARCA-v5_1.md) e o [plano de
 etapas](implementation_stages.md); onde este documento divergir deles, são eles
 que valem.
 
@@ -49,9 +49,9 @@ lista de pendências parecer maior ou menor do que é.
 ## 1. O que não foi medido
 
 
-**Cinco pendências abertas**, e eram seis: P-26 fechou em 24/08/2026. Estão
-listadas por **quanto custa a alguém se elas estiverem erradas**, e não pela
-ordem em que nasceram.
+**Quatro pendências abertas**, e eram seis: P-26 e P-25 fecharam em
+24/08/2026. Estão listadas por **quanto custa a alguém se elas estiverem
+erradas**, e não pela ordem em que nasceram.
 
 > ### ~~P-26~~ — fechada em 24/08/2026, e o que ela custou foi um reinício
 >
@@ -129,33 +129,51 @@ cara desta lista, e a única cujo fechamento não acontece nesta mesa.
 > respondida em hardware — o `if` toma os dois ramos, e a tela de falha existe e
 > imprime. A segunda é a que continua custando uma VM.
 
-### P-25 — uma receita rodou e o rastro divergiu do que a string manda fazer
-
-**Aberta no marco da E11, em 23/08/2026.** É a única vez neste projeto em que
-isso aconteceu; todos os achados anteriores foram de documentação descrevendo o
-que não tinha rodado.
-
-A receita da verificação usa `>>` para **acrescentar** ao `arca-check.log`. O
-`--dry-run` a imprimiu assim minutos antes de armar, e `recursos/ensaio-da-receita.sh`
-prova que `>>` acrescenta num bash de verdade. Em hardware o arquivo saiu com
-**uma** execução do `ocs-chkimg`, e o log do backup de 22/08 sumiu.
-
-```text
-antes  arca-check-2026-08-22_Apps.log ............ 3832 bytes · 1 marca · 1 abertura
-depois arca-check-…-pos-verificacao.log .......... 4759 bytes · 1 marca · 1 abertura
-                                        (append daria >7600 bytes e 2 de cada)
-```
-
-**Alguma coisa entre o redirecionamento e o disco truncou o arquivo, e não se
-sabe o quê.**
-
-**O que acontece se estiver errado.** Já aconteceu: perdeu-se o veredito que o
-backup de 22/08 escreveu. O `>>` fica assim mesmo, com a razão trocada — ele não
-compra a preservação, mas não abre a janela em que o `>` deixaria uma imagem boa
-com o log em zero byte.
-
-**Como fecha:** uma segunda verificação armada, comparada com esta.
-**Custa:** um reinício e ~5 minutos.
+> ### ~~P-25~~ — fechada em 24/08/2026, e o redirecionamento era inocente
+>
+> **Aberta no marco da E11, em 23/08/2026**, quando uma receita rodou e o
+> rastro pareceu divergir do que a string mandava fazer. A segunda verificação
+> armada da `2026-08-22_Apps` mediu, e a resposta é curta: **cada verificação
+> substitui o `arca-check.log`, e o `>>` não tem nada com isso.**
+>
+> O que mudou de método foi guardar a receita **gravada** —
+> `recursos/capturas/grub-verificacao-2026-08-24.cfg`, copiada do dispositivo
+> antes de colher. É a primeira captura da receita de verificação que de fato
+> rodou, e ela tem o `>>`.
+>
+> ```text
+> antes   4759 bytes · SHA256 0ebf57a0…05bdf843 · mtime 23/08
+> depois  4759 bytes · SHA256 0ebf57a0…05bdf843 · mtime 24/08 13:32:54
+>         (append daria ~9500 bytes)
+> ```
+>
+> **Escreveu, e escreveu por cima.** O `arca-fim.txt` da mesma receita — selo
+> `b668820c0a23ab5f`, o mesmo que o `arca resultado` imprimiu — leva o
+> **mesmo `mtime` ao segundo**, o que prende a escrita a esta execução e não a
+> outra. E o conteúdo saiu byte a byte igual ao de 23/08: duas execuções do
+> `ocs-chkimg` sobre a mesma imagem dão o mesmo arquivo, o que explica por que
+> o de 23/08 parecia o antigo.
+>
+> **E o `>>` chega ao `ocs-chkimg`**, o que até aqui só o `--dry-run` dizia.
+> Comparando os dois arquivos de 23/08 byte a byte, o bloco de relatório de
+> 927 bytes cai no **meio** quando a receita usa `>` e no **fim** quando usa
+> `>>` — que é o efeito de `O_APPEND`. Quem esvazia o arquivo age **antes** do
+> primeiro byte, e não entre o redirecionamento e o disco.
+>
+> **O achado de tabela: todo `arca-check.log` de backup tem um buraco.** Com
+> `>`, os 927 bytes do relatório são escritos **por cima** da saída do
+> partclone — o log de 22/08 perdeu `Starting to check image`, `File system`,
+> `Device size` e o resto do progresso, e sobrou o pedaço cortado no meio da
+> palavra: `maining: 00:00:00Ave. Rate:`. O mesmo padrão está no fixture do
+> `ARCA-TESTE-03` em `src/imagens.rs`. **O veredito sobrevive** — ele é a
+> última linha, escrita pelo bash —, e é ele que o `arca list` lê. O que se
+> perde é diagnóstico de uma reprovação, e nenhuma tela promete isso.
+>
+> **O que sobra não é pendência**: *por que* o Clonezilla esvazia o arquivo é
+> curiosidade sobre o `ocs-chkimg`, e nenhuma tela do ARCA afirma nada que
+> dependa da resposta. O `>>` fica, com a razão trocada — ele não compra a
+> preservação, mas não abre a janela em que o `>` deixaria uma imagem boa com
+> o log em zero byte.
 
 ### P-22 — uma afirmação de segurança lida da fonte possivelmente errada
 
@@ -411,13 +429,13 @@ Do mais barato para o mais caro, e cada linha diz o que se ganha.
 | # | O quê | Custa | Fecha |
 |---|---|---|---|
 | ~~—~~ | ~~**E12** — escrever o `arca sondar` e rodá-lo~~ | ~~1 etapa + 1 reinício~~ | **Feito em 24/08/2026: P-26 e P-27** |
-| 1 | Religar com o SSD conectado, sem job armado | 1 reinício, risco zero | **P-22**, e confere a promessa da tela do `arca prepare` |
-| 2 | Segunda verificação armada | 1 reinício, ~5 min | **P-25** |
+| ~~—~~ | ~~Segunda verificação armada~~ | ~~1 reinício, ~5 min~~ | **Feito em 24/08/2026: P-25** |
 | ~~—~~ | ~~Uma sondagem com flag inventada no `lsblk`~~ | ~~1 reinício~~ | **Feito em 24/08/2026: o primeiro `FALHOU`** |
-| 3 | Produzir as outras quatro linhas do §5.5 à mão | tempo, sem risco | quatro casos do §5.5 |
-| 4 | Falha forçada em VM | montar uma VM | **P-6** no `ocs-sr`, que é a pergunta original |
-| 5 | Próxima restauração, com o log medido | uma restauração | **P-23** |
-| 6 | Backup por F12, com o `bcdedit` antes | um backup | **P-19** |
+| 1 | Religar com o SSD conectado, sem job armado | 1 reinício, risco zero | **P-22**, e confere a promessa da tela do `arca prepare` |
+| 2 | Produzir as outras quatro linhas do §5.5 à mão | tempo, sem risco | quatro casos do §5.5 |
+| 3 | Falha forçada em VM | montar uma VM | **P-6** no `ocs-sr`, que é a pergunta original |
+| 4 | Próxima restauração, com o log medido | uma restauração | **P-23** |
+| 5 | Backup por F12, com o `bcdedit` antes | um backup | **P-19** |
 
 > **O passo que saiu era novo, e nasceu da E12.** Até 24/08, produzir um `FALHOU`
 > exigia fazer o `ocs-sr` falhar — uma VM, um disco de teste, uma operação
@@ -465,9 +483,9 @@ Vale registrar a diferença de custo, porque ela explica por que uma metade
 fechou e a outra não: a sondagem falha de graça — uma flag errada, nada escrito
 fora do `ARCAVAULT` —, e o `ocs-sr` só falha destruindo alguma coisa.
 
-As outras quatro são perguntas honestas sobre o mundo — como o firmware se
-comporta, o que o `ocs-chkimg` faz com um descritor, de onde o `bcdedit` lê. O
-app não afirma nada sobre elas que dependa da resposta, e é por isso que ele pode
+As outras três são perguntas honestas sobre o mundo — como o firmware se
+comporta, onde o log da restauração começa, de onde o `bcdedit` lê. O app não
+afirma nada sobre elas que dependa da resposta, e é por isso que ele pode
 conviver com elas abertas.
 
 ---

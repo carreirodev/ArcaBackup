@@ -927,7 +927,35 @@ fn montar_restauracao(pedido: &Pedido, nome: &Nome, disco: &Disco) -> String {
 ///
 /// A receita tinha `>>` — o `--dry-run` a imprimiu assim, e
 /// `recursos/ensaio-da-receita.sh` prova que `>>` acrescenta num bash de
-/// verdade. **A causa nao esta determinada**, e e P-25.
+/// verdade. A causa nao estava determinada, e era P-25.
+///
+/// # P-25 fechou em 24/08/2026: o arquivo e **substituido**
+///
+/// Uma segunda verificacao armada da `2026-08-22_Apps`, e o que mudou de
+/// metodo foi guardar a receita **gravada** —
+/// `recursos/capturas/grub-verificacao-2026-08-24.cfg`, copiada do
+/// `boot/grub/grub.cfg` do dispositivo antes de colher. E a primeira captura
+/// da receita de verificacao que de fato rodou, e ela tem o `>>`.
+///
+/// | Medida | Antes | Depois |
+/// |---|---|---|
+/// | Tamanho | 4759 bytes | **4759 bytes** |
+/// | SHA256 | `0ebf57a0…05bdf843` | **o mesmo** |
+/// | `mtime` | 23/08 | **24/08 13:32:54** |
+///
+/// **Escreveu, e escreveu por cima.** O `arca-fim.txt` da mesma receita — selo
+/// `b668820c0a23ab5f` — leva o mesmo `mtime` ao segundo, o que prende a
+/// escrita a **esta** execucao; e o conteudo saiu byte a byte igual ao de
+/// 23/08. Duas execucoes do `ocs-chkimg` sobre a mesma imagem dao o mesmo
+/// arquivo, o que explica por que o de 23/08 parecia o antigo.
+///
+/// **O redirecionamento nao e o reu, e isso tambem esta medido.** Comparando
+/// os dois arquivos de 23/08 byte a byte, o bloco de relatorio de 927 bytes
+/// cai no **meio** quando a receita usa `>` — sobrescrevendo a saida do
+/// partclone, e o log do backup tem esse buraco desde 22/08 — e cai no **fim**
+/// quando usa `>>`, que e o efeito de `O_APPEND`. O `>>` chega ao
+/// `ocs-chkimg`. Quem esvazia o arquivo age **antes** do primeiro byte, e nao
+/// entre o redirecionamento e o disco.
 ///
 /// **O `>>` fica, com a razao trocada.** Ele nao compra a preservacao do log
 /// antigo; o que ele compra e nao ter a janela do `>`, que **trunca ao abrir**
@@ -941,7 +969,9 @@ fn montar_restauracao(pedido: &Pedido, nome: &Nome, disco: &Disco) -> String {
 /// reprovou uma vez continua reprovada mesmo que a verificacao nova aprove. E
 /// o lado conservador de proposito — mídia que falha de forma intermitente e o
 /// caso em que a segunda leitura mente —, e e o que S-5 pede. Continua sem
-/// original, como o ADR-0003 ja registrava.
+/// original, como o ADR-0003 ja registrava — e agora se sabe **por que**: as
+/// duas marcas nunca ficam no mesmo arquivo, porque cada verificacao o
+/// substitui. A defesa fica; o caso que ela pega e que nao ocorre.
 fn montar_verificacao(pedido: &Pedido, nome: &Nome) -> String {
     let Pedido { selo, .. } = pedido;
 

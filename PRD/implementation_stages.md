@@ -19,7 +19,7 @@ Vocabulário canônico em [CONTEXT.md](../CONTEXT.md).
 | E8 | Colher o desfecho | III | ✅ | 2026-08-22 21:14 · marco cumprido |
 | E9 | Restauração | IV | ✅ | 2026-08-23 11:50 · marco cumprido |
 | E10 | `arca prepare` | IV | ✅ | 2026-08-23 18:44 · marco cumprido · **sem reinício** · abriu P-26 |
-| E11 | `arca verify` | IV | ✅ | 2026-08-23 17:00 · marco cumprido · abriu P-25 |
+| E11 | `arca verify` | IV | ✅ | 2026-08-23 17:00 · marco cumprido · abriu P-25, **fechada em 2026-08-24** |
 | E12 | `arca sondar` | IV | ✅ | 2026-08-24 14:58 · marco cumprido · **fechou P-26** |
 
 **As doze primeiras fecharam, e a E12 fechou a décima terceira.** Ela nasceu
@@ -2105,6 +2105,38 @@ E vale dizer o que este caso é: **a primeira vez neste projeto em que uma
 receita rodou e o rastro divergiu do que a string manda fazer.** Todos os
 achados anteriores foram de documentação descrevendo o que não tinha rodado;
 este é do outro tipo.
+
+> #### P-25 fechou em 24/08/2026, e o rastro **não** divergia da string
+>
+> Uma segunda verificação armada da `2026-08-22_Apps`, com o tamanho lido
+> antes e a receita **gravada** copiada do dispositivo antes de colher —
+> `recursos/capturas/grub-verificacao-2026-08-24.cfg`, a primeira captura de
+> uma receita de V-2 que rodou. Ela tem o `>>`.
+>
+> ```text
+> antes   4759 bytes · SHA256 0ebf57a0…05bdf843 · mtime 23/08
+> depois  4759 bytes · SHA256 0ebf57a0…05bdf843 · mtime 24/08 13:32:54
+> ```
+>
+> **Cada verificação substitui o arquivo.** O `arca-fim.txt` desta receita —
+> selo `b668820c0a23ab5f` — leva o mesmo `mtime` ao segundo, o que prende a
+> escrita a esta execução; e o conteúdo saiu byte a byte igual, porque duas
+> execuções do `ocs-chkimg` sobre a mesma imagem dão o mesmo arquivo.
+>
+> **E o `>>` chega ao `ocs-chkimg`.** Os dois arquivos de 23/08, comparados
+> byte a byte, têm o mesmo bloco de relatório de 927 bytes em lugares
+> diferentes: no **meio** com `>`, sobrescrevendo o progresso do partclone; no
+> **fim** com `>>`, que é `O_APPEND`. Quem esvazia o arquivo age antes do
+> primeiro byte, e não entre o redirecionamento e o disco. **A frase acima é a
+> que a medição corrigiu**: o rastro concordava com a string; o que discordava
+> era a previsão do ADR-0003 sobre o que sobra no arquivo.
+>
+> **Um achado de tabela veio junto: todo `arca-check.log` de backup tem um
+> buraco.** Com `>`, os 927 bytes do relatório são escritos por cima da saída
+> do partclone — o de 22/08 perdeu `Starting to check image`, `File system` e
+> `Device size`, e sobrou `maining: 00:00:00Ave. Rate:`, cortado no meio da
+> palavra. O fixture do `ARCA-TESTE-03` em `src/imagens.rs` tem o mesmo
+> padrão. O veredito sobrevive porque é a última linha, escrita pelo bash.
 
 #### O passo que a revisão pegou antes do marco, e ele vale para a próxima etapa
 

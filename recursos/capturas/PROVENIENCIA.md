@@ -602,6 +602,59 @@ substituído. A receita tinha `>>` — o `--dry-run` a imprimiu assim minutos
 antes de armar —, e o ensaio em bash prova que `>>` acrescenta. O que aconteceu
 entre o redirecionamento e o disco não está medido.
 
+## `grub-verificacao-2026-08-24.cfg` — a receita que fechou P-25
+
+Copiada do `boot/grub/grub.cfg` do dispositivo **antes** de `arca resultado`
+desarmar, na segunda verificação armada da `2026-08-22_Apps`. 12.442 bytes,
+`dcc1cb65…0d46cd66`, LF puro.
+
+**É a primeira captura de uma receita de verificação que de fato rodou.** As
+três capturas de `grub-*` anteriores são de backup e de restauração; a de V-2
+faltava, e era ela que faltava para P-25 — até aqui, a afirmação *"a receita
+tinha `>>`"* vinha do `--dry-run`, e não do arquivo que o GRUB leu. Ela tem:
+
+```text
+ocs-chkimg -b -or /home/partimag 2026-08-22_Apps >> /home/partimag/2026-08-22_Apps/arca-check.log 2>&1
+```
+
+**O que a segunda verificação mediu**, com o tamanho lido antes de armar:
+
+| | Antes | Depois |
+|---|---|---|
+| Tamanho | 4759 bytes | **4759 bytes** |
+| SHA256 | `0ebf57a0…05bdf843` | **o mesmo** |
+| `mtime` | 23/08 | **24/08 13:32:54** |
+
+**Escreveu, e escreveu por cima.** O `arca-fim.txt` desta receita — selo
+`b668820c0a23ab5f` — leva o **mesmo `mtime` ao segundo**, o que prende a
+escrita a esta execução e não a outra. O conteúdo saiu byte a byte igual ao de
+23/08: duas execuções do `ocs-chkimg` sobre a mesma imagem dão o mesmo arquivo,
+e é por isso que o de 23/08 parecia o antigo. **Por isso o log não foi copiado
+de novo** — seria o mesmo arquivo com outro nome.
+
+**E os dois de 23/08 respondem a segunda metade, sem reinício nenhum.**
+Comparados byte a byte, eles não diferem em conteúdo, e sim em **onde** o bloco
+de relatório de 927 bytes foi depositado:
+
+```text
+antes (`>`)   [moldura 0–2569][RELATORIO 2569–3496][cauda 3496–3809][ARCA_VEREDITO]
+depois (`>>`) [moldura 0–2569][progresso 2569–3496][cauda 3496–3809][RELATORIO][ARCA_VEREDITO]
+```
+
+`antes[2569:3496]` e `depois[3809:4736]` são o mesmo bloco de 927 bytes, e
+`antes[3496:3809]` e `depois[3496:3809]` são idênticos. Com `>` o relatório cai
+no **meio** e sobrescreve o progresso do partclone; com `>>` ele cai no **fim**,
+que é o efeito de `O_APPEND`. **O `>>` chega ao `ocs-chkimg`**, e quem esvazia
+o arquivo age antes do primeiro byte.
+
+**Um achado de tabela sai daí: todo `arca-check.log` de backup tem um buraco.**
+O de 22/08 perdeu 927 bytes de progresso — `Starting to check image`,
+`File system`, `Device size` — e sobrou o pedaço cortado no meio da palavra,
+`maining: 00:00:00Ave. Rate:`. O fixture do `ARCA-TESTE-03` em `src/imagens.rs`
+tem o mesmo padrão: o banner do partclone colado direto em
+`Checked successfully.`. O veredito sobrevive porque é a última linha, escrita
+pelo bash; o que se perde é diagnóstico, e nenhuma tela promete diagnóstico.
+
 ## A etapa E10 — `arca prepare` (23/08/2026)
 
 Sete arquivos, e eles se dividem em três grupos: **o que foi medido à mão antes
