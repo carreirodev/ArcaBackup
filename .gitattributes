@@ -6,3 +6,9 @@
 # achou que ela deveria ter escrito. O parser tem de aguentar CRLF porque e
 # isso que chega dele em producao.
 recursos/capturas/** -text
+
+# Um `.sh` com CRLF nao roda. O shebang leva o `\r` junto, o interpretador vira
+# `/bin/bash\r` — que nao existe — e a mensagem que sai fala de "bad
+# interpreter", nao de fim de linha. Vale para o `ensaio-da-receita.sh` desde a
+# E11; o git so nao quebrou ainda porque ninguem fez checkout limpo aqui.
+*.sh text eol=lf
