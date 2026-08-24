@@ -875,6 +875,52 @@ por uma receita que só roda se aquela entrada tiver sido honrada.
 Entre um e outro há um reinício e **nenhum F12**, e é isso que fecha as duas
 metades de P-26 de uma vez.
 
+## O par que fechou P-22, e o que aparece nele sem que ninguém escreva
+
+Duas leituras do `bcdedit /enum firmware` separadas por um religar limpo, em
+24/08/2026 — SSD ARCA conectado, sem job armado, `grub.cfg` conferido inerte
+byte a byte (`4b33da61…f947aa3d`). A máquina foi direto ao Windows.
+
+| Arquivo | O que é | SHA256 | O que prova |
+|---|---|---|---|
+| `bcdedit-enum-firmware-2026-08-24-antes-do-religar.txt` | `bcdedit /enum firmware`, 17:11:50, 1398 bytes | `89ca7ad1…7b8df3b9` | A ordem depois de C-13: `{bootmgr}`, `{f4057bd3}` — **duas** entradas |
+| `bcdedit-enum-firmware-2026-08-24-pos-religar.txt` | `bcdedit /enum firmware`, 17:26:14, 2133 bytes | `7ba552b5…4f0599a2` | **P-22.** A mesma ordem com **cinco**, e as três novas só o firmware escreve |
+| `arca-status-2026-08-24-antes-do-religar.txt` | `arca status`, 1352 bytes | `58485816…f2f1d086` | A tela lendo a de cima: `dispositivo em 2o de 2` |
+| `arca-status-2026-08-24-pos-religar.txt` | `arca status` | `4ffd901c…3668886d` | A tela lendo a de baixo: `dispositivo em 2o de 5` |
+
+**O que o par permite conferir, e nenhum outro permitia.** O `diff` é limpo —
+nada removido, nada alterado, três entradas acrescentadas ao `displayorder`:
+`UEFI:CD/DVD Drive`, `UEFI:Removable Device` e `UEFI:Network Device`. São
+classes de dispositivo que o firmware enumera no POST; não têm `device` nem
+`path`, e nada no BCD as originaria. **Logo o `bcdedit` imprime conteúdo que só
+existe na NVRAM.** Ver
+[ADR-0020](../../docs/adr/0020-o-bcdedit-enum-firmware-le-a-nvram.md).
+
+### Duas coisas que só aparecem cruzando com as capturas antigas
+
+- **As mesmas três já estiveram lá, com outros GUIDs.** O
+  `bcdedit-enum-firmware-legado-pt.txt`, de 20/08, traz as três descrições
+  idênticas em `{c71136d7/d8/d9-9c6a-11f1-8a41-…}`; as de agora são
+  `{6cc093db/dc/dd-9ff9-11f1-8a4e-…}`. São UUIDs versão 1, e o `time_mid`
+  avançou: **foram geradas de novo**, e não recuperadas de cache. É o mesmo
+  sinal que esta página já registrou quando o número de uma entrada foi de
+  `0001` para `0003`.
+- **O `node` do UUID separa as duas origens, e o padrão é total.** Em todas as
+  capturas de `bcdedit` deste diretório, sem exceção: `806e6f6e6963` é sempre
+  uma entrada `Aplicativo de Firmware (101fffff)` — `{687478f2}`, as três de
+  20/08, as três de 24/08 —, e `aa4ed9bd2b34` é sempre um objeto do BCD —
+  `{f4057bca}`, `{f4057bd0}`, `{f4057bd3}`. O `{f4057bd3}` nasce de
+  `bcdedit /copy {bootmgr}` (ADR-0017), que é por que ele fica do lado do BCD.
+  **Quem ler uma captura futura separa as duas coisas sem sair do arquivo.**
+
+> **Sobre a codificação, e a regra da E2 não previa este caso.** Esta página
+> registra que `Start-Process -RedirectStandardOutput` "não dá console nenhum ao
+> filho" e por isso o `bcdedit` sai em UTF-8. Nestas duas ele saiu em **CP850**,
+> pelo mesmo comando, com `-Wait` e sem `-NoNewWindow`. Foram convertidas para
+> UTF-8 na gravação, como as da E2, e só nisso. A regra continua certa no que
+> afirma — a página de código é a do console de quem chama —, e o que não está
+> determinado é **quando** esse caminho dá console ao filho.
+
 ## O que nenhuma delas contém
 
 **Nenhum `bootsequence`.** As capturas de `bcdedit` deste diretório continuam
@@ -887,3 +933,9 @@ palavras não são do `bcdedit`: são valores de `MediaType` do WMI
 (`Win32_DiskDrive`, em `cimwin32.dll`). Nem o `bcdedit.exe` nem os seus
 `.mui` contêm qualquer uma delas — procurado nos dois idiomas. Ver o que
 `src/firmware.rs` diz sobre C-6.
+
+> **`UEFI:Removable Device` não é uma delas, e a semelhança engana.** Ela é
+> `description` de uma entrada de firmware, escrita pelo próprio firmware desta
+> placa, e aparece nas capturas de 20/08 e de 24/08. Não tem relação com o
+> `MediaType` do WMI nem com o parágrafo acima — o que a torna interessante é
+> outra coisa, e é P-28: ela não declara para onde aponta.

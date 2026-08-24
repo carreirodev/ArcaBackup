@@ -1250,6 +1250,17 @@ afirmação de segurança sobre uma leitura que não fala da pergunta. **Um
 reinício com o SSD conectado responde**, sem risco: não há job armado e o
 `grub.cfg` está inerte, então o pior caso é um menu esperando alguém.
 
+> **P-22 fechou em 24/08/2026, e é a NVRAM.** O reinício foi o que está descrito
+> aí, e a máquina foi direto ao Windows — mas o que fechou a pergunta literal
+> foram três entradas que o firmware acrescentou ao `displayorder` no meio dele:
+> `UEFI:CD/DVD Drive`, `UEFI:Removable Device` e `UEFI:Network Device`, que nada
+> no BCD originaria. Duas correções ao parágrafo acima: o pior caso **não** é um
+> menu esperando alguém — o grub inerte tem `timeout="30"` e `default="live-default"`,
+> então em trinta segundos o Clonezilla live sobe sozinho (inofensivo, mas quem
+> sair da frente da tela perde a leitura); e o mecanismo do sumiço da
+> `{687478f2}`, logo acima, muda de "o Windows espelhou" para "o firmware
+> reconstruiu". Ver [ADR-0020](../docs/adr/0020-o-bcdedit-enum-firmware-le-a-nvram.md).
+
 #### O que o marco mostrou sobre o §4.1, e não estava previsto
 
 O `%LOCALAPPDATA%\ARCA\arca.log` foi destruído, como a etapa previa. O que ela
@@ -1850,6 +1861,14 @@ que este pedido usaria para conferir o próprio conserto (C-3) não fala do que
 decide o boot — e a linha `Ordem de boot` do `arca status` já estaria
 tranquilizando sem base. Um reinício com o SSD conectado e o dispositivo inerte
 responde, sem risco.
+
+> **Ela não foi fechada antes — foi fechada depois, e deu certo assim.** C-13
+> nasceu em 23/08 com P-22 aberta, e a resposta veio em 24/08: **é a NVRAM**,
+> logo a releitura de C-3 confirma sobre o que decide o boot, e o conserto é
+> real. O que decidiu foi a ordem inversa da recomendada, e vale registrado
+> porque o risco era assimétrico: C-13 escreve, e escrever com a fonte da
+> leitura em dúvida é o que este parágrafo queria evitar. Deu certo, e não era
+> garantido. Ver [ADR-0020](../docs/adr/0020-o-bcdedit-enum-firmware-le-a-nvram.md).
 
 **O que medir antes de escrever**, e nada disto está medido: a forma exata do
 comando que reordena (`/set {fwbootmgr} displayorder {bootmgr} /addfirst` é o

@@ -1,0 +1,28 @@
+Dispositivo ARCA
+  ARCAVAULT ....................... D: ┬À NTFS ┬À 236,9 GB
+  ARCABOOT ........................ R: ┬À FAT32 ┬À 1,6 GB
+
+Imagens em ARCAVAULT:
+  2026-08-21_WindowsCompleto   21/08 ┬À 36,2 GB ┬À aprovada
+  2026-08-22_Apps              22/08 ┬À 39,7 GB ┬À aprovada
+  ARCA-TESTE-03                22/08 ┬À 32,9 GB ┬À aprovada
+
+125 GB livres
+
+Entrada de firmware
+  Descricao ....................... ARCA
+  Identificador ................... {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+  Aponta para ..................... partition=R: ┬À o ARCABOOT deste dispositivo
+  Carrega ......................... \EFI\boot\bootx64.efi
+  Ordem de boot ................... dispositivo em 2o de 2 ┬À `Windows Boot Manager` vem antes
+
+Ultimo job, ja colhido
+  Boot unico ...................... nao armado
+  Estado no ARCABOOT .............. verificacao `2026-08-22_Apps` ┬À ja colhido, nada esperando
+  Selo ............................ b668820c0a23ab5f
+  Disco alvo ...................... nenhum ┬À `verificacao` l├¬ a imagem, e nao um disco
+  Armado em ....................... 2026-08-24T16:28:48-03:00 ┬À informativo, nunca comparado
+
+  Este job ja foi colhido: o `arca resultado` leu o desfecho dele e disse
+  o que era. O `estado.json` fica no dispositivo de proposito ÔÇö e o unico
+  registro que liga este selo a este nome, e o ARCA nao apaga nada (B-10).

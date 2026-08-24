@@ -124,6 +124,28 @@ discutindo com um estado gravado por cima segundos antes.
 
 ## O que fica aberto, e é P-22
 
+> **P-22 fechou em 24/08/2026, e a resposta é a NVRAM.** Um religar limpo
+> acrescentou ao `displayorder` três entradas que só o firmware escreve —
+> `UEFI:CD/DVD Drive`, `UEFI:Removable Device`, `UEFI:Network Device` —, e nada
+> no BCD as originaria. Ver
+> [ADR-0020](0020-o-bcdedit-enum-firmware-le-a-nvram.md).
+>
+> **Isto muda o mecanismo proposto acima para o sumiço da `{687478f2}`, e não
+> as medições.** Esta página explica aquele sumiço com *"o Windows tinha subido
+> e a espelhado"*, e a hipótese de um espelhamento NVRAM→BCD foi escrita quando
+> não se sabia de onde o `bcdedit` lê. Com a resposta na mão, o sumiço foi da
+> **NVRAM** — e uma entrada dela não some por causa de uma restauração de disco
+> com `-iefi`.
+>
+> O candidato que sobrou é medido pela metade: **o firmware reconstrói entradas
+> a cada POST**, e foi o que ele fez com as três de 24/08. Que essa
+> reconstrução *pode* a entrada de um dispositivo desconectado — e a
+> `{687478f2}` apontava para `partition=R:` — é a metade que **não** está
+> medida, e fica nomeada como hipótese.
+>
+> A seção abaixo fica como estava escrita, porque ela é o registro da pergunta
+> no estado em que ela foi feita.
+
 **O `bcdedit /enum firmware` mostra a NVRAM do firmware, ou o BCD do disco?**
 A pergunta nunca precisou de resposta até aqui, e agora precisa, porque as duas
 possibilidades levam a mundos diferentes:

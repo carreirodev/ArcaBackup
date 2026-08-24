@@ -1,0 +1,55 @@
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+                        {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+                        {6cc093db-9ff9-11f1-8a4e-806e6f6e6963}
+                        {6cc093dc-9ff9-11f1-8a4e-806e6f6e6963}
+                        {6cc093dd-9ff9-11f1-8a4e-806e6f6e6963}
+timeout                 1
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {bootmgr}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             Windows Boot Manager
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
+device                  partition=R:
+path                    \EFI\boot\bootx64.efi
+description             ARCA
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {6cc093db-9ff9-11f1-8a4e-806e6f6e6963}
+description             UEFI:CD/DVD Drive
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {6cc093dc-9ff9-11f1-8a4e-806e6f6e6963}
+description             UEFI:Removable Device
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {6cc093dd-9ff9-11f1-8a4e-806e6f6e6963}
+description             UEFI:Network Device

@@ -157,8 +157,15 @@ acha o que reler o código não acha.** Foi assim na E6, na E7 e na E9.
 - O `arca status` continua **avisando** e não consertando: ele é diagnóstico, e
   um comando de consulta que escreve na NVRAM seria outra coisa. Quem conserta
   é quem já estava escrevendo.
-- **P-22 continua aberta, e este ADR aumenta o que ela vale.** Se o `bcdedit`
+- ~~**P-22 continua aberta, e este ADR aumenta o que ela vale.** Se o `bcdedit`
   mostrar o BCD e não a NVRAM, a releitura de C-3 aqui confirma um conserto
   sobre o espelho, e a máquina continuaria bootando no dispositivo. O
   experimento é o mesmo e continua custando um reinício: religar com o SSD
-  conectado, sem job armado e com o `grub.cfg` inerte.
+  conectado, sem job armado e com o `grub.cfg` inerte.~~
+  **Fechada em 24/08/2026, e pelo lado bom: é a NVRAM.** O experimento foi o
+  que está escrito aí, e o que o fechou não foi onde a máquina parou — foram
+  três entradas que o firmware acrescentou ao `displayorder` no meio do
+  reinício, e que nada no BCD originaria. **C-13 conserta o firmware, e não um
+  espelho dele**: a releitura de C-3 do `/addfirst {bootmgr}` confirma sobre a
+  coisa que o próximo POST vai obedecer. Ver
+  [ADR-0020](0020-o-bcdedit-enum-firmware-le-a-nvram.md).
