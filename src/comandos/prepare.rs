@@ -237,7 +237,10 @@ pub fn executar(contexto: &Contexto, indice: u32, iso: Option<&Path>) -> Resulta
     let entrada = criar_a_entrada(contexto, feitas.boot.letra)?;
     print!("{}", montar_a_entrada(&entrada));
 
-    print!("{}", montar_o_fim(&feitas));
+    print!(
+        "{}",
+        montar_o_fim(&feitas, entrada.ordem_sem_alvo.as_deref())
+    );
     Ok(())
 }
 
@@ -405,6 +408,17 @@ pub struct EntradaCriada {
     /// Se ela precisou sair da ordem permanente. `bcdedit /copy` a põe lá
     /// sozinho, e é isso que C-5 nomeia como perigo.
     pub saiu_da_ordem: bool,
+
+    /// O nome da primeira entrada que **sobrou** na ordem permanente sem dizer
+    /// para onde aponta — as `UEFI:*` que o firmware acrescenta no POST.
+    ///
+    /// Tirar a entrada do ARCA da ordem não é, sozinho, o que autoriza a
+    /// promessa da tela de fim (*"ligar a máquina continua subindo o
+    /// Windows"*): ela vale sobre o que **restou** na ordem, e não sobre o que
+    /// saiu. É P-28, e o [ADR-0021].
+    ///
+    /// [ADR-0021]: ../../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md
+    pub ordem_sem_alvo: Option<String>,
 }
 
 /// Cria a entrada de firmware, aponta-a para o `ARCABOOT` e a tira da ordem.
@@ -480,11 +494,27 @@ fn criar_a_entrada(contexto: &Contexto, letra_do_boot: char) -> Resultado<Entrad
     // da ordem, medido na E7 e exercitado no marco de 22/08 (ADR-0007).
     let saiu_da_ordem = tirar_da_ordem(contexto, &identificador, &antes)?;
 
+    // **A ordem que sobrou, e não a que saiu** (P-28). A promessa da tela de
+    // fim é sobre onde a máquina vai bootar, e quem decide isso é o que ficou
+    // na ordem. Uma leitura a mais, e ela tem de ser de `firmware` e não de
+    // `{fwbootmgr}`: só a primeira traz as entradas junto da ordem, e sem elas
+    // não há como perguntar de nenhuma se ela declara alvo.
+    //
+    // Uma leitura que não se deixa entender **recusa** em vez de virar `None`:
+    // `None` aqui é a tela prometendo que a máquina sobe o Windows, e é
+    // exatamente a afirmação que ela não poderia fazer sem ter lido a ordem.
+    let sobrou = firmware::ler(&contexto.firmware.enumerar(FIRMWARE)?);
+    if !sobrou.viu_o_gerenciador {
+        return Err(Erro::FirmwareIlegivel { alvo: FWBOOTMGR });
+    }
+    let ordem_sem_alvo = sobrou.primeira_sem_alvo(sobrou.ordem_permanente.len());
+
     Ok(EntradaCriada {
         identificador,
         ja_existia,
         alvo: desejado,
         saiu_da_ordem,
+        ordem_sem_alvo,
     })
 }
 
@@ -876,13 +906,39 @@ pub fn montar_a_entrada(entrada: &EntradaCriada) -> String {
 }
 
 /// O fim, com o que fazer em seguida.
-pub fn montar_o_fim(feitas: &ParticoesFeitas) -> String {
+///
+/// # A promessa do boot é sobre o que ficou na ordem, e não sobre o que saiu
+///
+/// A tela dizia *"ligar a maquina continua subindo o Windows"* a partir de um
+/// fato só — a entrada do ARCA saiu da ordem permanente —, sem olhar quem
+/// ficou nela. As entradas que o firmware acrescenta no POST não declaram alvo
+/// (C-14, P-28), e uma delas à frente do `{bootmgr}` faria dessa frase uma promessa
+/// que este repositório não pode mostrar tendo acontecido. Ver o
+/// [ADR-0021](../../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md).
+pub fn montar_o_fim(feitas: &ParticoesFeitas, ordem_sem_alvo: Option<&str>) -> String {
+    let promessa = match ordem_sem_alvo {
+        None => concat!(
+            "\x20 A entrada de firmware existe e esta FORA da ordem permanente — ligar a\n",
+            "\x20 maquina continua subindo o Windows, com ou sem este dispositivo conectado.\n",
+        )
+        .to_string(),
+        Some(nome) => format!(
+            concat!(
+                "\x20 A entrada de firmware existe e esta FORA da ordem permanente. Mas a\n",
+                "\x20 ordem tem `{}`, que NAO DIZ para onde aponta — quem a\n",
+                "\x20 resolve e o firmware, no POST, pelo que estiver conectado —, e por\n",
+                "\x20 isso o ARCA nao afirma o que ligar a maquina vai subir. Remova o SSD\n",
+                "\x20 antes de religar se quiser certeza (P-28).\n",
+            ),
+            nome
+        ),
+    };
+
     format!(
         "\nDispositivo pronto.\n\n\
          \x20 O `grub.cfg` esta INERTE: bootar neste dispositivo abre o menu do\n\
          \x20 Clonezilla e espera alguem (§4.4). Nada roda sozinho ate um `arca backup`.\n\
-         \x20 A entrada de firmware existe e esta FORA da ordem permanente — ligar a\n\
-         \x20 maquina continua subindo o Windows, com ou sem este dispositivo conectado.\n\n\
+         {promessa}\n\
          \x20 O {ARCAVAULT} esta em {}: e o {ARCABOOT} em {}:. As letras mudam de uma\n\
          \x20 conexao para outra; os rotulos, nao — e e por rotulo que o ARCA acha o\n\
          \x20 dispositivo (B-1, S-3).\n\n\
@@ -1380,6 +1436,7 @@ mod testes {
             ja_existia: false,
             alvo: Alvo::ParticaoComLetra('F'),
             saiu_da_ordem: true,
+            ordem_sem_alvo: None,
         };
         assert!(montar_a_entrada(&criada).contains("criada"));
         assert!(
@@ -1408,6 +1465,7 @@ mod testes {
             ja_existia: true,
             alvo: Alvo::ParticaoComLetra('F'),
             saiu_da_ordem: true,
+            ordem_sem_alvo: None,
         };
 
         let saida = montar_a_entrada(&reusada);
@@ -1434,6 +1492,7 @@ mod testes {
             ja_existia: false,
             alvo: Alvo::ParticaoComLetra('F'),
             saiu_da_ordem: true,
+            ordem_sem_alvo: None,
         };
 
         assert!(!montar_a_entrada(&criada).contains("passou a apontar"));
@@ -1444,7 +1503,7 @@ mod testes {
         // As duas coisas que separam este dispositivo de um que roda alguma
         // coisa sozinho. Quem acabou de preparar um disco precisa saber que
         // religar a maquina continua subindo o Windows.
-        let saida = montar_o_fim(&o_que_o_particionamento_deixou());
+        let saida = montar_o_fim(&o_que_o_particionamento_deixou(), None);
 
         assert!(saida.contains("INERTE"), "{saida}");
         assert!(saida.contains("FORA da ordem permanente"), "{saida}");
@@ -1453,6 +1512,37 @@ mod testes {
             saida.contains("C-10"),
             "o aviso dos dois dispositivos: {saida}"
         );
+    }
+
+    #[test]
+    fn o_fim_nao_promete_o_windows_por_cima_de_uma_entrada_que_nao_diz_para_onde_aponta() {
+        // **P-28.** A promessa é sobre onde a máquina vai bootar, e quem
+        // decide isso é o que **ficou** na ordem permanente — não o que saiu
+        // dela. As entradas que o firmware acrescenta no POST não declaram
+        // alvo, e uma delas à frente do `{bootmgr}` faria da frase anterior
+        // uma promessa que ninguém pode mostrar tendo acontecido.
+        //
+        // Tirar a entrada do ARCA da ordem continua sendo dito: é o que este
+        // comando fez, e continua verdade.
+        let saida = montar_o_fim(
+            &o_que_o_particionamento_deixou(),
+            Some("UEFI:Removable Device"),
+        );
+
+        assert!(saida.contains("FORA da ordem permanente"), "{saida}");
+        assert!(
+            !saida.contains("continua subindo o Windows"),
+            "a tela prometeu o boot por cima de uma entrada opaca:\n{saida}"
+        );
+        assert!(saida.contains("`UEFI:Removable Device`"), "{saida}");
+        assert!(saida.contains("NAO DIZ para onde aponta"), "{saida}");
+        assert!(saida.contains("P-28"), "{saida}");
+
+        // O resto da tela continua inteiro — a troca é de um parágrafo, e não
+        // de uma tela.
+        assert!(saida.contains("INERTE"), "{saida}");
+        assert!(saida.contains("ANTES DO PRIMEIRO BACKUP"), "{saida}");
+        assert!(saida.contains("C-10"), "{saida}");
     }
 
     #[test]
@@ -1478,7 +1568,7 @@ mod testes {
         // O plano de etapas registrou a troca **antes** de ela acontecer, para
         // que a segunda versao nao sobrevivesse ao motivo dela — a primeira
         // quase sobreviveu.
-        let saida = montar_o_fim(&o_que_o_particionamento_deixou());
+        let saida = montar_o_fim(&o_que_o_particionamento_deixou(), None);
 
         assert!(
             !saida.contains("Primeiro backup:  arca backup"),
@@ -1507,7 +1597,7 @@ mod testes {
         // Um aviso que só diz "rode `arca sondar`" empurra o problema de volta
         // para quem não sabe por que ele existe — e este tem uma razão boa, que
         // é a mesma pela qual o ARCA não pergunta o nome do disco.
-        let saida = montar_o_fim(&o_que_o_particionamento_deixou());
+        let saida = montar_o_fim(&o_que_o_particionamento_deixou(), None);
 
         assert!(saida.contains("blkdev.list"), "{saida}");
         assert!(saida.contains("nvme1n1"), "o risco de digitar: {saida}");
@@ -1526,7 +1616,7 @@ mod testes {
         // Medido nesta sessao: o `ARCAVAULT` deste projeto ja apareceu em `E:`
         // e em `D:`, e o dispositivo ja foi o disco 1 e o disco 2. A tela diz
         // isso em vez de deixar alguem anotar a letra.
-        let saida = montar_o_fim(&o_que_o_particionamento_deixou());
+        let saida = montar_o_fim(&o_que_o_particionamento_deixou(), None);
 
         assert!(saida.contains("em E:"), "{saida}");
         assert!(saida.contains("em F:"), "{saida}");

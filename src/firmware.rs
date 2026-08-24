@@ -236,6 +236,65 @@ impl Leitura {
     pub fn tem_boot_unico(&self) -> bool {
         !self.boot_unico.is_empty()
     }
+
+    /// Cada identificador da ordem permanente junto da entrada que ele nomeia
+    /// — `None` quando nao ha bloco com esse identificador na leitura.
+    ///
+    /// A resolucao e a mesma que a linha `Ordem de boot` do `arca status` fazia
+    /// a mao, e ela mora aqui desde que o `arca prepare` passou a precisar da
+    /// mesma pergunta sem ter um [`crate::dispositivo::Dispositivo`] em maos.
+    pub fn ordem_resolvida(&self) -> impl Iterator<Item = (&str, Option<&EntradaDeFirmware>)> {
+        self.ordem_permanente.iter().map(|identificador| {
+            (
+                identificador.as_str(),
+                self.entradas
+                    .iter()
+                    .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador)),
+            )
+        })
+    }
+
+    /// A primeira entrada da ordem permanente que **nao diz para onde aponta**,
+    /// entre as `ate` primeiras, pelo nome com que ela se apresenta.
+    ///
+    /// # Por que a ausencia de alvo nao e a mesma resposta que "nao leva"
+    ///
+    /// As entradas que o firmware acrescenta no POST — `UEFI:CD/DVD Drive`,
+    /// `UEFI:Removable Device`, `UEFI:Network Device` — trazem so
+    /// `identificador` e `description`: nem `device` nem `path`. Quem as
+    /// resolve e o firmware, no proximo POST, pelo que estiver conectado; nao
+    /// ha alvo escrito contra o que conferi-las. Lê isso como "nao leva ao
+    /// dispositivo" e transformar um **nao sei** na resposta tranquilizadora,
+    /// que e o erro que [`Leitura::viu_o_gerenciador`] existe para nao cometer
+    /// no bloco vizinho. E C-14 e P-28, e o
+    /// [ADR-0021](../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md).
+    ///
+    /// **O `{bootmgr}` nao entra aqui, e e essa distincao que impede o aviso de
+    /// sair em toda tela.** Ele aponta para `partition=\Device\
+    /// HarddiskVolume1`: um alvo concreto que so nao da para conferir por
+    /// letra. Uma entrada **com** `device` aponta para uma particao; uma **sem**
+    /// `device` nao aponta para coisa nenhuma. Medido na captura de 24/08/2026.
+    ///
+    /// Um identificador da ordem **sem bloco nenhum** conta junto: a leitura
+    /// que o deixou de fora tambem nao diz para onde ele aponta.
+    pub fn primeira_sem_alvo(&self, ate: usize) -> Option<String> {
+        self.ordem_resolvida()
+            .take(ate)
+            .find(|(_, entrada)| entrada.is_none_or(|entrada| entrada.alvo.is_none()))
+            .map(|(identificador, entrada)| nome_na_ordem(identificador, entrada))
+    }
+}
+
+/// Como uma entrada da ordem se apresenta numa tela: a descricao que ela tem,
+/// e o identificador quando ela nao tem nenhuma — ou nem bloco tem.
+///
+/// Quem lê a tela reconhece `ARCA` e `UEFI:Removable Device`, e nao
+/// `{6cc093dc-…}`; mas um GUID dito e melhor do que um silencio.
+pub fn nome_na_ordem(identificador: &str, entrada: Option<&EntradaDeFirmware>) -> String {
+    entrada
+        .and_then(|entrada| entrada.descricao.as_deref())
+        .unwrap_or(identificador)
+        .to_string()
 }
 
 /// Lê a saida de um `bcdedit /enum`.
@@ -379,6 +438,11 @@ mod testes {
 
     /// A captura de 20/08, quando a entrada ainda se chamava `Clonezilla`.
     const LEGADO: &str = include_str!("../recursos/capturas/bcdedit-enum-firmware-legado-pt.txt");
+
+    /// A captura de 24/08, depois do religar limpo que fechou P-22: a mesma
+    /// ordem com as tres `UEFI:*` que o firmware acrescentou no POST.
+    const POS_RELIGAR: &str =
+        include_str!("../recursos/capturas/bcdedit-enum-firmware-2026-08-24-pos-religar.txt");
 
     /// O identificador da entrada desta maquina, o mesmo nas tres capturas.
     const GUID: &str = "{f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}";
@@ -645,6 +709,56 @@ mod testes {
             leitura.entrada_do_arca().unwrap().descricao,
             "Clonezilla",
             "`UEFI:Removable Device` tem a palavra, e nao e a entrada do ARCA"
+        );
+    }
+
+    #[test]
+    fn as_tres_entradas_do_firmware_estao_na_ordem_e_nao_dizem_para_onde_apontam() {
+        // **A medicao de que P-28 vive** (ADR-0021), nas duas capturas em que
+        // as tres aparecem — 20/08 e 24/08, com GUIDs diferentes. O que o
+        // `bcdedit` imprime delas e so `identificador` e `description`: quem as
+        // resolve e o firmware, no POST.
+        for captura in [LEGADO, POS_RELIGAR] {
+            let leitura = ler(captura);
+
+            assert_eq!(leitura.ordem_permanente.len(), 5, "as duas tem cinco");
+            assert_eq!(
+                leitura.primeira_sem_alvo(usize::MAX).as_deref(),
+                Some("UEFI:CD/DVD Drive"),
+                "a primeira opaca da ordem"
+            );
+
+            // **A distincao de que depende nao virar ruido**: o `{bootmgr}` e o
+            // segundo da ordem tem alvo, e por isso as duas primeiras posicoes
+            // nao levantam duvida nenhuma.
+            assert_eq!(leitura.primeira_sem_alvo(2), None);
+        }
+    }
+
+    #[test]
+    fn a_ordem_resolvida_devolve_o_identificador_de_quem_nao_tem_bloco() {
+        // Um identificador que a leitura nao resolve tambem nao diz para onde
+        // aponta, e a tela precisa chama-lo de alguma coisa.
+        let orfa = POS_RELIGAR.replacen(
+            "identificador           {6cc093dc-9ff9-11f1-8a4e-806e6f6e6963}",
+            "identificador           {6cc093dc-0000-0000-0000-000000000000}",
+            1,
+        );
+        assert_ne!(orfa, POS_RELIGAR, "a troca nao pegou");
+
+        let leitura = ler(&orfa);
+        assert_eq!(
+            leitura.primeira_sem_alvo(usize::MAX).as_deref(),
+            Some("UEFI:CD/DVD Drive"),
+            "a primeira opaca continua sendo a primeira"
+        );
+        assert!(
+            leitura
+                .ordem_resolvida()
+                .any(|(identificador, entrada)| entrada.is_none()
+                    && nome_na_ordem(identificador, entrada)
+                        == "{6cc093dc-9ff9-11f1-8a4e-806e6f6e6963}"),
+            "a orfa tem de sair pelo identificador"
         );
     }
 }

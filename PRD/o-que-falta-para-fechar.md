@@ -1,10 +1,10 @@
 # O que falta para o ARCA se considerar fechado
 
 23/08/2026, depois da etapa E10 — revisado no mesmo dia, quando a E12 foi
-planejada, e **revisado outra vez em 24/08/2026, quando ela rodou e P-26, P-25
-e P-22 fecharam**. Complementa o [PRD v5.1](PRD-ARCA-v5_1.md) e o [plano de
-etapas](implementation_stages.md); onde este documento divergir deles, são eles
-que valem.
+planejada, e **revisado outra vez em 24/08/2026, quando ela rodou e P-26, P-25,
+P-22 e P-28 fecharam** — esta última nascida e fechada no mesmo dia. Complementa
+o [PRD v5.1](PRD-ARCA-v5_1.md) e o [plano de etapas](implementation_stages.md);
+onde este documento divergir deles, são eles que valem.
 
 ---
 
@@ -12,7 +12,7 @@ que valem.
 
 **As treze etapas do plano fecharam.** Os nove comandos do §8 fazem trabalho, a
 lista de *"chega na etapa X"* esvaziou na E10, todo requisito do §9 tem código, e
-a suíte tem 829 testes. O ciclo inteiro rodou em hardware: backup armado e
+a suíte tem 838 testes. O ciclo inteiro rodou em hardware: backup armado e
 colhido (22/08), restauração completa com o Windows voltando de dentro da imagem
 (23/08), verificação armada (23/08), um dispositivo criado do zero (23/08) e —
 **em 24/08 — esse dispositivo bootando sozinho pela entrada de firmware que o
@@ -49,10 +49,10 @@ lista de pendências parecer maior ou menor do que é.
 ## 1. O que não foi medido
 
 
-**Quatro pendências abertas**, e o número não mudou porque a que fechou trouxe
-uma. Em 24/08/2026 fecharam P-26, P-25 e **P-22** — e a última abriu **P-28**,
-que é o que ela achou pelo caminho. Estão listadas por **quanto custa a alguém
-se elas estiverem erradas**, e não pela ordem em que nasceram.
+**Três pendências abertas**, e eram cinco de manhã. Em 24/08/2026 fecharam
+P-26, P-25 e **P-22** — e a última abriu **P-28**, que **fechou no mesmo dia**,
+sete horas depois. Estão listadas por **quanto custa a alguém se elas estiverem
+erradas**, e não pela ordem em que nasceram.
 
 > ### ~~P-26~~ — fechada em 24/08/2026, e o que ela custou foi um reinício
 >
@@ -215,45 +215,108 @@ cara desta lista, e a única cujo fechamento não acontece nesta mesa.
 > entradas em POST — que é o que este mesmo reinício mediu. Ver
 > [ADR-0020](../docs/adr/0020-o-bcdedit-enum-firmware-le-a-nvram.md).
 
-### P-28 — uma entrada da ordem que não diz para onde aponta
+> ### ~~P-28~~ — aberta e fechada em 24/08/2026, e o firmware apagou a testemunha
+>
+> **Ela é o que P-22 achou pelo caminho, e viveu sete horas.** O código foi
+> consertado sem esperar a medição
+> ([ADR-0021](../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md)),
+> e a medição chegou às 18:47 do mesmo dia.
+>
+> As três entradas que o firmware acrescentou não declaram alvo nenhum, e o ARCA
+> as lia como **não levam ao dispositivo** — a resposta tranquilizadora.
+> `UEFI:Removable Device` é a classe que boota o primeiro dispositivo removível,
+> e o `ARCABOOT` é um SSD USB.
 
-**Aberta em 24/08/2026, e ela é o que P-22 achou pelo caminho.**
-
-As três entradas que o firmware acrescentou não declaram alvo nenhum. E
-`alcanca_o_arcaboot` (`src/comandos/status.rs`) devolve `false` quando o alvo é
-`None` — o ARCA as lê como **não levam ao dispositivo**, que é a resposta
-tranquilizadora.
-
-`UEFI:Removable Device` é a classe que boota o primeiro dispositivo removível, e
-o `ARCABOOT` é um SSD USB removível.
-
-**O que acontece se estiver errado, e não é a tela mentir sobre o nome.** Com
-aquela entrada em primeiro e a `ARCA` em segundo, a linha sai assim:
-
-```text
-Ordem de boot ... dispositivo em 2o de 5 · `UEFI:Removable Device` vem antes
-```
-
-Correta ao pé da letra — aquela entrada **está** antes. **O que não sai é o
-aviso**, porque o parágrafo de perigo mora só no ramo em que o dispositivo é o
-primeiro. Quem abriu a tela para saber se pode religar com o SSD na mesa lê
-*"vem antes"*, não recebe alerta nenhum, e entende que está seguro — enquanto
-todo reinício boota no dispositivo.
-
-**É a terceira forma da mesma falha.** O ADR-0009 pegou a versão que procurava a
-entrada *pelo nome*, e descreveu a consequência com estas palavras: *"aquela
-versão diria 'o Windows vem antes' e engoliria o aviso"*. C-6 pegou a que
-confiava no nome que o `bcdedit` devolve. Aqui não é nome errado nem alvo errado
-— é a **ausência** de alvo virando segurança, que é o que `viu_o_gerenciador`
-existe para não deixar acontecer no bloco vizinho.
-
-**Por que não é urgente, e a razão é medida:** as três estão em 3º, 4º e 5º,
-atrás do Windows, e quem decide o boot é a primeira. O aviso do `arca status`
-não está errado hoje.
-
-**Como fecha:** um F12 escolhendo `UEFI:Removable Device` em vez da entrada
-`ARCA`, e a pergunta é onde a máquina para. **Custa:** um reinício. **Risco:**
-nenhum com o grub inerte.
+> **Os três casos, medidos em duplo** sobre a captura real do religar, passada
+> pelo `montar` de verdade:
+>
+> | | A ordem | O que a tela dizia | Aviso |
+> |---|---|---|---|
+> | **A** | como estava | `dispositivo em 2o de 5 · Windows Boot Manager vem antes` | não sai, e está certo |
+> | **B** | `UEFI:Removable Device` no topo | `dispositivo em 3o de 5 · UEFI:Removable Device vem antes` | **não saía** |
+> | **C** | entrada `ARCA` fora da ordem | `4 entrada(s), nenhuma para o dispositivo · so o boot unico leva a ele` | **não saía** |
+>
+> O **B** é a falha como ela nasceu descrita: correta ao pé da letra — aquela
+> entrada **está** antes —, e sem o parágrafo de perigo, que morava só no ramo
+> em que o dispositivo é o primeiro. **O C não estava escrito em lugar nenhum, e
+> é pior:** ali a tela não engolia um aviso, ela **afirmava** — e o estado que o
+> produz é o que o `arca prepare` deixa, mais um religar.
+>
+> **É a terceira forma da mesma falha.** O ADR-0009 pegou a que procurava a
+> entrada *pelo nome* — *"diria 'o Windows vem antes' e engoliria o aviso"* —, e
+> C-6 pegou a que confiava no nome que o `bcdedit` devolve. Aqui é a **ausência**
+> de alvo virando segurança, que é o que `viu_o_gerenciador` existe para não
+> deixar acontecer no bloco vizinho.
+>
+> #### O conserto veio antes da medição, e virou C-14
+>
+> O julgamento passou a ter **três estados** — `Leva`, `NaoLeva`, `NaoSeSabe` —,
+> e `NaoSeSabe` não vale como segurança em lugar nenhum. A regra **não afirma
+> nada sobre este firmware**: ela deixa de afirmar, que é a forma de
+> `viu_o_gerenciador`. Por isso não precisou esperar o reinício.
+>
+> **O discriminante é `alvo: None`, e é ele que impede o ruído.** O `{bootmgr}`
+> aponta para `partition=\Device\HarddiskVolume1`: alvo concreto, que só não dá
+> para conferir por letra. Fosse a regra por letra, o aviso sairia em toda tela
+> — e um aviso que dispara sempre é o mesmo que não avisar.
+>
+> **Pegou três telas**: o `arca status` nos dois ramos; o `arca restore`, com um
+> quarto estado em `OrdemDeBoot`; e o `arca prepare`, cuja tela de fim prometia
+> *"ligar a maquina continua subindo o Windows"* em **texto fixo**, derivado de
+> um fato só — a entrada do ARCA saiu da ordem —, sem olhar quem ficou nela.
+> Esse era o furo irmão, e ninguém o tinha listado.
+>
+> #### A medição, às 18:39 — e o método não foi o F12
+>
+> Com o `grub.cfg` conferido inerte byte a byte (`4b33da61…9f47aa3d`) e sem job
+> armado, a `{6cc093dc}` foi promovida ao **topo** da ordem à mão. **O F12 ficou
+> de fora de propósito**: ele mede a *classe* que o menu do firmware oferece, e a
+> pergunta é sobre a *entrada na `displayorder`*, que é o objeto que a tela lê.
+> Sujar a ordem e desfazer no fim é o método do ADR-0013.
+>
+> A tela nova saiu **em hardware** pela primeira vez — o cenário B fora do
+> fixture, com o aviso inteiro. E a máquina, reiniciada com o SSD conectado,
+> **subiu o Windows**.
+>
+> #### E o que apareceu depois do boot vale mais do que a resposta
+>
+> Às 18:47, **sem o ARCA ter escrito nada** — o `arca resultado` não chegou a
+> rodar, e C-13 não entrou —, o `bcdedit /enum firmware` é **byte a byte** a
+> captura das 17:11:50 (`89ca7ad1…7b8df3b9`):
+>
+> ```text
+> 17:26  {bootmgr} · {f4057bd3} ARCA · UEFI:CD/DVD · UEFI:Removable · UEFI:Network
+> 18:39  UEFI:Removable · {bootmgr} · {f4057bd3} ARCA · UEFI:CD/DVD · UEFI:Network
+> 18:47  {bootmgr} · {f4057bd3} ARCA
+> ```
+>
+> As três sumiram **inteiras**: nem na ordem, nem como bloco. O firmware
+> reescreveu o `displayorder` no POST, removeu as três e devolveu o `{bootmgr}`
+> ao topo — restaurando exatamente o estado anterior.
+>
+> **Duas leituras do mesmo desfecho, e esta medição não as separa**: ou a entrada
+> foi *tentada* e não alcançou o `ARCABOOT`, ou foi *descartada antes de ser
+> tentada*, na mesma reconstrução que apagou as três. **Para o efeito
+> operacional dá no mesmo, e é o que P-28 cobrava**: ela não desvia o boot.
+>
+> A evidência antiga favorece a primeira: o firmware desta placa enumera este SSD
+> como **disco**, não como removível — foi ele quem criou a `{687478f2}` `UEFI OS`
+> apontando para `partition=R:` —, e o Windows o classifica igual: não há
+> `AVISO (C-6)` em tela nenhuma, e o `bcdedit` aceitou `partition=R:`, o que C-6
+> diz não acontecer com mídia removível.
+>
+> #### O que ela deixa para trás
+>
+> **No código, nada muda** — C-14 foi escrito para não depender desta resposta, e
+> não dependeu. O aviso continua o brando, com uma razão a mais para existir: uma
+> entrada que **some do arquivo** entre a leitura e o reinício é ainda menos base
+> para afirmar segurança.
+>
+> **E duas defesas que já existiam ficam nomeadas**, porque eram melhores do que
+> o *"as três estão em 3º, 4º e 5º"* que este documento usava: **C-13 protege por
+> construção** (`/addfirst {bootmgr}` põe o Windows na frente de tudo, com ou sem
+> alvo declarado), e **o `arca restore` nunca silenciou** — o ramo brando já
+> mandava remover o SSD.
 
 ### P-23 — o log da restauração não cobre a operação inteira
 
@@ -408,7 +471,7 @@ comparar datas.
 
 ## 5. Estado da mesa, e não do app
 
-**A suíte está inteira verde**: 829 testes, zero vermelhos, com o dispositivo
+**A suíte está inteira verde**: 838 testes, zero vermelhos, com o dispositivo
 que a E10 criou sozinho na mesa — e que a E12 já bootou.
 
 Chegar aí custou uma correção que vale registrar aqui, porque ela é sobre o que
@@ -422,7 +485,9 @@ passaram a **sair cedo dizendo por quê**; os do `grub.cfg` passaram a aceitar o
 **dois** inertes conhecidos — o do ISO e o do zip —, com o teste da E10 provando
 que são equivalentes. Nenhum foi afrouxado.
 
-**A E10 e a E12 estão commitadas.**
+**A E10 e a E12 estão commitadas.** O conserto de P-28
+([ADR-0021](../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md))
+está na árvore de trabalho, verde, e ainda não.
 
 ### O dispositivo está sem oráculo agora, e isso é do teste de falha
 
@@ -483,6 +548,14 @@ plano de etapas.
 > `ARCABOOT` em `R:`, e a entrada de firmware acompanhou — `partition=R:`, com
 > o `arca status` confirmando `o ARCABOOT deste dispositivo`. É S-3 fazendo o
 > que existe para fazer.
+>
+> **E às 18:47 a ordem tinha duas de novo.** O boot que fechou P-28 levou as
+> três embora — não só da ordem: da enumeração inteira, nem como bloco elas
+> ficaram. O `bcdedit /enum firmware` daquele momento é **byte a byte** o das
+> 17:11 (`89ca7ad1…7b8df3b9`), e o `{bootmgr}` voltou ao topo **sem o ARCA ter
+> escrito nada** — o `arca resultado` não chegou a rodar. Quem desfez foi o
+> firmware no POST, ou o Windows ao subir; os dois já constam como donos da
+> ordem, e esta medição não os separa.
 
 ---
 
@@ -496,12 +569,12 @@ Do mais barato para o mais caro, e cada linha diz o que se ganha.
 | ~~—~~ | ~~Segunda verificação armada~~ | ~~1 reinício, ~5 min~~ | **Feito em 24/08/2026: P-25** |
 | ~~—~~ | ~~Uma sondagem com flag inventada no `lsblk`~~ | ~~1 reinício~~ | **Feito em 24/08/2026: o primeiro `FALHOU`** |
 | ~~—~~ | ~~Religar com o SSD conectado, sem job armado~~ | ~~1 reinício, risco zero~~ | **Feito em 24/08/2026: P-22**, e conferiu a promessa da tela do `arca prepare`. Abriu **P-28** |
+| ~~—~~ | ~~`UEFI:Removable Device` no topo da ordem, e religar~~ | ~~1 reinício, risco zero~~ | **Feito em 24/08/2026: P-28**, e o firmware apagou as três no POST |
 | 1 | `arca sondar` com o binário normal | 1 reinício | *não é pendência* — devolve o oráculo que a falha forçada apagou (§5) |
-| 2 | F12 escolhendo `UEFI:Removable Device` | 1 reinício, risco zero | **P-28** |
-| 3 | Produzir as outras quatro linhas do §5.5 à mão | tempo, sem risco | quatro casos do §5.5 |
-| 4 | Falha forçada em VM | montar uma VM | **P-6** no `ocs-sr`, que é a pergunta original |
-| 5 | Próxima restauração, com o log medido | uma restauração | **P-23** |
-| 6 | Backup por F12, com o `bcdedit` antes | um backup | **P-19** |
+| 2 | Produzir as outras quatro linhas do §5.5 à mão | tempo, sem risco | quatro casos do §5.5 |
+| 3 | Falha forçada em VM | montar uma VM | **P-6** no `ocs-sr`, que é a pergunta original |
+| 4 | Próxima restauração, com o log medido | uma restauração | **P-23** |
+| 5 | Backup por F12, com o `bcdedit` antes | um backup | **P-19** |
 
 > **O passo que saiu era novo, e nasceu da E12.** Até 24/08, produzir um `FALHOU`
 > exigia fazer o `ocs-sr` falhar — uma VM, um disco de teste, uma operação
@@ -515,13 +588,12 @@ Do mais barato para o mais caro, e cada linha diz o que se ganha.
 > colunas do `lsblk` passava com uma coluna a mais, e a mutação atravessou a
 > suíte inteira.
 
-> **Os passos 2 e 6 são o mesmo F12, se você quiser** — e a numeração aqui
-> dizia *"os passos 1 e 7"*, de uma versão da tabela que não existe mais. P-28
-> pede um F12 escolhendo `UEFI:Removable Device`; P-19 pede um backup disparado
-> por F12 com o `bcdedit` lido imediatamente antes. Um F12 só, escolhendo
-> aquela linha e deixando a receita armada, responde as duas — e é a diferença
-> entre um reinício de risco zero e um backup, então **vale fazer P-28 primeiro
-> com o grub inerte** e só depois pensar em juntar.
+> **O passo de P-28 não era o F12, e é por isso que ele saiu tão barato.** Duas
+> versões desta tabela mandaram um F12 escolhendo `UEFI:Removable Device` — e o
+> F12 mede a **classe** que o menu do firmware oferece, enquanto a pergunta era
+> sobre a **entrada na ordem**, que é o que a tela lê. Pôr aquela entrada em
+> primeiro com um `/addfirst` e religar mede o objeto certo, custa o mesmo
+> reinício, e não depende de o menu do firmware nomear a linha do mesmo jeito.
 >
 > **O passo 1 vem antes de tudo por outra razão.** Sem o oráculo da sondagem, o
 > `arca backup` recusa com `POR DETERMINAR` — corretamente —, e nenhum dos
@@ -564,13 +636,19 @@ onde o `bcdedit` lê* era a mais barata de todas, custou um reinício, e a
 resposta é a NVRAM. O app não afirma nada sobre as que sobram que dependa da
 resposta, e é por isso que ele pode conviver com elas abertas.
 
-**P-28 é o caso limítrofe, e vale dizer de que lado ela cai.** Hoje a tela do
-`arca status` não afirma nada que este repositório não possa mostrar: ela diz
-`Windows Boot Manager vem antes`, e às 17:26 de 24/08 a máquina fez exatamente
-isso, com o SSD na mesa. O que P-28 descreve não é uma afirmação errada — é um
-**aviso que deixaria de sair** num estado que ainda não aconteceu. Por isso ela
-não conta contra o critério hoje, e por isso ela não pode ser esquecida: no dia
-em que aquele estado chegar, ela conta.
+**P-28 era o caso limítrofe, e não é mais — pelas duas pontas, no mesmo dia.**
+A leitura em duplo achou um ramo em que a tela não engolia um aviso e sim
+**afirmava** — `so o boot unico leva a ele`, com a entrada `ARCA` fora da ordem
+—, e aquilo era afirmação por ausência de resposta, que o critério acima não
+tolera. **Saiu do código às 18:00 e foi medido às 18:47**: com a entrada opaca
+em primeiro, a máquina subiu o Windows. Ver
+[ADR-0021](../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md).
+
+**Vale notar que a ordem foi a inversa da habitual, e de propósito.** O conserto
+não esperou a medição porque ele **deixa de afirmar** em vez de afirmar — não há
+nada nele que a medição pudesse desmentir. Foi a mesma escolha de C-3 e de
+`viu_o_gerenciador`, feita antes de saber a resposta; e quando a resposta veio,
+não mudou uma linha.
 
 ---
 

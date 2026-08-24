@@ -124,6 +124,13 @@ recria entradas em POST; que ele *poda* as ausentes não foi medido, e o
 experimento que fecharia é outro. As medições do ADR-0012 continuam todas de pé
 — é o mecanismo proposto para uma delas que muda.
 
+> **A hipótese ficou meia medida às 18:47 do mesmo dia.** No boot do experimento
+> de P-28, o firmware **removeu as três `UEFI:*`** da ordem e da enumeração — o
+> arquivo voltou byte a byte ao das 17:11 —, com o dispositivo ainda conectado.
+> **Podar ele poda.** O que continua sem medição é a poda que este ADR propôs: a
+> de uma entrada cujo dispositivo não está mais lá. Ver
+> [ADR-0021](0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md).
+
 ## O que isto abre
 
 **Um religar limpo suja a ordem permanente**, e isso não estava medido. Não com
@@ -132,11 +139,11 @@ duas para cinco entradas, e o `arca status` passou de `dispositivo em 2o de 2`
 para `dispositivo em 2o de 5`.
 
 E **as três vão e vêm sem causa conhecida**: estavam em 20/08, não estavam em
-22/08 de manhã nem às 17:11 de hoje, voltaram às 17:26. Dois boots pelo
-dispositivo, em 24/08, não as trouxeram. Não há pendência aqui porque nenhuma
-tela do ARCA afirma nada que dependa da resposta — é curiosidade sobre este
-firmware, registrada para quem for comparar contagens de entradas entre
-capturas e achar que alguém mexeu.
+22/08 de manhã nem às 17:11 de hoje, voltaram às 17:26 — **e foram embora às
+18:47**, no boot do experimento de P-28. Dois boots pelo dispositivo, em 24/08,
+não as trouxeram. Não há pendência aqui porque nenhuma tela do ARCA afirma nada
+que dependa da resposta — é curiosidade sobre este firmware, registrada para
+quem for comparar contagens de entradas entre capturas e achar que alguém mexeu.
 
 **O que é pendência é P-28**, e ela nasceu desta leitura.
 
@@ -176,6 +183,16 @@ Windows, e o que decide o boot é a primeira. O que falta saber antes de
 escrever código é se `UEFI:Removable Device` de fato alcança o `ARCABOOT` nesta
 máquina, e isso custa um F12 escolhendo aquela linha em vez da entrada `ARCA`.
 
+> **Esta última frase estava errada, e o [ADR-0021](0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md)
+> a corrige no mesmo dia.** A regra que faltava — *uma entrada que não diz para
+> onde aponta não é segurança* — não afirma nada sobre este firmware: ela deixa
+> de afirmar, e é a forma de `viu_o_gerenciador`. Foi escrita sem o F12, que
+> continua valendo para calibrar a dureza do texto.
+>
+> E a leitura em duplo achou **um terceiro ramo**, que este ADR não tinha visto:
+> com a entrada `ARCA` fora da ordem — o estado que o `arca prepare` deixa — a
+> tela não engolia um aviso, ela **afirmava**: `so o boot unico leva a ele`.
+
 ## Consequências
 
 - P-22 sai do §3.5 e do §12 do PRD como fechada, e sai do §1 e do §7 do
@@ -189,6 +206,10 @@ máquina, e isso custa um F12 escolhendo aquela linha em vez da entrada `ARCA`.
   de `arca status` do mesmo reinício.
 - O §11 ganha o `node` do UUID como regra de leitura: numa captura de
   `bcdedit`, ele separa o que veio do firmware do que veio do BCD.
+- **P-28 vira código no mesmo dia**, e não depois do F12:
+  [ADR-0021](0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md). A captura
+  `bcdedit-enum-firmware-2026-08-24-pos-religar.txt` deste ADR entra na suíte,
+  onde nenhum teste a lia.
 
 > **A expectativa que entrou no experimento estava errada, e vale registrado.**
 > A análise que precedeu este reinício apostava no menu do Clonezilla, e o

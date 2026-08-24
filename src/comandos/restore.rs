@@ -989,6 +989,17 @@ pub fn montar_o_armado(armado: &armar::Armado, ordem: OrdemDeBoot) -> String {
             "  NOVO, por cima do Windows que acabou de voltar. Remover o SSD elimina o\n",
             "  cenario.\n"
         ),
+        // C-14, e pelo mesmo motivo do ramo abaixo: a ordem foi lida, e o que
+        // ela tem a frente do dispositivo e uma entrada que nao declara alvo.
+        // Nao ha como afirmar que ela nao leva a ele.
+        OrdemDeBoot::SemAlvoAntes => concat!(
+            "\n  UMA ENTRADA A FRENTE DO DISPOSITIVO NAO DIZ PARA ONDE APONTA, e o ARCA\n",
+            "  nao supoe que isso queira dizer que ela nao leva a ele (P-28): quem a\n",
+            "  resolve e o firmware, no POST, pelo que estiver conectado. Trate como se\n",
+            "  levasse: enquanto o `grub.cfg` estiver armado — do fim da restauracao ate\n",
+            "  o `arca resultado` — um reinicio com o SSD conectado RESTAURARIA DE NOVO,\n",
+            "  por cima do Windows que acabou de voltar. Remova o SSD ao desligar.\n"
+        ),
         // "Nao entendi a resposta" nao vira uma afirmacao de seguranca. Sem
         // saber a ordem, o aviso e o **duro** — que e o unico dos dois que nao
         // custa nada estar errado.
@@ -1148,6 +1159,10 @@ pub enum OrdemDeBoot {
     /// Ha alguma coisa antes dele, ou ele nao esta na ordem.
     OutraCoisaAntes,
 
+    /// **Ha uma entrada a frente dele que nao diz para onde aponta** (P-28).
+    /// Nao e "outra coisa antes": ali se sabe o que vem antes, e aqui nao.
+    SemAlvoAntes,
+
     /// O `{fwbootmgr}` nao se deixou lê.
     NaoDeuParaLer,
 }
@@ -1168,8 +1183,13 @@ fn ordem_de_boot(contexto: &Contexto, dispositivo: &Dispositivo) -> OrdemDeBoot 
         return OrdemDeBoot::NaoDeuParaLer;
     }
 
-    if status::lugar_do_dispositivo(&leitura, dispositivo).em_primeiro() {
+    let lugar = status::lugar_do_dispositivo(&leitura, dispositivo);
+    if lugar.em_primeiro() {
         OrdemDeBoot::DispositivoEmPrimeiro
+    } else if lugar.sem_alvo_a_frente.is_some() {
+        // P-28: uma entrada sem `device` a frente do dispositivo nao autoriza
+        // o aviso brando, que **afirma** que a ordem nao leva a ele.
+        OrdemDeBoot::SemAlvoAntes
     } else {
         OrdemDeBoot::OutraCoisaAntes
     }
@@ -2236,10 +2256,34 @@ Sector size (logical/physical): 512/512 bytes
     }
 
     #[test]
-    fn os_tres_avisos_falam_da_janela_e_vem_antes_do_reiniciando() {
+    fn a_entrada_sem_alvo_a_frente_nao_ganha_o_aviso_brando() {
+        // P-28. O ramo brando **afirma** — "a ordem permanente hoje nao leva ao
+        // dispositivo em primeiro" —, e essa afirmacao nao se sustenta sobre
+        // uma entrada que nao diz para onde aponta. E a mesma distincao que
+        // separa `NaoDeuParaLer` de `OutraCoisaAntes`, um degrau adiante: aqui
+        // a ordem foi lida, e o que ela tem a frente e que e opaco.
+        let saida = montar_o_armado(&armado_de_teste(), OrdemDeBoot::SemAlvoAntes);
+
+        assert!(saida.contains("NAO DIZ PARA ONDE APONTA"), "{saida}");
+        assert!(saida.contains("Trate como se"), "{saida}");
+        assert!(saida.contains("P-28"), "{saida}");
+        assert!(
+            !saida.contains("A ordem permanente hoje"),
+            "o aviso brando afirma o que esta leitura nao sustenta:\n{saida}"
+        );
+        assert_ne!(
+            saida,
+            montar_o_armado(&armado_de_teste(), OrdemDeBoot::NaoDeuParaLer),
+            "os dois avisos tem de ser diferentes: um leu a ordem e o outro nao"
+        );
+    }
+
+    #[test]
+    fn os_quatro_avisos_falam_da_janela_e_vem_antes_do_reiniciando() {
         for ordem in [
             OrdemDeBoot::DispositivoEmPrimeiro,
             OrdemDeBoot::OutraCoisaAntes,
+            OrdemDeBoot::SemAlvoAntes,
             OrdemDeBoot::NaoDeuParaLer,
         ] {
             let saida = montar_o_armado(&armado_de_teste(), ordem);

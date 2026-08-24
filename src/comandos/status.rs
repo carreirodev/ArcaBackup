@@ -361,20 +361,50 @@ fn secao_do_firmware(leitura: &Leitura, dispositivo: &Dispositivo) -> String {
     saida
 }
 
+/// O que esta entrada diz sobre chegar ao `ARCABOOT` que esta na mesa.
+///
+/// **Tres estados, e nao dois** — e o terceiro e C-14, que nasceu de P-28. Ver
+/// [ADR-0021](../../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Alcance {
+    /// O alvo e o `ARCABOOT` desta mesa: bootar por ela e bootar no
+    /// dispositivo.
+    Leva,
+
+    /// O alvo e outra coisa, e da para conferir que e outra coisa — ou nao ha
+    /// `ARCABOOT` conectado a que chegar.
+    NaoLeva,
+
+    /// A entrada **nao diz** para onde aponta, e o firmware a resolve no POST.
+    /// Nao e "nao leva": e a falta da resposta.
+    NaoSeSabe,
+}
+
 /// Se esta entrada leva ao `ARCABOOT` que esta na mesa.
 ///
-/// A versao de `sim ou nao` do [`confere_com_o_arcaboot`], e ela responde
-/// **nao** para tudo que nao dá para conferir. Uma entrada por caminho de
-/// dispositivo — o `{bootmgr}` e uma — nao tem letra, e supor que ela alcanca o
-/// dispositivo faria o aviso abaixo disparar sempre, que e o mesmo que nao
-/// avisar.
-pub fn alcanca_o_arcaboot(entrada: &firmware::EntradaDeFirmware, dispositivo: &Dispositivo) -> bool {
-    let (Some(alvo), Some(boot)) = (&entrada.alvo, &dispositivo.boot) else {
-        return false;
+/// A versao de julgamento do [`confere_com_o_arcaboot`], e ela responde
+/// **`NaoLeva`** para o que da para conferir que e outra coisa e **`NaoSeSabe`**
+/// para o que nao declara alvo nenhum.
+///
+/// # A entrada por caminho de dispositivo e `NaoLeva`, e nao `NaoSeSabe`
+///
+/// O `{bootmgr}` aponta para `partition=\Device\HarddiskVolume1`: uma particao
+/// concreta, que so nao da para conferir por letra. Chama-lo de "nao se sabe"
+/// faria o aviso de P-28 sair em toda tela — ele esta em primeiro desde sempre
+/// —, e um aviso que dispara sempre e o mesmo que nao avisar. **Ter `device` e
+/// apontar para alguma coisa**; e a ausencia dele que e o buraco.
+pub fn alcance(entrada: &firmware::EntradaDeFirmware, dispositivo: &Dispositivo) -> Alcance {
+    // Sem `ARCABOOT` na mesa nao ha a que chegar, e ai nem a entrada sem alvo
+    // e duvida: nenhum reinicio boota num dispositivo que nao esta conectado.
+    let Some(boot) = &dispositivo.boot else {
+        return Alcance::NaoLeva;
+    };
+    let Some(alvo) = &entrada.alvo else {
+        return Alcance::NaoSeSabe;
     };
     match (alvo.letra(), boot.letra) {
-        (Some(apontada), Some(atual)) => apontada.eq_ignore_ascii_case(&atual),
-        _ => false,
+        (Some(apontada), Some(atual)) if apontada.eq_ignore_ascii_case(&atual) => Alcance::Leva,
+        _ => Alcance::NaoLeva,
     }
 }
 
@@ -402,6 +432,13 @@ pub struct LugarNaOrdem {
     /// `UEFI OS` que o firmware criou —, e e por isso que a pergunta e sobre o
     /// alvo e nunca sobre o nome.
     pub quantas: usize,
+
+    /// O nome da primeira entrada **a frente** do dispositivo que nao diz para
+    /// onde aponta — ou de qualquer uma da ordem, quando ele nao esta nela.
+    ///
+    /// `None` quando toda entrada a frente declara alvo, que e o caso desta
+    /// maquina enquanto o `{bootmgr}` estiver em primeiro. E P-28.
+    pub sem_alvo_a_frente: Option<String>,
 }
 
 impl LugarNaOrdem {
@@ -420,21 +457,30 @@ impl LugarNaOrdem {
 /// "o dispositivo esta fora da ordem" — a resposta tranquilizadora. Ver a
 /// guarda em [`secao_da_ordem_de_boot`].
 pub fn lugar_do_dispositivo(leitura: &Leitura, dispositivo: &Dispositivo) -> LugarNaOrdem {
-    let leva_ao_dispositivo = |identificador: &String| {
-        leitura
-            .entradas
-            .iter()
-            .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador))
-            .is_some_and(|entrada| alcanca_o_arcaboot(entrada, dispositivo))
-    };
+    let julgadas: Vec<Alcance> = leitura
+        .ordem_resolvida()
+        .map(|(_, entrada)| match entrada {
+            Some(entrada) => alcance(entrada, dispositivo),
+            // Um identificador da ordem sem bloco na leitura nao diz para onde
+            // aponta, e isso e a mesma falta de resposta que P-28 nomeia.
+            None => Alcance::NaoSeSabe,
+        })
+        .collect();
+
+    let posicao = julgadas.iter().position(|a| *a == Alcance::Leva);
 
     LugarNaOrdem {
-        posicao: leitura.ordem_permanente.iter().position(leva_ao_dispositivo),
-        quantas: leitura
-            .ordem_permanente
-            .iter()
-            .filter(|id| leva_ao_dispositivo(id))
-            .count(),
+        posicao,
+        quantas: julgadas.iter().filter(|a| **a == Alcance::Leva).count(),
+        // So o que esta **a frente** do dispositivo decide o boot; estando ele
+        // fora da ordem, toda a ordem esta a frente. E sem `ARCABOOT` na mesa
+        // nao ha duvida a levantar, pelo mesmo motivo que ha em [`alcance`]:
+        // nenhum reinicio boota num dispositivo que nao esta conectado.
+        sem_alvo_a_frente: dispositivo
+            .boot
+            .is_some()
+            .then(|| leitura.primeira_sem_alvo(posicao.unwrap_or(julgadas.len())))
+            .flatten(),
     }
 }
 
@@ -480,32 +526,53 @@ fn secao_da_ordem_de_boot(leitura: &Leitura, dispositivo: &Dispositivo) -> Strin
     }
 
     let total = leitura.ordem_permanente.len();
-    let LugarNaOrdem { posicao, quantas } = lugar_do_dispositivo(leitura, dispositivo);
+    let LugarNaOrdem {
+        posicao,
+        quantas,
+        sem_alvo_a_frente,
+    } = lugar_do_dispositivo(leitura, dispositivo);
 
     let Some(posicao) = posicao else {
-        return linha(
+        // "Nenhuma leva ao dispositivo" e uma afirmacao, e ela nao pode ser
+        // feita por cima de uma entrada que nao diz para onde aponta — P-28.
+        let Some(sem_alvo) = &sem_alvo_a_frente else {
+            return linha(
+                "Ordem de boot",
+                &format!(
+                    "{total} entrada(s), nenhuma para o dispositivo · so o boot unico leva a ele"
+                ),
+            );
+        };
+        let mut saida = linha(
             "Ordem de boot",
-            &format!("{total} entrada(s), nenhuma para o dispositivo · so o boot unico leva a ele"),
+            &format!("{total} entrada(s), nenhuma que se saiba levar ao dispositivo"),
         );
+        saida.push_str(&aviso_da_entrada_sem_alvo(sem_alvo));
+        return saida;
     };
 
     // O que vem antes decide. Se ha alguma coisa a frente da primeira entrada
     // do dispositivo, e ela que boota — e o aviso nao se aplica.
     if posicao > 0 {
-        let antes = &leitura.ordem_permanente[0];
-        let nome = leitura
-            .entradas
-            .iter()
-            .find(|entrada| entrada.identificador.eq_ignore_ascii_case(antes))
-            .and_then(|entrada| entrada.descricao.as_deref())
-            .unwrap_or(antes.as_str());
-        return linha(
+        let (identificador, entrada) = leitura
+            .ordem_resolvida()
+            .next()
+            .expect("a ordem tem o dispositivo depois do primeiro");
+        let nome = firmware::nome_na_ordem(identificador, entrada);
+        let mut saida = linha(
             "Ordem de boot",
             &format!(
                 "dispositivo em {}o de {total} · `{nome}` vem antes",
                 posicao + 1
             ),
         );
+        // Nomear quem vem antes so tranquiliza se aquilo que vem antes disser
+        // para onde vai. P-28: o aviso mora no ramo do dispositivo em
+        // primeiro, e sem isto ele seria engolido aqui.
+        if let Some(sem_alvo) = &sem_alvo_a_frente {
+            saida.push_str(&aviso_da_entrada_sem_alvo(sem_alvo));
+        }
+        return saida;
     }
 
     let quais = if quantas > 1 {
@@ -526,6 +593,28 @@ fn secao_da_ordem_de_boot(leitura: &Leitura, dispositivo: &Dispositivo) -> Strin
         "  religar resolve, e e o que o aviso de C-9 ja pedia.\n"
     ));
     saida
+}
+
+/// O que a tela diz quando ha, a frente do dispositivo, uma entrada que nao
+/// declara alvo — P-28.
+///
+/// **Ele nao afirma que a maquina boota no dispositivo**, porque isso ninguem
+/// mediu; ele deixa de afirmar o contrario, que era o que a tela fazia de
+/// graca. E a mesma forma da guarda de `viu_o_gerenciador` logo acima: nao
+/// entendi a resposta, entao nao ha o que garantir.
+fn aviso_da_entrada_sem_alvo(nome: &str) -> String {
+    format!(
+        concat!(
+            "\n  A entrada `{}` esta na frente do dispositivo na\n",
+            "  ordem permanente e NAO DIZ para onde aponta: o `bcdedit` imprime dela\n",
+            "  so o nome, sem `device` nem `path`, e quem a resolve e o firmware, no\n",
+            "  POST, pelo que estiver conectado. O ARCA nao tem contra o que\n",
+            "  conferi-la, entao ele nao afirma que ligar a maquina sobe o Windows —\n",
+            "  trate como se ela pudesse levar ao dispositivo. Remover o SSD antes de\n",
+            "  religar tira a duvida (P-28).\n"
+        ),
+        nome
+    )
 }
 
 /// Se a entrada de firmware aponta para o `ARCABOOT` que esta na mesa.
@@ -978,6 +1067,183 @@ mod testes {
         assert!(
             saida.contains("dispositivo em 1o de 3 · todo reinicio boota nele"),
             "a entrada que o firmware criou esta em primeiro e o aviso nao saiu:\n{saida}"
+        );
+    }
+
+    /// P-28: as tres entradas que o firmware acrescentou no religar de
+    /// 24/08/2026, e que nao dizem para onde apontam. Esta captura entrou no
+    /// repositorio pelo ADR-0020 e nenhum teste a lia.
+    const POS_RELIGAR: &str =
+        include_str!("../../recursos/capturas/bcdedit-enum-firmware-2026-08-24-pos-religar.txt");
+
+    /// A `{6cc093dc}` `UEFI:Removable Device` posta em primeiro, e o resto da
+    /// ordem como esta na captura.
+    fn com_a_sem_alvo_na_frente() -> String {
+        let trocada = POS_RELIGAR.replacen(
+            concat!(
+                "displayorder            {bootmgr}\r\n",
+                "                        {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}\r\n",
+                "                        {6cc093db-9ff9-11f1-8a4e-806e6f6e6963}\r\n",
+                "                        {6cc093dc-9ff9-11f1-8a4e-806e6f6e6963}\r\n",
+            ),
+            concat!(
+                "displayorder            {6cc093dc-9ff9-11f1-8a4e-806e6f6e6963}\r\n",
+                "                        {bootmgr}\r\n",
+                "                        {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}\r\n",
+                "                        {6cc093db-9ff9-11f1-8a4e-806e6f6e6963}\r\n",
+            ),
+            1,
+        );
+        assert_ne!(
+            trocada, POS_RELIGAR,
+            "a troca nao pegou; a captura mudou de forma"
+        );
+        trocada
+    }
+
+    #[test]
+    fn a_ordem_desta_maquina_com_as_tres_do_firmware_nao_ganha_aviso_nenhum() {
+        // **O caso que decide se a regra de P-28 e util ou ruido.** As tres
+        // `UEFI:*` estao na ordem desde o religar de 24/08, atras do Windows e
+        // do dispositivo — e um aviso que sai aqui sairia em toda tela, que e
+        // o mesmo que nao avisar.
+        let saida = montar_com(&dispositivo_conectado(), POS_RELIGAR);
+
+        assert!(
+            saida.contains(&linha(
+                "Ordem de boot",
+                "dispositivo em 2o de 5 · `Windows Boot Manager` vem antes"
+            )),
+            "{saida}"
+        );
+        assert!(
+            !saida.contains("NAO DIZ"),
+            "o aviso de P-28 saiu com as tres atras do dispositivo:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn a_entrada_sem_alvo_a_frente_do_dispositivo_nao_engole_o_aviso() {
+        // **P-28.** `UEFI:Removable Device` nao tem `device` nem `path`, e a
+        // versao anterior lia a ausencia de alvo como *nao leva ao
+        // dispositivo*. A linha saia correta ao pe da letra — aquela entrada
+        // **esta** antes — e o paragrafo de perigo nao saia, porque ele mora
+        // no ramo em que o dispositivo e o primeiro. Quem abre a tela para
+        // saber se pode religar com o SSD na mesa lia "vem antes" e entendia
+        // que estava seguro.
+        //
+        // E a terceira forma da falha que o ADR-0009 pegou pelo nome e C-6
+        // pegou pelo alvo: aqui e a **ausencia** de alvo virando seguranca.
+        let saida = montar_com(&dispositivo_conectado(), &com_a_sem_alvo_na_frente());
+
+        assert!(
+            saida.contains(&linha(
+                "Ordem de boot",
+                "dispositivo em 3o de 5 · `UEFI:Removable Device` vem antes"
+            )),
+            "{saida}"
+        );
+        assert!(
+            saida.contains("`UEFI:Removable Device` esta na frente"),
+            "o aviso nao nomeia a entrada:\n{saida}"
+        );
+        assert!(saida.contains("NAO DIZ"), "{saida}");
+        assert!(
+            saida.contains("P-28"),
+            "o aviso nao diz de onde ele vem:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn sem_o_dispositivo_na_ordem_a_entrada_sem_alvo_impede_a_afirmacao() {
+        // **O ramo que P-28 nao tinha nomeado, e ele e pior do que o outro:
+        // aqui a tela nao engole um aviso, ela afirma.** `so o boot unico leva
+        // a ele` e uma afirmacao de seguranca, e ela nao se sustenta sobre uma
+        // entrada que nao diz para onde aponta.
+        //
+        // O estado e o mais banal que existe: e o que o `arca prepare` deixa —
+        // a entrada de firmware fora da ordem permanente — depois de um
+        // religar, que e o evento que traz as tres.
+        let fora_da_ordem = POS_RELIGAR.replacen(
+            "                        {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}\r\n",
+            "",
+            1,
+        );
+        assert_ne!(
+            fora_da_ordem, POS_RELIGAR,
+            "a troca nao pegou; a captura mudou de forma"
+        );
+
+        let saida = montar_com(&dispositivo_conectado(), &fora_da_ordem);
+        assert!(
+            saida.contains(&linha(
+                "Ordem de boot",
+                "4 entrada(s), nenhuma que se saiba levar ao dispositivo"
+            )),
+            "{saida}"
+        );
+        assert!(
+            !saida.contains("so o boot unico leva a ele"),
+            "a tela afirmou seguranca por cima de uma entrada opaca:\n{saida}"
+        );
+        assert!(saida.contains("NAO DIZ"), "{saida}");
+    }
+
+    #[test]
+    fn o_bootmgr_nao_e_uma_entrada_sem_alvo() {
+        // **A distincao de que depende a regra inteira.** O `{bootmgr}` aponta
+        // para `partition=\Device\HarddiskVolume1`: uma particao concreta, que
+        // so nao da para conferir por letra. Chama-lo de "nao se sabe" faria o
+        // aviso sair em toda tela — ele esta em primeiro desde sempre.
+        let leitura = firmware::ler(POS_RELIGAR);
+        let dispositivo = dispositivo_conectado();
+
+        let julgar = |identificador: &str| {
+            let entrada = leitura
+                .entradas
+                .iter()
+                .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador))
+                .expect("a entrada esta na captura");
+            alcance(entrada, &dispositivo)
+        };
+
+        assert_eq!(julgar("{bootmgr}"), Alcance::NaoLeva);
+        assert_eq!(
+            julgar("{6cc093dc-9ff9-11f1-8a4e-806e6f6e6963}"),
+            Alcance::NaoSeSabe
+        );
+        assert_eq!(
+            julgar("{f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}"),
+            Alcance::Leva
+        );
+
+        // E a ordem inteira, pela pergunta que a tela faz: so as tres do
+        // firmware sao opacas, e nenhuma delas esta a frente do dispositivo.
+        assert_eq!(
+            leitura.primeira_sem_alvo(2),
+            None,
+            "o `{{bootmgr}}` e o dispositivo bastam para o aviso sair"
+        );
+        assert_eq!(
+            leitura.primeira_sem_alvo(usize::MAX).as_deref(),
+            Some("UEFI:CD/DVD Drive")
+        );
+    }
+
+    #[test]
+    fn sem_arcaboot_conectado_a_entrada_sem_alvo_nao_levanta_duvida() {
+        // Nenhum reinicio boota num dispositivo que nao esta na mesa, e um
+        // aviso sobre o perigo de religar com ele conectado seria sobre um
+        // dispositivo que ninguem conectou.
+        let sem_boot = Dispositivo {
+            boot: None,
+            ..dispositivo_conectado()
+        };
+
+        let saida = montar_com(&sem_boot, &com_a_sem_alvo_na_frente());
+        assert!(
+            !saida.contains("NAO DIZ"),
+            "avisou de um perigo que precisa do dispositivo na mesa:\n{saida}"
         );
     }
 

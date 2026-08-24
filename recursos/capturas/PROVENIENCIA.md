@@ -939,3 +939,39 @@ palavras não são do `bcdedit`: são valores de `MediaType` do WMI
 > placa, e aparece nas capturas de 20/08 e de 24/08. Não tem relação com o
 > `MediaType` do WMI nem com o parágrafo acima — o que a torna interessante é
 > outra coisa, e é P-28: ela não declara para onde aponta.
+>
+> **As duas capturas viraram fixture em 24/08/2026**, e é a mesma medição nas
+> duas: a `legado-pt` e a `pos-religar` têm cinco entradas na ordem, as três
+> `UEFI:*` sem `device` nenhum, e as duas primeiras posições com alvo — que é o
+> que impede o aviso de C-14 de sair em toda tela. Ver
+> [ADR-0021](../../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md).
+
+## O par que fechou P-28, e o terceiro arquivo é o de antes
+
+O experimento das 18:39–18:47 de 24/08/2026: a `{6cc093dc}` `UEFI:Removable
+Device` promovida ao **topo** da ordem permanente com um `bcdedit /set … /addfirst`
+à mão, `grub.cfg` conferido inerte byte a byte (`4b33da61…9f47aa3d`), sem job
+armado, e um reinício com o SSD conectado.
+
+| Arquivo | O que é | SHA256 | O que prova |
+|---|---|---|---|
+| `bcdedit-enum-firmware-2026-08-24-removable-em-primeiro.txt` | 18:39, 2133 bytes | `82ebe078…32842023` | A entrada opaca em **1º**, o `{bootmgr}` em 2º e o `ARCA` em 3º |
+| `arca-status-2026-08-24-removable-em-primeiro.txt` | 18:39, 1846 bytes | `e4b1bf3c…390de091` | **O aviso de C-14 em hardware**, pela primeira vez: `dispositivo em 3o de 5 · UEFI:Removable Device vem antes` seguido do parágrafo |
+| `bcdedit-enum-firmware-2026-08-24-pos-boot-removable.txt` | 18:47, 1398 bytes | `89ca7ad1…7b8df3b9` | **P-28.** As três `UEFI:*` sumiram da ordem e da enumeração, e o `{bootmgr}` voltou ao topo |
+| `arca-status-2026-08-24-pos-boot-removable.txt` | 18:47, 1380 bytes | `1d015549…0e51db55` | A tela lendo a de cima: `dispositivo em 2o de 2`, sem aviso |
+
+**O terceiro arquivo é o primeiro de novo.** O SHA256 dele é o mesmo do
+`bcdedit-enum-firmware-2026-08-24-antes-do-religar.txt`, das 17:11:50: o
+firmware desfez, num POST, tudo o que dois eventos tinham feito — as três
+entradas que ele mesmo acrescentara às 17:26 e o `/addfirst` das 18:39. **O ARCA
+não escreveu nada nesse intervalo**; o `arca resultado` não chegou a rodar.
+
+Quem desfez não está separado: o firmware ao reconstruir no POST, ou o Windows
+ao subir. Ver
+[ADR-0021](../../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md).
+
+> **A escrita à mão fica registrada, porque este diretório distingue as duas
+> coisas.** O `/addfirst` das 18:39 foi feito **por uma pessoa**, com o
+> `bcdedit` elevado, para produzir o estado a medir — o mesmo método do
+> ADR-0013. O que as capturas guardam é o que as ferramentas responderam
+> **depois** dele, e o desfecho de 18:47 é do firmware, não de ninguém.
