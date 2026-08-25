@@ -113,6 +113,31 @@ pub enum Erro {
         tem: String,
     },
 
+    /// C-3 sobre a `description` da entrada — a terceira das três escritas, e a
+    /// que ficou sem conferência até 25/08/2026.
+    ///
+    /// # Por que ela merece o mesmo tratamento que o `device`
+    ///
+    /// Porque é o **mesmo comando**, e o C-6 é sobre o comando e não sobre o
+    /// campo: medido num Kingston DataTraveler Max, o `bcdedit /set` responde
+    /// *"A operação foi concluída com êxito"*, código 0, e não escreve. Não
+    /// havia razão para supor que só o `device` sofre disso — havia só o
+    /// hábito de conferir aquele.
+    ///
+    /// O que ela protege é C-4: a `description` é o que migra a entrada legada
+    /// `Clonezilla` para `ARCA`, e é **a identidade de uma entrada de firmware
+    /// neste projeto** — `Leitura::entrada_do_arca` procura por ela, e não por
+    /// um GUID guardado, porque o identificador nomeia o slot da NVRAM e o
+    /// firmware o reescreve (ADR-0025).
+    #[error(
+        "a entrada de firmware {identificador} devia se chamar `{esperado}` e a releitura mostra `{tem}`. O bcdedit respondeu sem escrever, que e o C-6 medido. O dispositivo esta particionado e com o Clonezilla dentro — rode `arca prepare` de novo no mesmo disco, que daqui em diante ele e idempotente"
+    )]
+    DescricaoDoFirmwareRecusada {
+        identificador: String,
+        esperado: String,
+        tem: String,
+    },
+
     /// A entrada continua na ordem permanente depois de mandada sair.
     ///
     /// `bcdedit /copy` a põe lá sozinho, e deixá-la é acrescentar um caminho
@@ -218,6 +243,41 @@ pub enum Erro {
         "a marca de boot unico devia apontar para {identificador} e a releitura mostra {tem}. O grub.cfg ficou com a receita gravada e a maquina NAO foi reiniciada: rode `arca desarmar` para devolver o dispositivo ao estado inerte"
     )]
     BootUnicoNaoArmou { identificador: String, tem: String },
+
+    /// A marca de boot unico pegou, e o identificador **deixou de nomear a
+    /// entrada do ARCA**.
+    ///
+    /// # Por que isto e um erro proprio, e nao um caso do de cima
+    ///
+    /// Porque o de cima pergunta *"a marca aponta para o identificador que eu
+    /// armei?"* e este pergunta *"o identificador que eu armei ainda e a
+    /// entrada que eu queria?"* — e as duas perguntas se separaram por
+    /// medicao, e nao por zelo.
+    ///
+    /// **Medido em 25/08/2026:** o
+    /// `{31cc955f-a0ae-11f1-8a54-806e6f6e6963}` era `UEFI:CD/DVD Drive`, sem
+    /// `device`, e depois de um boot o **mesmo GUID** era outra entrada, com
+    /// `device partition=E:`. O identificador nomeia o *slot* `Boot####` da
+    /// NVRAM, e o firmware reescreve os slots.
+    ///
+    /// Sem esta conferencia, um slot que trocasse de dono entre a leitura e a
+    /// escrita faria o ARCA armar **outra entrada**, ver o proprio GUID no
+    /// `bootsequence`, e relatar exito — com a maquina reiniciando para o
+    /// lugar errado. E exatamente o modo de falha que o comentario de
+    /// `marcar_o_boot_unico` ja nomeava, e contra o qual o GUID sozinho nao
+    /// bastava.
+    ///
+    /// Que isso aconteca **dentro de uma sessao**, sem reinicio, nao foi
+    /// medido — nas seis releituras do marco nada mudou. A defesa existe
+    /// porque custa uma comparacao de texto e o modo de falha e o pior que
+    /// este comando tem.
+    #[error(
+        "armei o boot unico em {identificador} e a releitura mostra que esse identificador e da entrada `{descricao}`, e nao do ARCA. O identificador do bcdedit nomeia o slot da NVRAM, e nao a entrada — o firmware pode te-los reescrito. O grub.cfg ficou com a receita gravada e a maquina NAO foi reiniciada: rode `arca desarmar` e confira o firmware com `arca status`"
+    )]
+    BootUnicoApontaParaOutra {
+        identificador: String,
+        descricao: String,
+    },
 
     /// O nome do disco de origem nao foi determinado, e armar exige um.
     ///

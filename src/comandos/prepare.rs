@@ -711,6 +711,27 @@ fn criar_a_entrada(contexto: &Contexto, letra_do_boot: char) -> Resultado<Entrad
         });
     }
 
+    // **A terceira, que o comentário acima prometia e ninguém conferia.**
+    //
+    // O `/set description` é o que migra a entrada legada `Clonezilla` para
+    // `ARCA` (C-4, ADR-0017), e ele é o mesmo comando que o C-6 pega mentindo:
+    // medido em 25/08/2026, num Kingston DataTraveler Max, o `bcdedit /set`
+    // responde *"A operação foi concluída com êxito"*, código 0, e **não
+    // escreve**. Não havia motivo para supor que só o `device` sofre disso.
+    //
+    // Deixar passar seria a tela do fim afirmar `ARCA` sobre uma entrada que
+    // continua chamada `Clonezilla` — o ARCA relatando o que espera em vez do
+    // que há, que é justamente o que `EntradaDoArca::descricao` existe para
+    // não fazer. Recusar aqui custa rodar o comando de novo; o disco já está
+    // particionado e o `prepare` é idempotente a partir daí.
+    if relida.descricao.as_deref() != Some(firmware::ARCA) {
+        return Err(Erro::DescricaoDoFirmwareRecusada {
+            identificador,
+            esperado: firmware::ARCA.to_string(),
+            tem: relida.descricao.unwrap_or_else(|| "nada".to_string()),
+        });
+    }
+
     // **O achado da medição de 23/08/2026**: `bcdedit /copy` põe a entrada
     // nova no `displayorder` sozinho. Ninguém pediu, e isso é acrescentar um
     // caminho permanente para bootar no dispositivo — o perigo que C-5 nomeia.
@@ -2121,6 +2142,158 @@ mod testes {
             bancada.sistema.baixados.borrow().is_empty(),
             "o ensaio pelo menu baixou o Clonezilla"
         );
+    }
+
+    // ────── as três releituras de C-3 da entrada de firmware ──────
+    //
+    // As três eram prometidas por um comentário e só duas existiam. E nenhuma
+    // das três tinha teste — num caminho cujo modo de falha é um dispositivo
+    // que o `prepare` declara pronto e que não boota.
+
+    /// Um `{fwbootmgr}` com a ordem permanente desta mesa e nada mais.
+    fn ordem_desta_mesa() -> String {
+        format!(
+            "\r\nGerenciador de Inicialização de Firmware\r\n\
+             ----------------------------------------\r\n\
+             identificador           {FWBOOTMGR}\r\n\
+             displayorder            {BOOTMGR}\r\n\
+             timeout                 1\r\n"
+        )
+    }
+
+    /// Um bloco de entrada de boot, com os três campos que a releitura de
+    /// [`criar_a_entrada`] confere.
+    fn entrada_com(descricao: &str, device: &str, path: &str) -> String {
+        format!(
+            "\r\nGerenciador de Inicialização do Windows\r\n\
+             ---------------------------------------\r\n\
+             identificador           {GUID_DA_ENTRADA}\r\n\
+             device                  {device}\r\n\
+             path                    {path}\r\n\
+             description             {descricao}\r\n"
+        )
+    }
+
+    const GUID_DA_ENTRADA: &str = "{f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}";
+
+    /// Roda `criar_a_entrada` com o firmware mostrando `antes` na busca pela
+    /// entrada do ARCA, e `depois` na releitura de C-3.
+    ///
+    /// **A releitura enumera o próprio identificador**, e não `firmware` — é o
+    /// `bcdedit /enum {guid}`, e por isso as duas respostas ficam em alvos
+    /// diferentes do duplo. Errar isso faz o teste exercitar o `/copy` em vez
+    /// da releitura, e é o que a asserção abaixo pega.
+    fn criar_a_entrada_com(antes: &str, depois: &str) -> Resultado<EntradaCriada> {
+        let com_a_ordem = format!("{}{antes}", ordem_desta_mesa());
+        let leitura = firmware::ler(&com_a_ordem);
+        assert!(
+            leitura.entrada_do_arca().is_some(),
+            "a bancada tem de comecar com uma entrada do ARCA achavel: {:#?}",
+            leitura.entradas
+        );
+
+        let mut bancada = Bancada::nova("c3-firmware", ConsoleDeMentira::mudo());
+        bancada.firmware = FirmwareDeMentira::novo()
+            .respondendo(FWBOOTMGR, &ordem_desta_mesa())
+            .respondendo(FIRMWARE, &com_a_ordem)
+            .respondendo(GUID_DA_ENTRADA, depois);
+
+        criar_a_entrada(&bancada.contexto(false), 'R')
+    }
+
+    #[test]
+    fn a_descricao_que_o_bcdedit_nao_escreveu_e_recusada() {
+        // **C-6 medido em 25/08/2026**, num Kingston DataTraveler Max: o
+        // `bcdedit /set` responde "A operação foi concluída com êxito", código
+        // 0, e mantém o valor antigo. Aqui o `device` e o `path` pegaram e a
+        // `description` não — o dispositivo bootaria, mas continuaria se
+        // chamando `Clonezilla`, e a tela do fim diria `ARCA`.
+        //
+        // A descrição é a identidade de uma entrada de firmware neste projeto:
+        // `Leitura::entrada_do_arca` procura por ela, e não por um GUID
+        // guardado, porque o identificador nomeia o slot da NVRAM (ADR-0025).
+        let erro = criar_a_entrada_com(
+            &entrada_com(
+                firmware::LEGADA,
+                "partition=X:",
+                r"\EFI\Microsoft\Boot\bootmgfw.efi",
+            ),
+            &entrada_com(firmware::LEGADA, "partition=R:", CAMINHO_DO_EFI),
+        )
+        .expect_err("a descricao nao pegou, e isso e recusa");
+
+        assert!(
+            matches!(erro, Erro::DescricaoDoFirmwareRecusada { .. }),
+            "{erro:?}"
+        );
+        assert!(erro.to_string().contains(firmware::LEGADA), "{erro}");
+        assert!(erro.to_string().contains("C-6"), "{erro}");
+    }
+
+    #[test]
+    fn o_device_que_o_bcdedit_nao_escreveu_e_recusado() {
+        // A defesa que já existia e não tinha teste. É o C-6 na sua forma mais
+        // perigosa: a entrada existe, se chama `ARCA`, carrega o `.efi` certo
+        // — e aponta para outra partição. O `prepare` diria "pronto" sobre um
+        // dispositivo que não boota.
+        let erro = criar_a_entrada_com(
+            &entrada_com(firmware::ARCA, "partition=X:", CAMINHO_DO_EFI),
+            &entrada_com(firmware::ARCA, "partition=X:", CAMINHO_DO_EFI),
+        )
+        .expect_err("o device nao pegou, e isso e recusa");
+
+        assert!(
+            matches!(erro, Erro::AlvoDoFirmwareRecusado { .. }),
+            "{erro:?}"
+        );
+        assert!(erro.to_string().contains("partition=R:"), "{erro}");
+    }
+
+    #[test]
+    fn o_caminho_do_efi_que_o_bcdedit_nao_escreveu_e_recusado() {
+        // A entrada nasce de um `/copy {bootmgr}`, e o `{bootmgr}` carrega o
+        // `bootmgfw.efi` do Windows. O `/set path` não pegando deixa a entrada
+        // do ARCA apontando para o carregador do Windows **na partição do
+        // dispositivo** — onde ele não existe.
+        let erro = criar_a_entrada_com(
+            &entrada_com(
+                firmware::ARCA,
+                "partition=X:",
+                r"\EFI\Microsoft\Boot\bootmgfw.efi",
+            ),
+            &entrada_com(
+                firmware::ARCA,
+                "partition=R:",
+                r"\EFI\Microsoft\Boot\bootmgfw.efi",
+            ),
+        )
+        .expect_err("o path nao pegou, e isso e recusa");
+
+        assert!(
+            matches!(erro, Erro::CaminhoDoEfiRecusado { .. }),
+            "{erro:?}"
+        );
+        assert!(erro.to_string().contains(CAMINHO_DO_EFI), "{erro}");
+    }
+
+    #[test]
+    fn as_tres_pegando_a_entrada_legada_e_migrada_e_nao_duplicada() {
+        // O caminho feliz das três, e é o de C-4: a entrada legada
+        // `Clonezilla` vira `ARCA` **no lugar**, em vez de nascer uma segunda
+        // ao lado. Duas entradas seriam duas formas de bootar no Clonezilla,
+        // uma delas sem ninguém olhando (ADR-0017).
+        let criada = criar_a_entrada_com(
+            &entrada_com(
+                firmware::LEGADA,
+                "partition=X:",
+                r"\EFI\Microsoft\Boot\bootmgfw.efi",
+            ),
+            &entrada_com(firmware::ARCA, "partition=R:", CAMINHO_DO_EFI),
+        )
+        .expect("as tres pegaram");
+
+        assert!(criada.ja_existia, "a legada foi reusada, e nao duplicada");
+        assert_eq!(criada.identificador, GUID_DA_ENTRADA);
     }
 
     #[test]

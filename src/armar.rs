@@ -499,6 +499,39 @@ fn marcar_o_boot_unico(
         });
     }
 
+    // **E o identificador tem de continuar sendo o da entrada do ARCA.**
+    //
+    // A conferencia de cima compara o GUID armado com o GUID lido, e as duas
+    // pontas sao o mesmo texto — ela nao pode pegar o caso em que o texto
+    // continua igual e a entrada por tras dele virou outra. O marco em GPT de
+    // 25/08/2026 mediu que isso acontece: o
+    // `{31cc955f-a0ae-11f1-8a54-806e6f6e6963}` era `UEFI:CD/DVD Drive` antes
+    // de um boot e outra entrada depois dele. O identificador nomeia o slot
+    // `Boot####` da NVRAM, e o firmware reescreve os slots.
+    //
+    // Aqui isso importa porque entre `migrar_a_entrada`, que descobre o
+    // identificador, e esta funcao, que o arma, ha tres escritas no firmware e
+    // duas em disco. **Que o slot troque de dono nesse intervalo, sem
+    // reinicio, nao foi medido** — nas seis releituras do marco nada mudou. A
+    // defesa esta aqui porque custa uma leitura que a funcao vizinha ja sabe
+    // fazer, e porque o modo de falha e o pior deste comando: reiniciar a
+    // maquina para uma entrada que nao e a do ARCA, tendo dito que armou.
+    //
+    // A identidade e a **descricao**, que e por onde `Leitura::entrada_do_arca`
+    // sempre achou a entrada. Ver `firmware::e_descricao_do_arca`.
+    let apontada = releitura(ferramenta, identificador)?;
+    let descricao = apontada.descricao.as_deref().unwrap_or_default();
+    if !firmware::e_descricao_do_arca(descricao) {
+        return Err(Erro::BootUnicoApontaParaOutra {
+            identificador: identificador.to_string(),
+            descricao: if descricao.is_empty() {
+                "(sem descricao)".to_string()
+            } else {
+                descricao.to_string()
+            },
+        });
+    }
+
     Ok(())
 }
 
@@ -668,6 +701,123 @@ mod testes {
         assert_eq!(armado.alvo, Alvo::ParticaoComLetra('R'));
     }
 
+    // ────────── o identificador nao e identidade (ADR-0025) ──────────
+
+    /// Um `bcdedit /enum firmware` com **uma** entrada, com a descrição dada.
+    ///
+    /// O GUID é sempre o mesmo — [`GUID`] —, e é esse o ponto: o que muda de um
+    /// texto para o outro é **quem está naquele slot**.
+    fn firmware_com_a_entrada_chamada(descricao: &str) -> String {
+        format!(
+            "\r\nGerenciador de Inicialização do Windows\r\n\
+             ---------------------------------------\r\n\
+             identificador           {GUID}\r\n\
+             device                  partition=R:\r\n\
+             path                    \\EFI\\boot\\bootx64.efi\r\n\
+             description             {descricao}\r\n"
+        )
+    }
+
+    #[test]
+    fn armar_recusa_quando_o_identificador_deixou_de_ser_a_entrada_do_arca() {
+        // **Medido em 25/08/2026, no marco em GPT.** O
+        // `{31cc955f-a0ae-11f1-8a54-806e6f6e6963}` era `UEFI:CD/DVD Drive`,
+        // sem `device`, antes de um boot; depois dele, o **mesmo GUID** era
+        // outra entrada, com `device partition=E:`. O identificador nomeia o
+        // slot `Boot####` da NVRAM, e o firmware reescreve os slots.
+        //
+        // Sem esta conferencia o ARCA armaria o slot, veria o proprio GUID no
+        // `bootsequence`, e relataria exito — com a maquina reiniciando para
+        // uma entrada que nao e a dele. A marca esta la; o dono e outro.
+        let ferramenta = FirmwareDeMentira::novo()
+            .respondendo(FWBOOTMGR, &fwbootmgr(Some(GUID)))
+            .respondendo(
+                FIRMWARE,
+                &firmware_com_a_entrada_chamada("UEFI:CD/DVD Drive"),
+            );
+
+        let erro = marcar_o_boot_unico(&ferramenta, GUID, &firmware::ler(&fwbootmgr(None)))
+            .expect_err("o slot trocou de dono, e armar tem de recusar");
+
+        assert!(
+            matches!(erro, Erro::BootUnicoApontaParaOutra { .. }),
+            "{erro:?}"
+        );
+        assert!(erro.to_string().contains("UEFI:CD/DVD Drive"), "{erro}");
+        assert!(
+            erro.to_string().contains("arca desarmar"),
+            "a mensagem tem de dizer como voltar, porque o grub.cfg ja foi gravado: {erro}"
+        );
+    }
+
+    #[test]
+    fn armar_aceita_a_entrada_legada_porque_a_identidade_e_a_descricao() {
+        // A defesa confere **identidade**, e a identidade deste projeto são os
+        // dois nomes de C-4. Recusar a legada aqui quebraria a migração do
+        // ADR-0017 no último passo, depois de o `grub.cfg` já ter sido gravado.
+        for descricao in [firmware::ARCA, firmware::LEGADA, "clonezilla"] {
+            let ferramenta = FirmwareDeMentira::novo()
+                .respondendo(FWBOOTMGR, &fwbootmgr(Some(GUID)))
+                .respondendo(FIRMWARE, &firmware_com_a_entrada_chamada(descricao));
+
+            assert!(
+                marcar_o_boot_unico(&ferramenta, GUID, &firmware::ler(&fwbootmgr(None))).is_ok(),
+                "a entrada `{descricao}` e do ARCA e tem de passar"
+            );
+        }
+    }
+
+    #[test]
+    fn uma_entrada_sem_descricao_nao_passa_por_ser_do_arca() {
+        // Um slot sem `description` não é a entrada do ARCA — é um slot sobre
+        // o qual não se pode afirmar nada. É o mesmo raciocínio de
+        // `Leitura::viu_o_gerenciador`: **não entendi** não vira resposta
+        // tranquilizadora. A tela diz `(sem descricao)` em vez de vazio, para
+        // quem lê não achar que o ARCA perdeu a palavra.
+        let sem_descricao = format!(
+            "\r\nGerenciador de Inicialização do Windows\r\n\
+             ---------------------------------------\r\n\
+             identificador           {GUID}\r\n\
+             device                  partition=R:\r\n"
+        );
+        let ferramenta = FirmwareDeMentira::novo()
+            .respondendo(FWBOOTMGR, &fwbootmgr(Some(GUID)))
+            .respondendo(FIRMWARE, &sem_descricao);
+
+        let erro = marcar_o_boot_unico(&ferramenta, GUID, &firmware::ler(&fwbootmgr(None)))
+            .expect_err("sem descricao nao da para afirmar que e a entrada do ARCA");
+
+        assert!(erro.to_string().contains("(sem descricao)"), "{erro}");
+    }
+
+    #[test]
+    fn a_conferencia_do_dono_vem_depois_da_do_guid_e_da_ordem_permanente() {
+        // A ordem das três recusas importa para quem lê a tela: C-5 primeiro,
+        // porque uma ordem permanente alterada é falha mesmo que o resto tenha
+        // dado certo; depois a marca; e só então de quem é o slot. Um firmware
+        // que falhasse nas três tem de relatar a primeira.
+        let ferramenta = FirmwareDeMentira::novo()
+            .respondendo(FWBOOTMGR, &fwbootmgr(Some(GUID)))
+            .respondendo(
+                FIRMWARE,
+                &firmware_com_a_entrada_chamada("UEFI:CD/DVD Drive"),
+            );
+
+        // Uma ordem permanente diferente da lida antes: C-5 tem de vencer.
+        let outra_ordem = firmware::Leitura {
+            ordem_permanente: vec!["{outra}".to_string()],
+            viu_o_gerenciador: true,
+            ..Default::default()
+        };
+
+        let erro = marcar_o_boot_unico(&ferramenta, GUID, &outra_ordem)
+            .expect_err("a ordem permanente mudou");
+        assert!(
+            matches!(erro, Erro::OrdemPermanenteAlterada { .. }),
+            "C-5 vem antes de saber de quem e o slot: {erro:?}"
+        );
+    }
+
     #[test]
     fn o_grub_cfg_armado_desarma_de_volta_para_o_inerte() {
         // O que a E7 escreve, a E4 desfaz. Se algum dia o bloco derivado
@@ -711,7 +861,9 @@ mod testes {
             "a descricao nao foi migrada: {escritas:?}"
         );
         assert!(
-            !escritas.iter().any(|argumentos| argumentos.contains(&"/create".to_string())),
+            !escritas
+                .iter()
+                .any(|argumentos| argumentos.contains(&"/create".to_string())),
             "criou uma entrada em vez de migrar: {escritas:?}"
         );
     }
@@ -820,7 +972,10 @@ mod testes {
             outro => panic!("esperava a marca que nao pegou, veio {outro}"),
         }
 
-        assert!(arquivos.conteudo_de(ESTADO).is_some(), "o job foi registrado");
+        assert!(
+            arquivos.conteudo_de(ESTADO).is_some(),
+            "o job foi registrado"
+        );
         assert!(
             arquivos.conteudo_de(GRUB).unwrap().contains(ID_DO_ARCA),
             "o grub.cfg ficou armado, que e o estado nomeado"
@@ -856,7 +1011,10 @@ mod testes {
             .respondendo(FWBOOTMGR, &fwbootmgr(None))
             .respondendo_depois(
                 FWBOOTMGR,
-                &fwbootmgr(Some(GUID)).replace("{bootmgr}", "{bootmgr}\r\n                        {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}"),
+                &fwbootmgr(Some(GUID)).replace(
+                    "{bootmgr}",
+                    "{bootmgr}\r\n                        {f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}",
+                ),
             );
 
         match armar_com(&arquivos, &ferramenta).unwrap_err() {

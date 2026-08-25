@@ -160,8 +160,40 @@ que diria ter preparado um dispositivo que não boota.
 antes de um boot e `ARCA GPT TESTE` com `device partition=E:` depois dele. Ele
 nomeia o *slot* `Boot####` da NVRAM, e não a entrada que está nele. Dentro de
 uma mesma sessão, sem reinício, nada mudou nas seis releituras do roteiro; entre
-boots, mudou. A distinção não foi medida de propósito, e é uma pergunta aberta
-para todo lugar que guarda um identificador de firmware e o usa depois.
+boots, mudou. A distinção não foi medida de propósito.
+
+**Este ADR chegou a registrar isso como pergunta aberta, e ela virou código na
+mesma sessão** — porque a resposta que faltava não muda o que fazer. Duas
+mudanças saíram daí:
+
+**O `armar` confere de quem é o slot, e não só o texto do GUID.**
+`marcar_o_boot_unico` comparava o identificador armado com o identificador lido,
+e as duas pontas são o mesmo texto: a comparação não podia pegar o caso em que o
+texto continua igual e a entrada por trás dele virou outra. Entre
+`migrar_a_entrada`, que descobre o identificador, e `marcar_o_boot_unico`, que o
+arma, há três escritas no firmware e duas em disco. Agora a releitura confere que
+aquele identificador ainda nomeia uma entrada **do ARCA** — pela `description`,
+que é como `Leitura::entrada_do_arca` sempre achou a entrada. Sem isso, um slot
+que trocasse de dono nesse intervalo faria o ARCA armar outra entrada, ver o
+próprio GUID no `bootsequence`, e relatar êxito, com a máquina reiniciando para o
+lugar errado. É `Erro::BootUnicoApontaParaOutra`.
+
+**O `prepare` passou a conferir a `description` que escreve.** O comentário de
+`criar_a_entrada` dizia *"as três com releitura de C-3"* e só duas existiam: o
+`device` e o `path` eram conferidos, a `description` não. É o **mesmo comando**
+que o C-6 pega mentindo — medido neste mesmo marco, num Kingston DataTraveler
+Max, o `bcdedit /set` responde êxito e não escreve —, e não havia razão para
+supor que só o `device` sofre disso. Deixar passar seria a tela do fim afirmar
+`ARCA` sobre uma entrada que continua chamada `Clonezilla`. É
+`Erro::DescricaoDoFirmwareRecusada`.
+
+Nenhuma das duas dependia de saber se o slot troca de dono **dentro** de uma
+sessão. As duas custam uma comparação de texto sobre uma leitura que já
+acontecia, e o modo de falha que elas fecham é o pior que estes comandos têm.
+
+E as três releituras de C-3 da entrada de firmware — `device`, `path` e
+`description` — **não tinham teste nenhum**. Agora têm, e o caminho feliz da
+migração de C-4 junto.
 
 **E o `displayorder` do `bcdedit` não previu o comportamento do firmware.** Ele
 trazia a entrada de teste em primeiro, na frente do `{bootmgr}`, com `timeout 1`;
@@ -202,6 +234,17 @@ mesmo assim a máquina bootou no Windows com o dispositivo conectado. O
 - A releitura de `conferir_o_que_saiu` fica **mais** rigorosa, e não menos: ela
   passa a recusar uma terceira partição que antes teria virado uma mensagem
   confusa sobre letra faltando.
+- **O `armar` e o `prepare` ganharam as duas conferências acima**, e a suíte
+  ficou inteira verde pela primeira vez desde a reinstalação do Windows: 878
+  testes.
+- **O teste `a_entrada_do_arca_existe_nesta_maquina` deixou de ser um vermelho
+  permanente.** Ele exigia que a mesa tivesse um dispositivo preparado, e desde
+  a reinstalação do Windows de 25/08 ela não tem — o teste falhava por um fato
+  do mundo, e um vermelho que não acusa defeito treina quem lê a suíte a ignorar
+  o vermelho. Agora ele **pula** quando não há entrada nenhuma, dizendo por quê,
+  e **falha** quando há a legada `Clonezilla` não migrada: o primeiro caso é
+  sobre a mesa, o segundo é sobre o código.
 - Fica aberto, e nomeado: **se o identificador de firmware é estável dentro de
-  uma sessão.** Todo lugar do código que guarda um e o usa depois depende disso,
-  e não foi medido de propósito.
+  uma sessão.** As duas defesas acima o tornam uma pergunta sem consequência
+  para este código — as duas funcionam nos dois cenários —, mas ela continua
+  valendo para quem for escrever a próxima coisa que guarda um identificador.

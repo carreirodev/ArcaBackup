@@ -55,6 +55,30 @@ pub const ARCA: &str = "ARCA";
 /// olhando.
 pub const LEGADA: &str = "Clonezilla";
 
+/// Se esta descricao e a de uma entrada do ARCA — a propria ou a legada.
+///
+/// # E a identidade de uma entrada de firmware neste projeto, e ha medicao
+///
+/// **O identificador que o `bcdedit /enum firmware` devolve nao e identidade.**
+/// Medido em 25/08/2026, no marco em GPT: o
+/// `{31cc955f-a0ae-11f1-8a54-806e6f6e6963}` era `UEFI:CD/DVD Drive`, **sem
+/// `device`**, antes de um boot; depois dele, o **mesmo GUID** era `ARCA GPT
+/// TESTE`, com `device partition=E:`. Ele nomeia o *slot* `Boot####` da NVRAM,
+/// e nao a entrada que esta nele — e o firmware reescreve os slots.
+///
+/// Este projeto ja fazia a coisa certa sem ter medido por que: [`chamada`]
+/// procura a entrada **pela descricao**, e nao por um GUID guardado. Esta
+/// funcao e a mesma regra exposta para quem precisa conferir o caminho
+/// inverso — dado um identificador, ele ainda nomeia a entrada que se pensava?
+///
+/// A caixa nao diferencia pela mesma razao de [`Leitura::chamada`]: quem
+/// digitou a descricao da entrada legada foi uma pessoa, uma vez.
+///
+/// Ver o [ADR-0025](../docs/adr/0025-o-arca-particiona-em-gpt.md).
+pub fn e_descricao_do_arca(descricao: &str) -> bool {
+    descricao.eq_ignore_ascii_case(ARCA) || descricao.eq_ignore_ascii_case(LEGADA)
+}
+
 /// O gerenciador de inicializacao do firmware, dono da ordem de boot.
 ///
 /// `bcdedit /enum firmware` o mostra pelo apelido; com `/v`, pelo GUID. O ARCA

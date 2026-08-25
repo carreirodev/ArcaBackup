@@ -147,11 +147,30 @@ fn armar_e_desarmar_o_dispositivo_de_verdade_se_cancelam() {
 }
 
 #[test]
-fn a_entrada_do_arca_existe_nesta_maquina_e_e_a_propria() {
-    // C-4 medido: a entrada desta maquina ja se chama `ARCA` — ela foi migrada
-    // a mao em 22/08, e a captura de 20/08 preserva o estado anterior. O caso
-    // "ha a legada `Clonezilla`" continua coberto por aquela captura, em
-    // `src/armar.rs`.
+fn a_entrada_do_arca_desta_maquina_e_a_propria_e_aponta_para_algum_lugar() {
+    // C-4 medido: a entrada desta maquina ja se chamava `ARCA` — ela foi
+    // migrada a mao em 22/08, e a captura de 20/08 preserva o estado anterior.
+    // O caso "ha a legada `Clonezilla`" continua coberto por aquela captura,
+    // em `src/armar.rs`, com duplos.
+    //
+    // # Nao ha entrada e' pular; ha a errada e' falhar
+    //
+    // Ate 25/08/2026 este teste exigia que a entrada existisse, e isso o fazia
+    // afirmar uma coisa sobre **a mesa** em vez de sobre o codigo. Naquele dia
+    // o Windows desta maquina foi reinstalado e a NVRAM voltou a ter uma
+    // entrada so, o `{bootmgr}` — medido na Etapa 1 do marco em GPT. O teste
+    // passou a falhar por um fato do mundo, e um vermelho que nao acusa
+    // defeito nenhum e' pior do que nenhum teste: ele treina quem le a suite a
+    // ignorar o vermelho.
+    //
+    // A separacao e' esta, e ela e' a mesma que os vizinhos deste arquivo fazem
+    // com o `caminho_do_grub()`:
+    //
+    // - **nao ha entrada nenhuma** — a mesa nao tem dispositivo preparado.
+    //   Pula, e diz por que. O que o codigo faz nesse caso ja tem teste: armar
+    //   **recusa**, porque C-4 diz que armar nao cria entrada de boot;
+    // - **ha a legada `Clonezilla`** — o `arca prepare` devia te-la migrado
+    //   para `ARCA` e nao migrou. Falha, e essa falha e' sobre o codigo.
     let Ok(texto) = Bcdedit.enumerar("firmware") else {
         eprintln!("pulado: o bcdedit recusou o /enum firmware");
         return;
@@ -159,20 +178,24 @@ fn a_entrada_do_arca_existe_nesta_maquina_e_e_a_propria() {
 
     let leitura = firmware::ler(&texto);
     let Some(achado) = leitura.entrada_do_arca() else {
-        panic!(
-            "nao ha entrada `ARCA` nem `Clonezilla` nesta maquina, e armar nao cria entrada de boot"
+        eprintln!(
+            "pulado: esta maquina nao tem entrada `ARCA` nem `Clonezilla`, entao nao ha \
+             dispositivo preparado na mesa. Rode `arca prepare` para este teste voltar a medir \
+             alguma coisa"
         );
+        return;
     };
 
     assert_eq!(
         achado.procedencia,
         Procedencia::Propria,
-        "a entrada desta maquina voltou a se chamar `{}`",
+        "a entrada desta maquina se chama `{}`, e o `arca prepare` devia te-la migrado para `ARCA` (C-4)",
         achado.descricao
     );
     assert!(
         achado.entrada.alvo.is_some(),
-        "a entrada existe e nao diz para onde ir"
+        "a entrada `{}` existe e nao diz para onde ir — e uma entrada sem alvo na ordem, que o ADR-0021 diz nao ser seguranca",
+        achado.descricao
     );
 }
 
