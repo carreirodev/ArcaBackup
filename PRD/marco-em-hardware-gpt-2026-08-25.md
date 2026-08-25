@@ -11,6 +11,32 @@ código vem depois, na Etapa 9.
 
 ---
 
+## Progresso
+
+| Etapa | O que faz | Status | Feita em |
+|---|---|---|---|
+| 1 | Registrar o estado antes de tocar em nada | ✅ | 2026-08-25 · NVRAM com **uma** entrada só |
+| 2 | Escolher o alvo e conferir as quatro defesas | ✅ | 2026-08-25 · disco 2, as quatro passaram |
+| 3 | Apagar e inicializar em GPT | ✅ | 2026-08-25 · **houve MSR**, removida |
+| 4 | Criar as duas partições | — | |
+| 5 | Instalar o Clonezilla na ARCABOOT | — | |
+| 6 | Criar a entrada de firmware de teste | — | |
+| 7 | **O boot, que é o que decide** | — | |
+| 8 | Capturar a NVRAM de dentro do boot | — | |
+| 9 | Voltar ao normal | — | |
+
+**O disco está parado em GPT com zero partições**, `LargestFreeExtent`
+256 059 113 472, esperando o `New-Partition` da Etapa 4. A captura viva é
+[`recursos/capturas/medicao-gpt-2026-08-25.txt`](../recursos/capturas/medicao-gpt-2026-08-25.txt),
+e ela cresce a cada etapa — está registrada em `PROVENIENCIA.md` com o SHA256 do
+arquivo **parado na Etapa 3**, que muda quando as seguintes escreverem nele.
+
+> **Nada foi decidido ainda.** Três das nove etapas são preparação, e quem decide
+> é a **Etapa 7**. Das três perguntas que o ADR novo precisa responder — no fim
+> deste documento —, só a segunda está respondida: houve MSR, e ela foi removida.
+
+---
+
 ## Antes de começar: o que este roteiro decide, e o que não
 
 O ADR-0014 tem um argumento e uma fraqueza:
@@ -57,12 +83,12 @@ bootar**.
 
 ## Pré-requisitos
 
-- [ ] Um **segundo** SSD/HD externo, cujo conteúdo você pode perder
-- [ ] O dispositivo ARCA de produção **desconectado** durante todo o roteiro
-- [ ] `clonezilla-live-3.3.3-15-amd64.zip` — a mesma versão do
+- [x] Um **segundo** SSD/HD externo, cujo conteúdo você pode perder — o Kingston DataTraveler Max de 238,5 GB
+- [x] O dispositivo ARCA de produção **desconectado** durante todo o roteiro
+- [x] `clonezilla-live-3.3.3-15-amd64.zip` — a mesma versão do
       [ADR-0018](../docs/adr/0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md);
       o `.zip`, não o `.iso`
-- [ ] PowerShell **como Administrador**
+- [x] PowerShell **como Administrador** — e que seja o **7**, não o 5.1; ver a nota na Etapa 3
 - [ ] Saber entrar no menu de boot da máquina (F12 ou equivalente)
 
 Abra o PowerShell elevado e prepare o arquivo de captura:
@@ -81,7 +107,13 @@ function CapOut($obj) { $obj | Out-String | Add-Content $CAP; $obj }
 
 ---
 
-## Etapa 1 — Registrar o estado antes de tocar em nada
+## Etapa 1 — Registrar o estado antes de tocar em nada ✅
+
+> **Feita em 25/08/2026.** A NVRAM tinha **uma entrada só**: `{fwbootmgr}` com
+> `displayorder` apontando para `{bootmgr}`, e nada mais. A entrada `ARCA` que as
+> capturas de 22 a 24/08 mediram não sobreviveu à reinstalação do Windows. É esse
+> o número de referência: ao final da Etapa 6 devem ser **duas**, e a Etapa 9
+> volta a uma.
 
 Isto é o que permite voltar. Não pule.
 
@@ -101,7 +133,12 @@ Etapa 6 deve haver **uma a mais** — a de teste —, e a Etapa 9 a remove.
 
 ---
 
-## Etapa 2 — Escolher o alvo e conferir as quatro defesas
+## Etapa 2 — Escolher o alvo e conferir as quatro defesas ✅
+
+> **Feita em 25/08/2026.** O alvo é `$n = 2` — Kingston DataTraveler Max,
+> 256 060 514 304 bytes, `External hard disk media`, MBR com uma única partição
+> NTFS rotulada `AMD Backups` em `E:` e 238,3 GB livres de 238,5. As quatro
+> conferências passaram, e o disco de produção não estava na mesa.
 
 Descubra o índice do disco novo:
 
@@ -151,7 +188,26 @@ CapOut (Get-Partition -DiskNumber $n | Get-Volume | Select-Object DriveLetter,Fi
 
 ---
 
-## Etapa 3 — Apagar e inicializar em GPT
+## Etapa 3 — Apagar e inicializar em GPT ✅
+
+> **Feita em 25/08/2026, e a resposta é a que o roteiro tratava como
+> possibilidade: houve MSR.** O `Initialize-Disk -PartitionStyle GPT` criou
+> sozinho uma partição `Reserved` de 16 759 808 bytes no offset 17 408, com
+> `GptType {e3c9e316-0b5c-4db8-817d-f92df00215ae}`. Foi removida, e o disco
+> voltou a zero partições — que é como o MBR sai do `Initialize-Disk`. Isto
+> responde a **segunda** das três perguntas do fim do documento, e deixa de ser
+> hipótese para virar requisito de `particionador.rs`.
+>
+> **A GPT cobra 1 400 832 bytes.** Num disco de 256 060 514 304, o
+> `LargestFreeExtent` depois de remover a MSR é **256 059 113 472** — a tabela
+> primária no começo e a cópia secundária no fim. É esse o número que a Etapa 4
+> usa nas contas, e a razão de elas não saírem de constante.
+>
+> Um tropeço registrado: a primeira tentativa desta etapa rodou sob
+> `powershell.exe` 5.1, que leu o `.ps1` UTF-8 como ANSI — o `—` virou `â€"`, a
+> aspa tipográfica fechou as strings cedo, e o script parou entre o `Clear-Disk`
+> e o `Initialize-Disk`. A segunda rodou sob `pwsh` 7.6.5. **Rode os blocos
+> destas etapas em PowerShell 7**, não no 5.1.
 
 > **Ponto sem volta.** O `Clear-Disk` abaixo é irreversível. Confira `$n` mais
 > uma vez — `(Get-Disk -Number $n).FriendlyName` — antes de dar Enter.
