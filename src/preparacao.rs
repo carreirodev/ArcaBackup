@@ -109,6 +109,79 @@ pub enum RecusaDaPreparacao {
         tem: u64,
         precisa: u64,
     },
+
+    /// Nenhum disco desta máquina passa pelas defesas, e não há o que oferecer.
+    ///
+    /// É a recusa do menu, e ela conta os recusados em vez de calar: uma tela
+    /// que diz "nenhum disco" para quem está vendo dois discos na mesa parece
+    /// defeito do ARCA. A tela lista cada um com o seu motivo antes desta
+    /// mensagem — ver [`crate::comandos::prepare::montar_o_menu`].
+    NadaAOferecer { recusados: usize },
+
+    /// O que se digitou no menu não é o número de nenhum candidato.
+    ///
+    /// Uma tentativa, e não um laço — a mesma regra da confirmação e da lista
+    /// do `arca restore`. Quem errou repete o comando, que até aqui não apagou
+    /// nada. **E o Enter vazio cai aqui**, de propósito: o menu não tem padrão,
+    /// porque um padrão seria o ARCA escolhendo o disco a apagar.
+    EscolhaInvalida { digitado: String, quantas: usize },
+}
+
+impl RecusaDaPreparacao {
+    /// O motivo em **uma linha**, para a lista do menu.
+    ///
+    /// # Por que não serve o `Display`
+    ///
+    /// Porque as duas respondem a perguntas diferentes. O `Display` é a
+    /// mensagem de um comando que morreu por causa desta recusa: ele diz o
+    /// motivo, diz que não há como forçar e diz o que fazer — e é longo de
+    /// propósito, porque é a única coisa na tela.
+    ///
+    /// Na lista há três ou quatro discos, e cada um traz o seu motivo debaixo
+    /// do nome. Três parágrafos de recusa afogariam a lista que eles anotam, e
+    /// **a lista é o serviço** — quem está lendo veio escolher um disco, e não
+    /// estudar por que os outros não servem. Quem quiser o texto inteiro o
+    /// alcança apontando aquele disco com `--dispositivo`, e aí ele é a única
+    /// coisa na tela outra vez.
+    pub fn resumo(&self) -> String {
+        match self {
+            RecusaDaPreparacao::MidiaNaoRemovivel { tipo, .. } => match tipo {
+                TipoDeMidia::Desconhecido => {
+                    "o Windows nao soube classificar esta midia, e \"nao sei\" recusa junto com \"fixo\" (PR-5)".to_string()
+                }
+                _ => "e disco FIXO, e o `arca prepare` so prepara midia externa ou removivel (PR-5)"
+                    .to_string(),
+            },
+            RecusaDaPreparacao::DiscoDoSistema {
+                e_do_sistema,
+                e_de_boot,
+                ..
+            } => format!(
+                "e {} desta maquina (PR-5)",
+                match (e_do_sistema, e_de_boot) {
+                    (true, true) => "o disco do sistema E o disco de boot",
+                    (true, false) => "o disco do sistema",
+                    _ => "o disco de boot",
+                }
+            ),
+            RecusaDaPreparacao::CarregaOSystemDrive { letra, .. } => format!(
+                "carrega o volume {letra}:, que e onde este Windows mora (PR-5)"
+            ),
+            RecusaDaPreparacao::SomenteLeitura { .. } => {
+                "esta marcado como somente-leitura, e nao ha o que particionar nele".to_string()
+            }
+            RecusaDaPreparacao::DiscoPequenoDemais { tem, precisa, .. } => format!(
+                "tem {} e o ARCA precisa de pelo menos {}",
+                tamanho(*tem),
+                tamanho(*precisa)
+            ),
+
+            // As duas que nao falam de um disco da lista. Elas nunca chegam
+            // aqui pelo caminho do menu — e devolver o texto inteiro e a
+            // resposta honesta caso alguem as traga.
+            outra => outra.to_string(),
+        }
+    }
 }
 
 impl fmt::Display for RecusaDaPreparacao {
@@ -116,7 +189,7 @@ impl fmt::Display for RecusaDaPreparacao {
         match self {
             RecusaDaPreparacao::DiscoDesconhecido { indice, existentes } => write!(
                 f,
-                "nao ha disco de indice {indice} nesta maquina. Os indices que existem sao: {}. O ARCA nao escolhe um disco para apagar — o indice vem de `--dispositivo <indice>`, e `arca status` lista os discos",
+                "nao ha disco de indice {indice} nesta maquina. Os indices que existem sao: {}. O ARCA nao escolhe um disco para apagar — rode `arca prepare` sem `--dispositivo` para ver os discos desta maquina e escolher pelo numero",
                 if existentes.is_empty() {
                     "nenhum".to_string()
                 } else {
@@ -174,6 +247,14 @@ impl fmt::Display for RecusaDaPreparacao {
                 tamanho(*tem),
                 tamanho(*precisa),
                 tamanho(ARCABOOT_BYTES)
+            ),
+            RecusaDaPreparacao::NadaAOferecer { recusados } => write!(
+                f,
+                "nenhum dos {recusados} disco(s) desta maquina pode ser preparado, e cada motivo esta na lista acima. O `arca prepare` so prepara midia externa ou removivel, e nunca o disco do sistema (PR-5). Conecte o disco que voce quer preparar e rode de novo"
+            ),
+            RecusaDaPreparacao::EscolhaInvalida { digitado, quantas } => write!(
+                f,
+                "`{digitado}` nao e um dos numeros da lista (1 a {quantas}). Nada foi tocado — rode o comando de novo. **O Enter vazio tambem nao escolhe**: o menu nao tem padrao, porque um padrao seria o ARCA escolhendo o disco a apagar"
             ),
         }
     }
@@ -305,6 +386,100 @@ pub fn julgar(
 /// tamanho de verdade é o espaço livre que o Windows reporta na hora, e o
 /// adaptador o lê em vez de calcular.
 const ALINHAMENTO_BYTES: u64 = 2_973_696;
+
+/// Os discos desta máquina repartidos entre o que se pode preparar e o que
+/// não, cada recusa com o motivo que [`julgar`] deu.
+///
+/// # Por que ela não mede nem consulta nada de novo
+///
+/// O `arca prepare` **já enumera todos os discos** antes de qualquer coisa —
+/// ele precisa da lista para a recusa de índice inexistente poder dizer quais
+/// existem. E `julgar` já devolve, por disco, um veredito tipado. A oferta é
+/// rodar o julgamento em cada um em vez de num só: nenhuma consulta nova,
+/// nenhuma medição nova, a mesma informação que já estava na mão.
+///
+/// # É a `Oferta` do `arca restore`, e o nome é o mesmo de propósito
+///
+/// [`crate::comandos::restore::Oferta`] responde *"o que dá para restaurar"*
+/// separando imagem de resíduo; esta responde *"o que dá para preparar"*
+/// separando candidato de recusado. É o mesmo conceito — **o que se pode
+/// escolher, e o que aparece dito mas sem número** —, e dois nomes para ele
+/// fariam a segunda tela divergir da primeira na primeira mudança.
+///
+/// A doutrina que vem junto está escrita em
+/// [`crate::comandos::restore::montar_a_lista`], e vale inteira aqui: os
+/// recusados continuam ditos, embaixo e **sem número**, porque omiti-los faria
+/// a lista parecer incompleta para quem sabe que há outro disco na mesa — e o
+/// pior caso é justamente a defesa 1, que recusa o disco externo que o Windows
+/// não soube classificar. Escondido, o motivo vira ausência; listado sem
+/// número, ele vira uma frase.
+pub struct Oferta<'a> {
+    /// Só disco preparável, e na ordem em que a lista os numera.
+    pub candidatos: Vec<&'a DiscoParaPreparar>,
+
+    /// Os recusados, que aparecem nomeados e **nunca numerados**.
+    pub recusados: Vec<(&'a DiscoParaPreparar, RecusaDaPreparacao)>,
+}
+
+impl<'a> Oferta<'a> {
+    pub fn de(discos: &'a [DiscoParaPreparar], letra_do_sistema: Option<char>) -> Oferta<'a> {
+        let existentes: Vec<u32> = discos.iter().map(|disco| disco.indice).collect();
+
+        let mut oferta = Oferta {
+            candidatos: Vec::new(),
+            recusados: Vec::new(),
+        };
+
+        for disco in discos {
+            match julgar(disco.indice, Some(disco), &existentes, letra_do_sistema) {
+                Ok(_) => oferta.candidatos.push(disco),
+                Err(porque) => oferta.recusados.push((disco, porque)),
+            }
+        }
+
+        oferta
+    }
+
+    /// O **índice do Windows** do candidato de número `1..=n`, ou `None`.
+    ///
+    /// # Por que ela devolve um índice, e não o disco
+    ///
+    /// Porque o número escolhido no menu **não vira alvo direto**. Ele resolve
+    /// para o índice que o `--dispositivo` teria dado, e daí em diante o
+    /// comando percorre o caminho que já existia: julgar de novo, imprimir o
+    /// plano, perguntar, **reler o disco** ([`e_o_mesmo_disco`]) e pedir o
+    /// modelo digitado (S-2). O menu troca só a descoberta do número; o portão
+    /// continua sendo o modelo.
+    ///
+    /// Devolver o `&DiscoParaPreparar` aqui seria entregar ao passo seguinte um
+    /// retrato tirado antes da pergunta — que é exatamente o que a releitura de
+    /// PR-4 existe para não fazer.
+    ///
+    /// **Com um candidato só, `1` continua sendo obrigatório.** Não há padrão,
+    /// e o Enter vazio cai fora por não ser número — que é a mesma porta por
+    /// onde caem `0`, `-1` e `dois`.
+    pub fn escolher_pelo_numero(&self, digitado: &str) -> Option<u32> {
+        // `parse::<usize>` recusa `-1` de graca, e `1..=n` fecha o resto. O `0`
+        // cai fora por baixo, e e o erro mais provavel de quem conta de zero —
+        // e nesta mesa o disco 0 e o do Windows.
+        //
+        // **`+1` ele aceita**, e vale dizer por que isso nao e furo: o
+        // `usize::from_str` le o sinal `+`, entao `+1` chega aqui como o numero
+        // 1 e escolhe o item 1 — o mesmo que `1` escolheria. Nao ha caminho por
+        // onde um sinal mude *qual* disco sai escolhido. (O comentario gemeo em
+        // `restore::escolher_pelo_indice` afirma que `+2` e recusado; medido em
+        // 25/08/2026, nao e.)
+        //
+        // E o julgamento e o mesmo do `restore` pela mesma razao: e ele que
+        // decide qual disco vai ser apagado a partir de um numero digitado.
+        digitado
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .filter(|numero| *numero >= 1 && *numero <= self.candidatos.len())
+            .map(|numero| self.candidatos[numero - 1].indice)
+    }
+}
 
 /// A conferência do terceiro tempo de PR-4: o disco relido é o mesmo do plano?
 ///
@@ -705,6 +880,199 @@ mod testes {
         let mut mesmo_tamanho = planejado.clone();
         mesmo_tamanho.modelo = "OUTRO".to_string();
         assert!(!e_o_mesmo_disco(&planejado, &mesmo_tamanho));
+    }
+
+    // ─────────────────── a oferta do menu, e o que ela não deduz ───────────────────
+
+    /// Os três discos desta mesa em 23/08/2026: o disco do Windows e dois
+    /// externos.
+    fn os_discos_da_mesa() -> Vec<DiscoParaPreparar> {
+        let mut o_outro_externo = o_ssd_da_mesa();
+        o_outro_externo.indice = 2;
+        o_outro_externo.modelo = "KGSSE100 256".to_string();
+        o_outro_externo.tamanho_bytes = 256_060_514_304;
+
+        vec![o_disco_do_windows(), o_ssd_da_mesa(), o_outro_externo]
+    }
+
+    #[test]
+    fn nenhum_disco_desaparece_da_tela() {
+        // A invariante que sustenta a decisao de listar os recusados: **todo
+        // disco esta de um dos dois lados**. Um disco que caisse fora dos dois
+        // sumiria da tela, e sumir e o modo de falha que a lista do
+        // `arca restore` ja pagou uma vez para aprender — quem sabe que ha
+        // outro disco na mesa conclui que o ARCA nao o enxerga, e vai procurar
+        // como forcar.
+        let discos = os_discos_da_mesa();
+        let oferta = Oferta::de(&discos, Some('C'));
+
+        assert_eq!(
+            oferta.candidatos.len() + oferta.recusados.len(),
+            discos.len()
+        );
+    }
+
+    #[test]
+    fn o_disco_do_windows_aparece_recusado_e_nunca_como_candidato() {
+        let discos = os_discos_da_mesa();
+        let oferta = Oferta::de(&discos, Some('C'));
+
+        assert_eq!(
+            oferta
+                .candidatos
+                .iter()
+                .map(|d| d.indice)
+                .collect::<Vec<_>>(),
+            vec![1, 2],
+            "os dois externos sao os candidatos"
+        );
+
+        let (recusado, porque) = &oferta.recusados[0];
+        assert_eq!(recusado.indice, 0);
+        assert!(
+            matches!(porque, RecusaDaPreparacao::DiscoDoSistema { .. }),
+            "{porque}"
+        );
+
+        // E o motivo curto diz por que, sem despejar o paragrafo inteiro da
+        // recusa terminal em cima da lista.
+        let resumo = porque.resumo();
+        assert!(resumo.contains("disco do sistema"), "{resumo}");
+        assert!(
+            resumo.len() < porque.to_string().len(),
+            "o resumo nao e mais curto do que o Display: {resumo}"
+        );
+    }
+
+    #[test]
+    fn o_numero_do_menu_nao_e_o_indice_do_windows() {
+        // **A coincidencia que ensina errado.** Nesta mesa o `[1]` e o disco 1
+        // e os dois batem; tire o disco 1 da mesa e o `[1]` passa a ser o
+        // disco 2. Quem tivesse aprendido a ler o numero da esquerda como
+        // indice apontaria para o disco errado — e por isso a tela imprime os
+        // dois, e por isso este teste existe.
+        let discos = vec![os_discos_da_mesa()[2].clone()];
+        let oferta = Oferta::de(&discos, Some('C'));
+
+        assert_eq!(oferta.escolher_pelo_numero("1"), Some(2));
+    }
+
+    #[test]
+    fn com_um_candidato_so_o_enter_vazio_nao_escolhe_nada() {
+        // O §6.1 escreve como principio: *"obrigatorio, mesmo havendo um
+        // candidato so"*. Um menu de um item que se aceita com Enter e
+        // exatamente o ARCA escolhendo o que apagar — que e o que P1 revisado
+        // proibe, com menu ou sem menu.
+        let discos = vec![o_ssd_da_mesa()];
+        let oferta = Oferta::de(&discos, Some('C'));
+
+        assert_eq!(oferta.candidatos.len(), 1);
+        assert_eq!(oferta.escolher_pelo_numero(""), None);
+        assert_eq!(oferta.escolher_pelo_numero("  "), None);
+        assert_eq!(oferta.escolher_pelo_numero("\r\n"), None);
+
+        // E o `1` digitado escolhe, que e o outro lado da mesma regra: nao ha
+        // padrao, e ha uma escolha possivel.
+        assert_eq!(oferta.escolher_pelo_numero("1"), Some(1));
+    }
+
+    #[test]
+    fn o_que_nao_e_numero_da_lista_nao_escolhe() {
+        // Lista de permissao, como B-2 e pelo mesmo motivo: o que nao esta aqui
+        // e **nao**. O `0` e o erro mais provavel de quem conta de zero — e
+        // nesta mesa o disco 0 e o do Windows, o que torna aceita-lo a pior
+        // ideia possivel.
+        let discos = os_discos_da_mesa();
+        let oferta = Oferta::de(&discos, Some('C'));
+
+        for digitado in ["0", "-1", "3", "99", "um", "1.0", "1 2", "s", "sim"] {
+            assert_eq!(
+                oferta.escolher_pelo_numero(digitado),
+                None,
+                "`{digitado}` escolheu alguma coisa"
+            );
+        }
+
+        // `+1` **e aceito**, e esta aqui escrito porque o comentario gemeo do
+        // `arca restore` diz o contrario: o `usize::from_str` le o sinal, entao
+        // `+1` e o numero 1. O que importa e que ele escolha o mesmo item que
+        // `1` escolheria — um sinal nao muda *qual* disco sai da lista.
+        assert_eq!(
+            oferta.escolher_pelo_numero("+1"),
+            oferta.escolher_pelo_numero("1")
+        );
+    }
+
+    #[test]
+    fn o_enter_deixa_para_tras_e_nao_atrapalha() {
+        let discos = os_discos_da_mesa();
+        let oferta = Oferta::de(&discos, Some('C'));
+
+        assert_eq!(oferta.escolher_pelo_numero("2\r\n"), Some(2));
+        assert_eq!(oferta.escolher_pelo_numero("  1  "), Some(1));
+    }
+
+    #[test]
+    fn sem_candidato_nenhum_nao_ha_o_que_escolher() {
+        // Uma maquina com um disco so, o do Windows. Nada a oferecer, e
+        // nenhum numero escolhe coisa alguma.
+        let discos = vec![o_disco_do_windows()];
+        let oferta = Oferta::de(&discos, Some('C'));
+
+        assert!(oferta.candidatos.is_empty());
+        assert_eq!(oferta.recusados.len(), 1);
+        assert_eq!(oferta.escolher_pelo_numero("1"), None);
+    }
+
+    #[test]
+    fn a_oferta_julga_cada_disco_pelas_mesmas_sete_defesas() {
+        // O menu **nao** e um segundo julgamento com regras proprias — ele roda
+        // o `julgar` em cada disco. Duas listas de defesas divergiriam na
+        // primeira mudanca, e a que ficasse para tras ofereceria um disco que a
+        // outra recusa.
+        //
+        // O oraculo aqui e o proprio `julgar`: o que ele aceita e candidato, o
+        // que ele recusa e recusado, disco a disco.
+        let discos = os_discos_da_mesa();
+        let oferta = Oferta::de(&discos, Some('C'));
+        let existentes: Vec<u32> = discos.iter().map(|disco| disco.indice).collect();
+
+        for disco in &discos {
+            let veredito = julgar(disco.indice, Some(disco), &existentes, Some('C'));
+            let na_oferta = oferta
+                .candidatos
+                .iter()
+                .any(|candidato| candidato.indice == disco.indice);
+
+            assert_eq!(
+                veredito.is_ok(),
+                na_oferta,
+                "o disco {} caiu do lado errado da oferta",
+                disco.indice
+            );
+        }
+    }
+
+    #[test]
+    fn a_letra_do_sistema_tira_o_disco_da_lista_em_vez_de_deixa_lo_passar() {
+        // A defesa 3 vale dentro do menu como vale fora dele. Um externo que
+        // carregue o `%SystemDrive%` — a maquina com dois Windows — sai da
+        // lista com o motivo dito, e nao entra como candidato.
+        let discos = vec![o_ssd_da_mesa()];
+
+        let oferta = Oferta::de(&discos, Some('E'));
+        assert!(
+            oferta.candidatos.is_empty(),
+            "o disco do E: virou candidato"
+        );
+        assert!(matches!(
+            oferta.recusados[0].1,
+            RecusaDaPreparacao::CarregaOSystemDrive { .. }
+        ));
+
+        // E sem a letra do sistema o mesmo disco passa — a defesa nao engole
+        // nem inventa.
+        assert_eq!(Oferta::de(&discos, None).candidatos.len(), 1);
     }
 
     // ─────────────────── a releitura depois de escrever ───────────────────

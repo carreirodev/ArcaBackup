@@ -64,22 +64,28 @@ pub enum Comando {
     /// Particiona um disco, instala o Clonezilla e o ARCA, e cria a entrada
     /// de boot.
     Prepare {
-        /// O disco a preparar, pelo **indice do Windows**. Obrigatorio.
+        /// O disco a preparar, pelo **indice do Windows**. Omitido, o comando
+        /// lista os discos desta maquina e pergunta o numero — que e a mesma
+        /// forma do `restore` sem nome.
         ///
-        /// # Por que obrigatorio, mesmo havendo um candidato so
+        /// # A obrigatoriedade saiu da superficie e continua no comando
         ///
         /// P1 revisado: *o ARCA destroi dados quando o usuario nomeou o alvo e
-        /// confirmou por escrito, e nunca por deducao*. Deduzir o disco seria
-        /// o ARCA escolhendo o que apagar, e e exatamente isso que o principio
-        /// proibe — mesmo quando a deducao pareceria obvia.
+        /// confirmou por escrito, e nunca por deducao*. O menu **nao deduz**:
+        /// ele oferece, e escolher continua sendo trabalho de quem esta na
+        /// frente da tela. Com um candidato so ele nao auto-seleciona, e o
+        /// Enter vazio nao escolhe nada — ver
+        /// [`crate::preparacao::Oferta::escolher_pelo_numero`] e o
+        /// [ADR-0024](../docs/adr/0024-o-prepare-oferece-a-lista-e-nao-deduz-o-disco.md).
         ///
         /// **E o indice nao e identidade**, o que torna a confirmacao de S-2
-        /// necessaria por cima dele: medido em 23/08/2026, o dispositivo desta
-        /// mesa era o disco 1 e virou o disco 2 quando um segundo SSD foi
-        /// conectado. Por isso a confirmacao pede o **modelo**, que a tela
-        /// acabou de imprimir, e nao o numero que se digitou aqui.
+        /// necessaria por cima dele nos dois caminhos: medido em 23/08/2026, o
+        /// dispositivo desta mesa era o disco 1 e virou o disco 2 quando um
+        /// segundo SSD foi conectado. Por isso a confirmacao pede o **modelo**,
+        /// que a tela acabou de imprimir, e nao o numero — digitado aqui ou
+        /// escolhido na lista.
         #[arg(long, value_name = "INDICE")]
-        dispositivo: u32,
+        dispositivo: Option<u32>,
 
         /// Instala de um arquivo local, sem baixar nada (PR-2).
         ///
@@ -270,20 +276,36 @@ mod testes {
         assert_eq!(
             cli.comando,
             Comando::Prepare {
-                dispositivo: 1,
+                dispositivo: Some(1),
                 iso: Some(PathBuf::from(r"D:\clonezilla.zip"))
             }
         );
     }
 
     #[test]
-    fn prepare_exige_o_dispositivo() {
-        // P1 revisado: *o ARCA destroi dados quando o usuario nomeou o alvo, e
-        // nunca por deducao*. Um `arca prepare` sem alvo teria de escolher um
-        // disco sozinho, e e exatamente isso que o principio proibe — mesmo
-        // havendo um candidato so.
-        assert!(Cli::try_parse_from(["arca", "prepare"]).is_err());
-        assert!(Cli::try_parse_from(["arca", "prepare", "--iso", "x.zip"]).is_err());
+    fn prepare_sem_dispositivo_e_o_caminho_da_lista_numerada() {
+        // Ate 25/08/2026 o `--dispositivo` era obrigatorio na superficie, e o
+        // teste que ficava aqui exigia que `arca prepare` fosse recusado pelo
+        // `clap`. Ele saiu com o ADR-0024, e o que ele defendia **nao** saiu:
+        // P1 revisado continua valendo, e quem o cumpre passa a ser o comando,
+        // que oferece a lista e nao deduz nada dela (nem com um candidato so).
+        //
+        // A superficie recusar a linha nunca foi a defesa — a defesa e nao
+        // haver caminho por onde o ARCA escolha o disco sozinho.
+        assert_eq!(
+            analisar(&["arca", "prepare"]).comando,
+            Comando::Prepare {
+                dispositivo: None,
+                iso: None
+            }
+        );
+        assert_eq!(
+            analisar(&["arca", "prepare", "--iso", "x.zip"]).comando,
+            Comando::Prepare {
+                dispositivo: None,
+                iso: Some(PathBuf::from("x.zip"))
+            }
+        );
     }
 
     #[test]

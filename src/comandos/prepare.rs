@@ -58,6 +58,7 @@
 //!
 //! | # | Passo | Parando aqui, o que fica |
 //! |---|---|---|
+//! | 0 | Listar os discos e perguntar o número — só sem `--dispositivo` (ADR-0024) | nada tocado |
 //! | 1 | Descrever o disco e julgar (PR-5) | nada tocado |
 //! | 2 | Imprimir o plano (PR-4) | nada tocado |
 //! | 3 | Perguntar, e **reler o disco** (PR-4, 3º tempo) | nada tocado |
@@ -108,10 +109,25 @@ const FIRMWARE: &str = "firmware";
 /// Onde o ARCA se instala dentro do `ARCABOOT` (§4.1).
 const PASTA_DO_ARCA: &str = "arca";
 
-pub fn executar(contexto: &Contexto, indice: u32, iso: Option<&Path>) -> Resultado<()> {
-    // ─────────── 1. descrever e julgar, antes de imprimir qualquer coisa ───────────
+pub fn executar(
+    contexto: &Contexto,
+    dispositivo: Option<u32>,
+    iso: Option<&Path>,
+) -> Resultado<()> {
+    // ─────────── 0. de onde sai o índice, quando ele não veio na linha ───────────
 
     let discos = contexto.particionador.enumerar()?;
+
+    // Sem `--dispositivo`, o número sai do menu — e ele **só resolve para um
+    // índice**. Tudo abaixo desta linha é o mesmo nos dois caminhos: julgar,
+    // imprimir o plano, perguntar, reler o disco e pedir o modelo digitado.
+    let indice = match dispositivo {
+        Some(indice) => indice,
+        None => escolher_o_disco(contexto, &discos)?,
+    };
+
+    // ─────────── 1. descrever e julgar, antes de imprimir qualquer coisa ───────────
+
     let indices: Vec<u32> = discos.iter().map(|disco| disco.indice).collect();
     let alvo = discos.iter().find(|disco| disco.indice == indice);
 
@@ -257,6 +273,203 @@ fn letra_do_sistema() -> Option<char> {
         .next()
         .filter(char::is_ascii_alphabetic)
         .map(|letra| letra.to_ascii_uppercase())
+}
+
+// ─────────────────── o menu do §6.1, quando não há `--dispositivo` ───────────────────
+
+/// Lista os discos, pergunta o número e devolve o **índice do Windows**.
+///
+/// # Isto não afrouxa P1 revisado, e as três regras que o mantêm inteiro
+///
+/// O princípio é *"o ARCA destrói dados quando o usuário nomeou o alvo e
+/// confirmou por escrito, e **nunca por dedução**"*. Um menu é o ARCA
+/// **oferecendo**, e oferecer não é deduzir — desde que:
+///
+/// 1. **com um candidato só, ele não auto-seleciona.** Uma lista de um item
+///    que se aceita com Enter é exatamente o ARCA escolhendo o que apagar, e o
+///    §6.1 escreve o contrário como princípio: *"obrigatório, mesmo havendo um
+///    candidato só"*. O `1` continua sendo digitado;
+/// 2. **o Enter vazio não escolhe nada.** Não há padrão, porque um padrão é
+///    uma dedução com outro nome;
+/// 3. **o número não vira alvo direto.** Ele resolve para um índice e cai no
+///    caminho que já existia — julgar, imprimir o plano, perguntar, **reler o
+///    disco** e pedir o modelo digitado (S-2). O menu troca só a descoberta do
+///    número; o portão continua sendo o modelo.
+///
+/// # E não há detecção de terminal aqui, de propósito
+///
+/// A recusa de quem chama isto de um script já existe e é a mesma do `arca
+/// restore`: um `stdin` fechado devolve linha vazia
+/// ([`crate::portas::Console`]), e linha vazia nunca escolhe nada. O
+/// `--sem-pausa` **não** serve de sinal para isso — ela diz "não segure a
+/// janela ao terminar", e não "não há ninguém aqui". Usá-la como proxy de
+/// terminal seria dar-lhe um significado que ela não tem, e dois significados
+/// numa flag divergem na primeira mudança.
+fn escolher_o_disco(contexto: &Contexto, discos: &[DiscoParaPreparar]) -> Resultado<u32> {
+    use std::io::Write;
+
+    let oferta = preparacao::Oferta::de(discos, letra_do_sistema());
+
+    // A lista sai **antes** da recusa de lista vazia, e é ela que faz a recusa
+    // ser lida: "nenhum disco pode ser preparado" para quem está vendo dois
+    // discos na mesa parece defeito do ARCA. Com os motivos por cima, é
+    // resposta.
+    print!("{}", montar_o_menu(&oferta));
+
+    if oferta.candidatos.is_empty() {
+        return Err(Erro::PreparacaoRecusada(
+            preparacao::RecusaDaPreparacao::NadaAOferecer {
+                recusados: oferta.recusados.len(),
+            },
+        ));
+    }
+
+    print!("\nQual preparar? ");
+    let _ = std::io::stdout().flush();
+
+    // Um console que não se deixou ler **sobe como erro de leitura**, e não
+    // como escolha inválida — a mesma distinção que o `arca restore` faz: uma
+    // diz "você digitou errado" e a outra diz "não consegui ouvir".
+    let digitado = contexto.console.ler_linha()?;
+    println!();
+
+    // Uma tentativa, e não um laço — a mesma regra da confirmação. Quem errou
+    // repete o comando, que até aqui não tocou em disco nenhum.
+    let escolhido = digitado.trim();
+    oferta.escolher_pelo_numero(escolhido).ok_or_else(|| {
+        Erro::PreparacaoRecusada(preparacao::RecusaDaPreparacao::EscolhaInvalida {
+            digitado: escolhido.to_string(),
+            quantas: oferta.candidatos.len(),
+        })
+    })
+}
+
+/// A lista numerada do §6.1, e os recusados ditos embaixo sem número.
+///
+/// # Duas colunas de número, e por que as duas existem
+///
+/// `[1]` é o que se digita **aqui**; `disco 1` é o índice do Windows — o que o
+/// `Get-Disk` mostra e o que o `--dispositivo` recebe. **Eles não são o mesmo
+/// número**, e a lista os separa em vez de deixar a coincidência ensinar
+/// errado: numa máquina onde o disco 0 é o do Windows, o primeiro candidato é
+/// o `[1] disco 1` e os dois batem por acidente; conectado um segundo SSD, o
+/// `[1]` passa a ser o `disco 2` e quem aprendeu a ler o número da esquerda
+/// como índice erra.
+///
+/// # Os recusados aparecem, e a decisão é do `arca restore`
+///
+/// [`crate::comandos::restore::montar_a_lista`] enfrentou esta escolha e a
+/// resolveu: mostrar sem número. Omitir faria a lista parecer incompleta para
+/// quem sabe que há outro disco na mesa — e o pior caso aqui é a defesa 1, que
+/// recusa o disco externo que o Windows não soube classificar. Escondido, o
+/// motivo vira ausência, e a pessoa conclui que o ARCA não enxerga o HD dela.
+/// Listado sem número, ele vira uma frase.
+///
+/// E a numeração sai **só dos candidatos**, que é a outra metade da mesma
+/// doutrina: um número ao lado de um item não escolhível ocuparia um índice, e
+/// aí os números passariam a depender de coisas que não se pode digitar.
+pub fn montar_o_menu(oferta: &preparacao::Oferta) -> String {
+    let mut saida = String::from("\nDiscos desta maquina:\n\n");
+
+    // O preenchimento é contado a mão: `{:<n$}` conta bytes, e um modelo com
+    // acento sairia desalinhado.
+    let coluna = oferta
+        .candidatos
+        .iter()
+        .copied()
+        .chain(oferta.recusados.iter().map(|(disco, _)| *disco))
+        .map(|disco| disco.modelo.chars().count())
+        .max()
+        .unwrap_or(0)
+        + 3;
+
+    for (numero, disco) in oferta.candidatos.iter().enumerate() {
+        saida.push_str(&format!(
+            "  [{}]  disco {:<2}  {}{}{}\n",
+            numero + 1,
+            disco.indice,
+            disco.modelo,
+            " ".repeat(coluna - disco.modelo.chars().count()),
+            descrever_o_disco(disco),
+        ));
+    }
+
+    if !oferta.recusados.is_empty() {
+        saida.push_str("\n  Sem numero, e o `arca prepare` nao prepara:\n");
+        for (disco, porque) in &oferta.recusados {
+            saida.push_str(&format!(
+                "       disco {:<2}  {}{}{}\n",
+                disco.indice,
+                disco.modelo,
+                " ".repeat(coluna - disco.modelo.chars().count()),
+                descrever_o_disco(disco),
+            ));
+            saida.push_str(&format!("                 {}\n", porque.resumo()));
+        }
+    }
+
+    if !oferta.candidatos.is_empty() {
+        saida.push_str(
+            "\n  O numero entre colchetes e o que se digita; o `disco N` e o indice do\n\
+             \x20 Windows, que e o que o `--dispositivo` recebe. Escolher um numero so\n\
+             \x20 mostra o plano — nada e apagado antes da confirmacao digitada.\n",
+        );
+    }
+
+    saida
+}
+
+/// A linha que descreve um disco na lista: tamanho, barramento, tabela e o que
+/// mora nele hoje.
+///
+/// O `ja e um dispositivo ARCA` no fim não é enfeite. Preparar por cima de um
+/// dispositivo apaga **as imagens dele**, e a tela do plano já diz isso — mas
+/// dizer só lá é tarde para quem tem dois SSDs iguais na mesa e está
+/// escolhendo qual dos dois é o velho.
+fn descrever_o_disco(disco: &DiscoParaPreparar) -> String {
+    format!(
+        "{} · {} · {} · {}{}",
+        tamanho(disco.tamanho_bytes),
+        disco.barramento,
+        disco.estilo_de_particao,
+        resumir_o_conteudo(disco),
+        if e_um_dispositivo_arca(disco) {
+            " · JA E UM DISPOSITIVO ARCA"
+        } else {
+            ""
+        }
+    )
+}
+
+/// O que existe no disco hoje, em poucas palavras.
+fn resumir_o_conteudo(disco: &DiscoParaPreparar) -> String {
+    if disco.particoes.is_empty() {
+        // Um disco RAW, ou um meio-apagado por um `prepare` que morreu no
+        // `Clear-Disk`, aparece na lista como qualquer outro. É a lista que o
+        // descreve, e não um rótulo que ele não tem.
+        return "sem particao nenhuma".to_string();
+    }
+
+    let plural = if disco.particoes.len() == 1 {
+        "particao"
+    } else {
+        "particoes"
+    };
+
+    let letras = disco.letras();
+    if letras.is_empty() {
+        format!("{} {plural}, nenhuma com letra", disco.particoes.len())
+    } else {
+        format!(
+            "{} {plural} ({})",
+            disco.particoes.len(),
+            letras
+                .iter()
+                .map(|letra| format!("{letra}:"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
 }
 
 /// Baixa (ou usa o `--iso`), confere o SHA256 e guarda a cópia de PR-3.
@@ -1089,7 +1302,7 @@ mod testes {
         // direta — e ela é sobre o particionador, e não sobre a tela.
         let bancada = Bancada::nova("ensaio", ConsoleDeMentira::mudo());
 
-        executar(&bancada.contexto(true), 1, None).expect("o ensaio nao falha");
+        executar(&bancada.contexto(true), Some(1), None).expect("o ensaio nao falha");
 
         assert!(
             !bancada.particionador.particionou(),
@@ -1116,7 +1329,7 @@ mod testes {
         // para não acontecer nada — e, pior, ensinaria a digitar sem ler.
         let bancada = Bancada::nova("mudo", ConsoleDeMentira::mudo());
 
-        executar(&bancada.contexto(true), 1, None).expect("o ensaio nao falha");
+        executar(&bancada.contexto(true), Some(1), None).expect("o ensaio nao falha");
 
         assert_eq!(
             bancada.console.lidas.get(),
@@ -1132,7 +1345,7 @@ mod testes {
         // aconteça — inclusive sem chegar à confirmação digitada.
         let bancada = Bancada::nova("nao", ConsoleDeMentira::respondendo(&["n"]));
 
-        executar(&bancada.contexto(false), 1, None).expect("desistir nao e erro");
+        executar(&bancada.contexto(false), Some(1), None).expect("desistir nao e erro");
 
         assert!(!bancada.particionador.particionou(), "apagou mesmo com `n`");
         assert_eq!(
@@ -1148,7 +1361,7 @@ mod testes {
         // apagar 447 GB.
         for resposta in ["", " ", "sim, pode", "S ", "yes", "1"] {
             let bancada = Bancada::nova("vazio", ConsoleDeMentira::respondendo(&[resposta]));
-            let _ = executar(&bancada.contexto(false), 1, None);
+            let _ = executar(&bancada.contexto(false), Some(1), None);
 
             assert!(
                 !bancada.particionador.particionou(),
@@ -1166,7 +1379,7 @@ mod testes {
             ConsoleDeMentira::respondendo(&["s", "JMicron"]),
         );
 
-        let erro = executar(&bancada.contexto(false), 1, None).unwrap_err();
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
 
         assert!(matches!(erro, Erro::ConfirmacaoNaoBate { .. }), "{erro}");
         assert!(
@@ -1182,7 +1395,7 @@ mod testes {
         // particionador saiba que existiu um pedido.
         let bancada = Bancada::nova("sistema", ConsoleDeMentira::respondendo(&["s", "KINGSTON"]));
 
-        let erro = executar(&bancada.contexto(false), 0, None).unwrap_err();
+        let erro = executar(&bancada.contexto(false), Some(0), None).unwrap_err();
 
         assert!(matches!(erro, Erro::PreparacaoRecusada(_)), "{erro}");
         assert!(!bancada.particionador.particionou());
@@ -1210,7 +1423,7 @@ mod testes {
         // responde o mesmo, então este caminho passa. O que se cobra abaixo é
         // que a conferência **aconteceu** — sem ela, a troca não teria como
         // ser pega.
-        let _ = executar(&bancada.contexto(false), 1, None);
+        let _ = executar(&bancada.contexto(false), Some(1), None);
 
         assert!(
             bancada.particionador.descricoes.get() > 0,
@@ -1632,5 +1845,276 @@ mod testes {
         assert!(saida.contains("em E:"), "{saida}");
         assert!(saida.contains("em F:"), "{saida}");
         assert!(saida.contains("As letras mudam"), "{saida}");
+    }
+
+    // ─────────────────── o menu, e o que ele continua não deduzindo ───────────────────
+
+    fn menu_da_mesa() -> String {
+        let discos = discos_para_preparar_desta_mesa();
+        montar_o_menu(&preparacao::Oferta::de(&discos, Some('C')))
+    }
+
+    #[test]
+    fn o_menu_numera_so_o_que_da_para_escolher() {
+        // A outra metade da doutrina do `arca restore`: um numero ao lado de um
+        // item nao escolhivel ocuparia um indice, e ai os numeros da lista
+        // passariam a depender de coisas que nao se pode digitar.
+        //
+        // Nesta mesa ha tres discos e dois candidatos, entao a lista vai ate
+        // `[2]` — e nao ate `[3]`.
+        let saida = menu_da_mesa();
+
+        assert!(saida.contains("[1]"), "{saida}");
+        assert!(saida.contains("[2]"), "{saida}");
+        assert!(!saida.contains("[3]"), "numerou um recusado: {saida}");
+    }
+
+    #[test]
+    fn o_recusado_aparece_dito_e_com_o_motivo() {
+        // Omiti-lo faria a lista parecer incompleta para quem esta vendo o
+        // disco na mesa — e o pior caso e a defesa 1, que recusa o HD externo
+        // que o Windows nao soube classificar. Escondido, o motivo vira
+        // ausencia; listado sem numero, ele vira uma frase.
+        let saida = menu_da_mesa();
+
+        assert!(saida.contains("KINGSTON SNV3S500G"), "{saida}");
+        assert!(saida.contains("Sem numero"), "{saida}");
+        assert!(
+            saida.contains("disco do sistema"),
+            "a lista nao diz por que: {saida}"
+        );
+    }
+
+    #[test]
+    fn o_menu_imprime_os_dois_numeros_de_cada_disco() {
+        // `[1]` e o que se digita aqui; `disco 1` e o indice do Windows, que e
+        // o que o `--dispositivo` recebe e o que o `Get-Disk` mostra. Eles
+        // batem nesta mesa por acidente, e deixar a coincidencia ensinar seria
+        // preparar o erro do dia em que ela acabar.
+        let saida = menu_da_mesa();
+
+        assert!(saida.contains("[1]  disco 1"), "{saida}");
+        assert!(saida.contains("[2]  disco 2"), "{saida}");
+        assert!(
+            saida.contains("`disco N` e o indice do"),
+            "a tela nao explica os dois numeros: {saida}"
+        );
+    }
+
+    #[test]
+    fn o_menu_diz_que_escolher_ainda_nao_apaga() {
+        // Quem esta na frente de uma lista de discos e sabe que o comando
+        // apaga um deles hesita em digitar qualquer numero. A tela responde a
+        // hesitacao com o que e verdade: entre o numero e o `Clear-Disk` ainda
+        // ha o plano inteiro, o `(s/N)` e o modelo digitado.
+        let saida = menu_da_mesa();
+
+        assert!(saida.contains("nada e apagado"), "{saida}");
+    }
+
+    #[test]
+    fn o_menu_marca_o_disco_que_ja_e_um_dispositivo_arca() {
+        // Preparar por cima de um dispositivo apaga **as imagens dele**. A tela
+        // do plano ja diz isso — mas dizer so la e tarde para quem tem dois
+        // SSDs iguais na mesa e esta escolhendo qual dos dois e o velho.
+        let mut discos = discos_para_preparar_desta_mesa();
+        discos[1].particoes = vec![
+            crate::portas::particionador::ParticaoExistente {
+                numero: 1,
+                letra: Some('E'),
+                rotulo: Some(ARCAVAULT.to_string()),
+                sistema_de_arquivos: Some("NTFS".to_string()),
+                tamanho_bytes: 478_000_000_000,
+            },
+            crate::portas::particionador::ParticaoExistente {
+                numero: 2,
+                letra: Some('F'),
+                rotulo: Some(ARCABOOT.to_string()),
+                sistema_de_arquivos: Some("FAT32".to_string()),
+                tamanho_bytes: crate::preparacao::ARCABOOT_BYTES,
+            },
+        ];
+
+        let saida = montar_o_menu(&preparacao::Oferta::de(&discos, Some('C')));
+
+        assert!(saida.contains("JA E UM DISPOSITIVO ARCA"), "{saida}");
+        assert!(saida.contains("(E:, F:)"), "as letras dele: {saida}");
+    }
+
+    #[test]
+    fn um_disco_cru_aparece_no_menu_como_qualquer_outro() {
+        // O caso que a lista cobre e um rotulo nao cobriria: um disco RAW, ou
+        // um meio-apagado por um `prepare` que morreu no `Clear-Disk`, nao tem
+        // nome nenhum para se anunciar. E a lista que o descreve.
+        let mut discos = discos_para_preparar_desta_mesa();
+        discos[1].particoes = Vec::new();
+        discos[1].estilo_de_particao = "RAW".to_string();
+
+        let saida = montar_o_menu(&preparacao::Oferta::de(&discos, Some('C')));
+
+        assert!(saida.contains("[1]  disco 1"), "{saida}");
+        assert!(saida.contains("RAW"), "{saida}");
+        assert!(saida.contains("sem particao nenhuma"), "{saida}");
+    }
+
+    #[test]
+    fn sem_dispositivo_o_numero_escolhe_e_o_resto_do_caminho_e_o_mesmo() {
+        // O `[1]` desta mesa e o disco 1. Escolhe-lo pelo menu tem de chegar ao
+        // mesmo lugar que `--dispositivo 1` chegaria — inclusive passando pelo
+        // `(s/N)` e pelo modelo digitado, que sao as duas leituras seguintes.
+        let bancada = Bancada::nova(
+            "menu",
+            ConsoleDeMentira::respondendo(&["1", "s", "JMicron Generic"]),
+        );
+
+        let _ = executar(&bancada.contexto(false), None, None);
+
+        assert_eq!(
+            bancada.console.lidas.get(),
+            3,
+            "o menu, a pergunta e a confirmacao: tres leituras"
+        );
+        assert!(
+            bancada.particionador.particionou(),
+            "o disco escolhido no menu nao chegou a ser particionado"
+        );
+    }
+
+    #[test]
+    fn o_numero_do_menu_nao_dispensa_a_confirmacao_do_modelo() {
+        // **O teste que sustenta o ADR-0024.** Escolher e apontar; confirmar e
+        // comprometer-se. Se o numero do menu pulasse S-2, um `1` apagaria um
+        // disco — e e exatamente isso que o menu nao pode custar.
+        let bancada = Bancada::nova(
+            "menu-confirmacao",
+            ConsoleDeMentira::respondendo(&["1", "s", "JMicron"]),
+        );
+
+        let erro = executar(&bancada.contexto(false), None, None).unwrap_err();
+
+        assert!(matches!(erro, Erro::ConfirmacaoNaoBate { .. }), "{erro}");
+        assert!(
+            !bancada.particionador.particionou(),
+            "o menu apagou com a confirmacao errada"
+        );
+    }
+
+    #[test]
+    fn sem_digitar_nada_no_menu_nada_e_apagado() {
+        // O Enter vazio nao escolhe, e nao ha padrao. E o mesmo caminho por
+        // onde cai quem chamou o ARCA de um script: um `stdin` fechado devolve
+        // linha vazia, e linha vazia nunca escolhe nada — que e por que nao ha
+        // deteccao de terminal aqui.
+        for resposta in ["", " ", "0", "s", "sim", "9"] {
+            let bancada = Bancada::nova("menu-vazio", ConsoleDeMentira::respondendo(&[resposta]));
+
+            let erro = executar(&bancada.contexto(false), None, None).unwrap_err();
+
+            assert!(
+                matches!(
+                    erro,
+                    Erro::PreparacaoRecusada(
+                        preparacao::RecusaDaPreparacao::EscolhaInvalida { .. }
+                    )
+                ),
+                "`{resposta}`: {erro}"
+            );
+            assert!(
+                !bancada.particionador.particionou(),
+                "`{resposta}` apagou um disco"
+            );
+            assert_eq!(
+                bancada.console.lidas.get(),
+                1,
+                "`{resposta}` seguiu para a pergunta seguinte"
+            );
+        }
+    }
+
+    #[test]
+    fn com_um_candidato_so_o_menu_nao_auto_seleciona() {
+        // O §6.1 escreve como principio: *"obrigatorio, mesmo havendo um
+        // candidato so"*. Uma lista de um item que se aceita com Enter e o ARCA
+        // escolhendo o que apagar, com outro nome.
+        let discos = vec![discos_para_preparar_desta_mesa()[1].clone()];
+
+        let mut bancada = Bancada::nova("menu-unico", ConsoleDeMentira::mudo());
+        bancada.particionador = ParticionadorDeMentira::com_discos(discos);
+
+        let erro = executar(&bancada.contexto(false), None, None).unwrap_err();
+
+        assert!(matches!(erro, Erro::PreparacaoRecusada(_)), "{erro}");
+        assert!(!bancada.particionador.particionou(), "auto-selecionou");
+    }
+
+    #[test]
+    fn sem_candidato_nenhum_a_recusa_conta_os_recusados() {
+        // Uma maquina com o disco do Windows so. "Nenhum disco pode ser
+        // preparado" sozinho parece defeito do ARCA para quem esta vendo um
+        // disco na mesa; a lista com o motivo, acima, e o que faz a recusa ser
+        // resposta.
+        let discos = vec![discos_para_preparar_desta_mesa()[0].clone()];
+
+        let mut bancada = Bancada::nova("menu-vazio-total", ConsoleDeMentira::mudo());
+        bancada.particionador = ParticionadorDeMentira::com_discos(discos);
+
+        let erro = executar(&bancada.contexto(false), None, None).unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PreparacaoRecusada(preparacao::RecusaDaPreparacao::NadaAOferecer {
+                    recusados: 1
+                })
+            ),
+            "{erro}"
+        );
+        assert_eq!(
+            bancada.console.lidas.get(),
+            0,
+            "perguntou um numero sem ter o que oferecer"
+        );
+    }
+
+    #[test]
+    fn o_ensaio_pelo_menu_pergunta_o_numero_e_para_ali() {
+        // O `--dry-run` sem `--dispositivo` passa pelo menu — nao ha como
+        // imprimir o plano de um disco sem saber qual. O que ele **nao** faz e
+        // seguir: uma leitura, a do numero, e nenhuma linha tocada em disco
+        // nenhum. E o mesmo desenho do `arca restore --dry-run` sem nome.
+        let bancada = Bancada::nova("ensaio-menu", ConsoleDeMentira::respondendo(&["1"]));
+
+        executar(&bancada.contexto(true), None, None).expect("o ensaio nao falha");
+
+        assert_eq!(
+            bancada.console.lidas.get(),
+            1,
+            "o ensaio leu alem do numero do menu"
+        );
+        assert!(
+            !bancada.particionador.particionou(),
+            "o ensaio pelo menu apagou um disco"
+        );
+        assert!(
+            bancada.sistema.baixados.borrow().is_empty(),
+            "o ensaio pelo menu baixou o Clonezilla"
+        );
+    }
+
+    #[test]
+    fn com_dispositivo_na_linha_o_menu_nao_aparece() {
+        // O atalho de quem ja sabe o indice continua sendo um atalho: duas
+        // leituras, e nao tres. Um menu que aparecesse mesmo com
+        // `--dispositivo` transformaria o caminho de script num caminho
+        // interativo, e o `arca prepare --dispositivo 1 --dry-run` deixaria de
+        // rodar sem console.
+        let bancada = Bancada::nova(
+            "sem-menu",
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        );
+
+        let _ = executar(&bancada.contexto(false), Some(1), None);
+
+        assert_eq!(bancada.console.lidas.get(), 2, "o menu foi perguntado");
     }
 }

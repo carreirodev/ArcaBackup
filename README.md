@@ -211,8 +211,8 @@ Saída resumida da execução real deste repositório:
 
 ```
      Running unittests src\lib.rs
-running 731 tests
-test result: ok. 731 passed; 0 failed; 0 ignored
+running 753 tests
+test result: ok. 753 passed; 0 failed; 0 ignored
 
      Running tests\b10_nada_e_apagado.rs ............ 2 passed
      Running tests\e10_preparar_o_dispositivo.rs .... 28 passed
@@ -229,7 +229,7 @@ test result: ok. 731 passed; 0 failed; 0 ignored
      Running tests\s6_o_tempo_nao_decide.rs ......... 4 passed
 ```
 
-**840 testes, e nenhum deles pede UAC.**
+**862 testes, e nenhum deles pede UAC.**
 
 Alguns testes de integração falam com o hardware desta mesa (o dispositivo conectado, o `bcdedit` desta máquina). Eles **se pulam sozinhos** quando o hardware não está lá, imprimindo o motivo:
 
@@ -394,9 +394,10 @@ acabou de preparar um dispositivo, sao os dois — o novo e o de antes
 Visão geral:
 
 ```
-arca prepare --dispositivo <indice> [--iso <caminho>]
+arca prepare [--dispositivo <indice>] [--iso <caminho>]
                           # particiona o disco, instala o Clonezilla e o ARCA,
-                          #   cria a entrada de boot
+                          #   cria a entrada de boot. Sem --dispositivo, lista
+                          #   os discos e pergunta o numero
 arca sondar               # arma boot unico que so roda `lsblk` e desliga
 arca backup <nome>        # monta a receita, arma o boot, reinicia
 arca resultado            # le o desfecho do job pendente e desarma o dispositivo
@@ -413,7 +414,7 @@ arca desarmar             # devolve o dispositivo ao estado inerte
 
 | Comando | Reinicia? | Destrói? | Nomeia um disco | Nomeia uma imagem |
 |---|---|---|---|---|
-| `prepare` | não | **sim, na hora** | sim (`--dispositivo`) | não |
+| `prepare` | não | **sim, na hora** | sim (`--dispositivo`, ou o menu) | não |
 | `sondar` | sim | não | não | não |
 | `backup` | sim | não | sim (descoberto) | sim |
 | `restore` | sim | **sim, no reinício** | sim (descoberto) | sim |
@@ -434,25 +435,60 @@ Transforma um disco qualquer num dispositivo ARCA: apaga a tabela de partição,
 #### Sintaxe
 
 ```powershell
-arca prepare --dispositivo <INDICE> [--iso <CAMINHO>] [--dry-run]
+arca prepare [--dispositivo <INDICE>] [--iso <CAMINHO>] [--dry-run]
 ```
 
 | Argumento | Obrigatório | O que é |
 |---|---|---|
-| `--dispositivo <INDICE>` | **sim** | O índice do disco **no Windows** — o número que o `Get-Disk` mostra. Não aceita letra, rótulo nem `sda` |
+| `--dispositivo <INDICE>` | não | O índice do disco **no Windows** — o número que o `Get-Disk` mostra. Não aceita letra, rótulo nem `sda`. **Omitido, o comando lista os discos e pergunta o número** |
 | `--iso <CAMINHO>` | não | Instala de um arquivo local em vez de baixar. Apesar do nome, o arquivo é o **zip** do Clonezilla |
 
-#### Por que `--dispositivo` é obrigatório, mesmo havendo um candidato só
+#### O menu, quando você não passa `--dispositivo`
 
-O princípio: *o ARCA destrói dados quando o usuário nomeou o alvo e confirmou por escrito, e **nunca por dedução**.* Deduzir o disco seria o ARCA escolhendo o que apagar — mesmo quando a escolha pareceria óbvia.
+```powershell
+arca prepare
+```
 
-**E o índice não é identidade.** Medido em 23/08/2026: o dispositivo desta mesa era o disco 1 e virou o disco 2 quando um segundo SSD foi conectado. Por isso a confirmação final pede o **modelo**, que a tela acabou de imprimir — e não o número que se digitou aqui.
+```text
+Discos desta maquina:
 
-Para descobrir o índice:
+  [1]  disco 1   JMicron Generic      447,1 GB · USB · MBR · 1 particao (E:)
+  [2]  disco 2   KGSSE100 256         238,5 GB · USB · RAW · sem particao nenhuma
+
+  Sem numero, e o `arca prepare` nao prepara:
+       disco 0   KINGSTON SNV3S500G   465,8 GB · NVMe · GPT · 1 particao (C:)
+                 e o disco do sistema E o disco de boot desta maquina (PR-5)
+
+  O numero entre colchetes e o que se digita; o `disco N` e o indice do
+  Windows, que e o que o `--dispositivo` recebe. Escolher um numero so
+  mostra o plano — nada e apagado antes da confirmacao digitada.
+
+Qual preparar?
+```
+
+**`[1]` e `disco 1` não são o mesmo número.** O primeiro é o que se digita aqui; o segundo é o índice do Windows, que é o que o `--dispositivo` recebe. Nesta mesa eles batem por acidente — com o disco 1 desconectado, o `[1]` passa a ser o `disco 2`.
+
+**Os discos que o ARCA não prepara aparecem assim mesmo, sem número e com o motivo.** Omiti-los faria a lista parecer incompleta para quem está vendo o disco na mesa — e o pior caso é a defesa 1: um HD externo que o Windows não soube classificar sumiria da tela, e você concluiria que o ARCA não o enxerga. Escondido, o motivo vira ausência; listado sem número, ele vira uma frase.
+
+#### O menu não deduz nada, e continua não deduzindo
+
+O princípio: *o ARCA destrói dados quando o usuário nomeou o alvo e confirmou por escrito, e **nunca por dedução**.* Um menu é o ARCA **oferecendo**, e oferecer não é deduzir — porque três coisas continuam valendo:
+
+1. **Com um candidato só, ele não auto-seleciona.** Uma lista de um item que se aceita com Enter é o ARCA escolhendo o que apagar, com outro nome. O `1` continua sendo digitado.
+2. **Não há padrão.** O Enter vazio não escolhe nada, e nem `0`, nem `s`, nem qualquer coisa que não seja um dos números da lista. Uma tentativa, e não um laço: quem erra repete o comando, que até ali não tocou em disco nenhum.
+3. **O número não vira alvo direto.** Ele resolve para um índice e cai no caminho de sempre — o plano inteiro na tela, o `(s/N)`, a releitura do disco e a **confirmação digitada pelo modelo**. O menu troca só a descoberta do número; o portão continua sendo o modelo.
+
+Está registrado no [ADR-0024](docs/adr/0024-o-prepare-oferece-a-lista-e-nao-deduz-o-disco.md).
+
+**E o índice não é identidade.** Medido em 23/08/2026: o dispositivo desta mesa era o disco 1 e virou o disco 2 quando um segundo SSD foi conectado. Por isso a confirmação final pede o **modelo**, que a tela acabou de imprimir — e não o número, digitado na linha ou escolhido na lista.
+
+Se preferir descobrir o índice por fora e passá-lo direto:
 
 ```powershell
 Get-Disk | Format-Table Number, FriendlyName, Size, BusType, IsSystem, IsBoot
 ```
+
+Com `--dispositivo` na linha, o menu **não aparece** — é o atalho de quem já sabe o número, e é ele que mantém `arca prepare --dispositivo 1 --dry-run` rodando sem ninguém na frente da tela.
 
 #### As sete defesas, e nenhuma é opcional
 
@@ -472,6 +508,7 @@ Get-Disk | Format-Table Number, FriendlyName, Size, BusType, IsSystem, IsBoot
 
 | # | Passo | Parando aqui, o que fica |
 |---|---|---|
+| 0 | Listar os discos e perguntar o número — **só sem `--dispositivo`** | nada tocado |
 | 1 | Descrever o disco e julgar as sete defesas | nada tocado |
 | 2 | Imprimir o plano inteiro | nada tocado |
 | 3 | Perguntar `(s/N)` e **reler o disco** | nada tocado |
@@ -512,6 +549,8 @@ arca prepare --dispositivo 1 --dry-run
 ```
 
 Para **antes** da pergunta, não escreve nada, e não diz que escreveu.
+
+Sem `--dispositivo`, o ensaio ainda passa pelo menu — ele pergunta o número, imprime o plano daquele disco e para ali. É a mesma coisa que `arca restore --dry-run` faz sem nome.
 
 #### Exemplo real — a execução de 23/08/2026
 
@@ -1266,7 +1305,8 @@ E as três específicas de comando:
 
 ```
 --completo              # em verify: arma boot unico para o ocs-chkimg
---dispositivo <indice>  # em prepare: o disco a preparar — obrigatorio
+--dispositivo <indice>  # em prepare: o disco a preparar — omitido, o comando
+                        #   lista os discos e pergunta o numero
 --iso <caminho>         # em prepare: instala de arquivo local
 ```
 
@@ -1304,7 +1344,31 @@ cargo build --release
 copy target\release\arca.exe C:\Ferramentas\arca.exe
 ```
 
-### Passo 1 — Descobrir o índice do disco a preparar
+### Passo 1 — Ver quais discos o ARCA pode preparar
+
+```powershell
+arca prepare
+```
+
+```text
+Discos desta maquina:
+
+  [1]  disco 1   JMicron Generic      447,1 GB · USB · MBR · 1 particao (E:)
+
+  Sem numero, e o `arca prepare` nao prepara:
+       disco 0   KINGSTON SNV3S500G   465,8 GB · NVMe · GPT · 1 particao (C:)
+                 e o disco do sistema E o disco de boot desta maquina (PR-5)
+
+Qual preparar?
+```
+
+*Abreviada: a tela traz ainda o rodapé que explica os dois números — está inteira no §6.1.*
+
+**Confira o modelo e o tamanho** — é o modelo que você vai digitar daqui a pouco. Digite o número e siga para o plano.
+
+Um Enter vazio não escolhe nada: o comando recusa, sem tocar em disco nenhum, e você pode seguir pelo passo 2 com o índice na mão.
+
+Se preferir descobrir o índice por fora:
 
 ```powershell
 Get-Disk | Format-Table Number, FriendlyName, Size, BusType, IsSystem, IsBoot
@@ -1316,8 +1380,6 @@ Number FriendlyName        Size BusType IsSystem IsBoot
      0 KINGSTON SNV3S500G 465GB NVMe    True     True
      1 JMicron Generic    447GB USB     False    False
 ```
-
-O disco 1 é o externo. **Confira o modelo e o tamanho** — é o modelo que você vai digitar daqui a pouco.
 
 ### Passo 2 — Ver o plano antes de executá-lo
 
@@ -1332,6 +1394,8 @@ Leia a tela inteira. Ela diz o que existe no disco hoje, o que vai ficar no luga
 ```powershell
 arca prepare --dispositivo 1
 ```
+
+Ou `arca prepare` e o número da lista — dá no mesmo, e os dois caminhos passam pelo que vem a seguir.
 
 Responde `s`, depois digita o **modelo do disco**. Leva alguns minutos — a maior parte é o download de 535,5 MB. No fim, o dispositivo está pronto e **inerte**.
 
@@ -1725,6 +1789,28 @@ Ou o download veio corrompido — rode de novo —, ou o arquivo do outro lado n
 
 Entre imprimir o plano e escrever a tabela houve uma pessoa lendo e digitando, e nesse intervalo alguém mexeu num cabo. **Nada foi apagado.** Rode `arca prepare --dispositivo <indice>` de novo e confira o modelo e o tamanho na tela.
 
+### `X nao e um dos numeros da lista (1 a N)`
+
+```
+erro: `` nao e um dos numeros da lista (1 a 2). Nada foi tocado — rode o comando
+de novo. **O Enter vazio tambem nao escolhe**: o menu nao tem padrao, porque um
+padrao seria o ARCA escolhendo o disco a apagar
+```
+
+O menu do `arca prepare` aceita **uma tentativa**, e não fica insistindo — quem errou repete o comando, que até ali não tocou em disco nenhum. Um Enter vazio cai aqui de propósito.
+
+**É também o que acontece ao chamar `arca prepare` sem `--dispositivo` de um script.** Um `stdin` fechado devolve linha vazia, linha vazia não escolhe nada, e o comando recusa em vez de travar esperando. Para script, passe `--dispositivo <indice>` — aí o menu não aparece.
+
+### `nenhum dos N disco(s) desta maquina pode ser preparado`
+
+A lista com o motivo de cada um vem impressa logo acima desta mensagem. As causas mais comuns:
+
+- **só há o disco do Windows na mesa** — conecte o disco externo que você quer preparar;
+- **o disco externo está conectado mas o Windows classificou a mídia como fixa, ou não a classificou** — é a defesa 1, e ela recusa `desconhecido` junto com `fixo`. Confira em `Get-Disk | Format-Table Number, FriendlyName, BusType` se ele aparece;
+- **o disco tem menos de 17,6 GB.**
+
+Nenhuma dessas recusas tem opção de forçar.
+
 ### A máquina passou a bootar no Clonezilla sozinha
 
 O ciclo de boot pelo dispositivo põe a entrada dele na frente da ordem permanente. É o que o aviso de C-9 previne — remover o SSD antes de religar. Para consertar:
@@ -1836,6 +1922,8 @@ Cada uma custou uma execução real para existir. Elas têm identificadores no c
 | Job fantasma vindo de dentro de uma imagem antiga | Colher o desfecho errado | C-11 |
 | `set default="0"` do pacote | Um dispositivo que *parece* inerte e arma sozinho | O `prepare` desarma o que instala |
 | Índice de disco mudando entre o plano e o "sim" | Apagar o disco errado | A releitura de PR-4 |
+| O número do menu confundido com o índice do Windows | Apontar `--dispositivo` para o disco errado depois — eles só batem por acidente | As duas colunas da lista: `[1]` e `disco 1` |
+| Um disco recusado **sumindo** da lista | Concluir que o ARCA não enxerga o HD e ir procurar como forçar | Os recusados aparecem sem número, com o motivo |
 
 ---
 
@@ -1881,7 +1969,7 @@ src/
     estado.rs       # o estado.json, escrito e lido à mão
     desfecho.rs     # julga o arca-fim.txt pelo selo
     prevoo.rs       # B-3, B-4, C-6, C-10, B-5, B-6
-    preparacao.rs   # as sete defesas e o plano de partições
+    preparacao.rs   # as sete defesas, o plano de partições e a oferta do menu
     blkdev.rs       # o parser do oráculo (§4.5)
     gpt.rs          # o parser do sgdisk de dentro da imagem (R-7)
     md5sums.rs      # o parser do MD5SUMS
@@ -1922,7 +2010,7 @@ src/
 ### A suíte
 
 ```powershell
-cargo test                                # 840 testes
+cargo test                                # 862 testes
 cargo test --test e12_sondar_a_maquina    # um arquivo
 cargo test -- --nocapture                 # mostrando o que os testes imprimem
 ```
@@ -1980,7 +2068,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | **`PRD/PRD-ARCA-v5_1.md`** | O documento de requisitos, com as telas de execução real, as medições e os requisitos identificados (`C-*`, `B-*`, `R-*`, `S-*`, `L-*`, `V-*`, `PR-*`, `SD-*`) |
 | **`PRD/implementation_stages.md`** | O plano de etapas — E0 a E12 —, o que cada uma entregou e o que aprendeu |
 | **`PRD/o-que-falta-para-fechar.md`** | As pendências abertas |
-| **`docs/adr/`** | 23 decisões de arquitetura, cada uma com o contexto que a forçou |
+| **`docs/adr/`** | 24 decisões de arquitetura, cada uma com o contexto que a forçou |
 | **`recursos/capturas/`** | **A evidência.** Saídas reais de ferramentas, `grub.cfg` preservados, logs de execução, o `estado.json` de cada marco. Ver `PROVENIENCIA.md` |
 | **`docs/agents/`** | Convenções para agentes que trabalham neste repositório: issue tracker, labels de triagem, docs de domínio |
 | `cargo doc --open` | A documentação interna — densa, e onde as razões estão |
@@ -2012,6 +2100,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | 0021 | Uma entrada sem alvo na ordem **não é segurança** |
 | 0022 | O `arca-restore.log` é truncado **por baixo** |
 | 0023 | O `bootsequence` não é o gatilho da reescrita |
+| 0024 | O `arca prepare` **oferece a lista**, e continua não deduzindo o disco |
 
 ---
 

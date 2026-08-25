@@ -99,6 +99,10 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
         // outros dependem (B-1, S-3, C-10). Ele julga o disco pelas sete
         // defesas de PR-5, imprime o plano, pergunta, **relê o disco**, pede a
         // confirmacao digitada e so entao apaga.
+        //
+        // Sem `--dispositivo` ele lista os discos e pergunta o numero, como o
+        // `restore` sem nome (ADR-0024). O numero resolve para indice e cai
+        // neste mesmo caminho — nada abaixo dele muda.
         Comando::Prepare { dispositivo, iso } => {
             return comandos::prepare::executar(contexto, *dispositivo, iso.as_deref());
         }
