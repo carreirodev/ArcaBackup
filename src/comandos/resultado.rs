@@ -140,24 +140,22 @@ fn linha_da_ordem(ordem: &OrdemDevolvida) -> String {
     )
 }
 
-/// O que o conserto de C-13 significa para quem lê, e so quando houve
-/// conserto.
+/// O que muda para quem liga a maquina, e so quando houve conserto.
 ///
 /// Dizer isto sempre treinaria quem lê a pular a linha, e ela e a resposta a
 /// um incomodo concreto: ate a E9 a maquina passava a bootar no dispositivo a
 /// cada religada depois de um backup, e nao era assim antes de o ARCA existir.
+///
+/// **E so isso.** A versao anterior explicava o mecanismo — que o ciclo de boot
+/// tinha posto a entrada na frente, que nenhuma entrada foi removida, e o
+/// numero da regra. Quem acabou de colher um job nao precisa disso para decidir
+/// nada; precisa saber se pode religar a maquina. O mecanismo esta no
+/// [ADR-0013](../../docs/adr/0013-colher-devolve-o-bootmgr-ao-topo-da-ordem.md).
 fn conselho_da_ordem(ordem: &OrdemDevolvida) -> String {
     if !ordem.houve_conserto() {
         return String::new();
     }
-    concat!(
-        "\n  O ciclo de boot pelo dispositivo tinha posto a entrada dele na frente da\n",
-        "  ordem permanente, e com ela ali toda religada com o SSD conectado bootava\n",
-        "  no dispositivo — sem boot unico nenhum. Isso acabou de ser desfeito: daqui\n",
-        "  em diante a maquina liga no Windows, com o SSD conectado ou sem ele.\n",
-        "  Nenhuma entrada foi removida; o Windows so voltou a ser a primeira (C-13).\n"
-    )
-    .to_string()
+    "\n  Daqui em diante a maquina liga no Windows, com o SSD conectado ou sem ele.\n".to_string()
 }
 
 pub fn executar(contexto: &Contexto) -> Resultado<()> {
@@ -568,11 +566,8 @@ fn nome_da_pasta(colheita: &Colheita) -> String {
 fn conselho_da_sondagem(colheita: &Colheita) -> String {
     match colheita.sondagem {
         Some(discos) if !discos.is_empty() => concat!(
-            "\n  O ORACULO DO §4.5 EXISTE AGORA. O `blkdev.list` da sondagem esta em\n",
-            "  ARCA-LOGS\\sondagem\\, e e dele que sai o nome que o LINUX da ao disco —\n",
-            "  aquele que o Windows nao conhece e que o ARCA nao inventa.\n",
-            "\n",
-            "  Para conferir o que o `arca backup` vai nomear, sem armar nada:\n",
+            "\n  A lista de discos ficou em ARCA-LOGS\\sondagem\\blkdev.list, e o primeiro\n",
+            "  backup ja pode ser feito. Para ver o que ele vai nomear, sem armar nada:\n",
             "    arca backup <nome> --dry-run\n"
         )
         .to_string(),
@@ -1430,8 +1425,74 @@ mod testes {
             saida.contains("Discos vistos: nvme0n1 (KINGSTON SNV3S500G)"),
             "{saida}"
         );
-        assert!(saida.contains("ORACULO DO §4.5 EXISTE AGORA"), "{saida}");
-        assert!(saida.contains("arca backup"), "{saida}");
+        // Onde o arquivo ficou, e qual e o proximo comando. **Nao** por que ele
+        // existe: isso e o §4.5, e o §4.5 nao e assunto de quem acabou de
+        // colher uma sondagem. Ver `o_conselho_nao_explica_o_projeto`.
+        assert!(saida.contains(r"ARCA-LOGS\sondagem\blkdev.list"), "{saida}");
+        assert!(saida.contains("arca backup <nome> --dry-run"), "{saida}");
+    }
+
+    #[test]
+    fn o_conselho_nao_explica_o_projeto() {
+        // **A terceira tela deste projeto a perder a explicação, e as três
+        // saíram pelo mesmo motivo.** As outras duas são do `arca prepare`: o
+        // parágrafo que justificava o esquema de partição, e o que explicava
+        // por que sondar.
+        //
+        // Quem acabou de colher um job quer saber **o que ficou onde** e **qual
+        // é o próximo comando**. O oráculo do §4.5, o mecanismo do ciclo de
+        // boot e o número da regra que foi respeitada são registro de projeto —
+        // moram nos ADRs, e quem lê a tela não os pediu.
+        let discos = crate::blkdev::ler(concat!(
+            "KNAME     NAME          SIZE TYPE FSTYPE MOUNTPOINT MODEL\n",
+            "nvme0n1   nvme0n1     465.8G disk                   KINGSTON SNV3S500G\n",
+        ));
+        let estado = Estado {
+            comando: Operacao::Sondagem,
+            nome: None,
+            disco: None,
+            ..estado(Situacao::Armado)
+        };
+        let desarme = desarme();
+        let desfecho = Encontrado::Arquivo(Julgamento::Concluida);
+
+        // A ordem **consertada**, que é o caso em que o conselho da ordem
+        // aparece: o ciclo de boot tinha posto o `ARCA` na frente.
+        let saida = montar(&Colheita {
+            estado: &estado,
+            desfecho: &desfecho,
+            pasta: None,
+            sondagem: Some(&discos),
+            desarme: &desarme,
+            ordem: &OrdemDevolvida::Devolvida {
+                estava_na_frente: "ARCA".to_string(),
+            },
+            encerramento: &Encerramento::Encerrado,
+            pastas: &[],
+            livre_bytes: 176_000_000_000,
+        });
+
+        for vazamento in [
+            "§4.5",
+            "ORACULO",
+            "(C-13)",
+            "ADR-",
+            "boot unico nenhum",
+            "ciclo de boot",
+        ] {
+            assert!(
+                !saida.contains(vazamento),
+                "o conselho vazou `{vazamento}`, que e registro de projeto:\n{saida}"
+            );
+        }
+
+        // E o que ele **tem** de dizer continua lá.
+        assert!(saida.contains("blkdev.list"), "onde ficou: {saida}");
+        assert!(saida.contains("arca backup"), "o proximo comando: {saida}");
+        assert!(
+            saida.contains("liga no Windows"),
+            "o que muda para quem religa a maquina: {saida}"
+        );
     }
 
     #[test]
