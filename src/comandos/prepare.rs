@@ -9,8 +9,9 @@
 //!
 //! | Parte | Origem |
 //! |---|---|
-//! | A estrutura de partições — MBR, `MbrType 7` e `12`, nenhuma ativa, unidade 4096 | Transcrito de `estrutura-de-particoes-do-dispositivo-2026-08-23.txt` |
-//! | A sequência de cmdlets que a produz | Medido à mão em 23/08/2026, antes de virar código |
+//! | A estrutura de partições — GPT, dados básicos nas duas, nenhuma ativa, unidade 4096 | Transcrito de `medicao-gpt-2026-08-25.txt` (ADR-0025) |
+//! | A sequência de cmdlets que a produz, e a remoção da MSR | Medido à mão em 25/08/2026 em **dois** dispositivos, antes de virar código |
+//! | Que um dispositivo assim **boota** | Medido em hardware em 25/08/2026, com o device path lido de dentro do live |
 //! | O pacote, a versão e o SHA256 | Medido — duas fontes independentes (ver [`crate::pacote`]) |
 //! | **A criação da entrada de firmware** | **Era código sem original**, e ganhou um em 23/08/2026 |
 //! | O `--dry-run`, a confirmação e a releitura | Reúso — [`crate::confirmacao`], C-3 |
@@ -923,7 +924,7 @@ pub fn montar_o_plano(preparacao: &Preparacao, iso: Option<&Path>) -> String {
     ));
     saida.push_str(&linha(
         "Tabela de particao hoje",
-        &format!("{} · vai ser reescrita como MBR", disco.estilo_de_particao),
+        &format!("{} · vai ser reescrita como GPT", disco.estilo_de_particao),
     ));
 
     saida.push_str("\nO QUE EXISTE NESTE DISCO HOJE, e vai ser APAGADO:\n");
@@ -969,7 +970,7 @@ pub fn montar_o_plano(preparacao: &Preparacao, iso: Option<&Path>) -> String {
 
     saida.push_str("\nO QUE VAI FICAR NO LUGAR:\n");
     saida.push_str(&format!(
-        "  MBR  1  NTFS  {:>9}  {ARCAVAULT}   as imagens moram aqui\n",
+        "  GPT  1  NTFS  {:>9}  {ARCAVAULT}   as imagens moram aqui\n",
         tamanho(preparacao.plano.vault_bytes)
     ));
     saida.push_str(&format!(
@@ -978,10 +979,14 @@ pub fn montar_o_plano(preparacao: &Preparacao, iso: Option<&Path>) -> String {
     ));
 
     saida.push_str(
-        "\n  A estrutura e MBR, e nao GPT: e a que esta bootando neste projeto desde\n\
-         \x2019/08, e trocar por GPT+ESP seria abandonar um esquema medido por um\n\
-         \x20suposto — num lugar cujo modo de falha e um dispositivo que NAO BOOTA, e\n\
-         \x20que so se descobre depois de o Windows ja ter sido apagado (ADR-0014).\n",
+        "\n  A estrutura e GPT, e as duas particoes sao de dados basicos — a ARCABOOT\n\
+         \x20nao e uma ESP. E o que foi medido em 25/08/2026: um dispositivo assim\n\
+         \x20BOOTOU nesta maquina, e o caminho que o firmware carregou foi lido de\n\
+         \x20dentro do boot pelo efibootmgr (ADR-0025).\n\
+         \x20\n\
+         \x20O Windows cria sozinho uma particao Microsoft Reserved ao inicializar em\n\
+         \x20GPT, e o ARCA a remove: deixada em pe, ela empurraria estas duas para 2 e\n\
+         \x203, e o dispositivo seria outro.\n",
     );
 
     saida.push_str("\nE O QUE MAIS VAI ACONTECER:\n");
@@ -1055,8 +1060,8 @@ pub fn montar_as_particoes(feitas: &ParticoesFeitas) -> String {
     saida.push_str(&linha(
         "Particionando",
         &format!(
-            "ok · MBR, 2 particoes · MbrType {} e {}",
-            feitas.vault.tipo_mbr, feitas.boot.tipo_mbr
+            "ok · GPT, 2 particoes de dados basicos ({}) · sem a MSR que o Windows cria",
+            feitas.vault.tipo_gpt
         ),
     ));
     saida.push_str(&linha(
@@ -1517,18 +1522,25 @@ mod testes {
 
         assert!(saida.contains("ARCAVAULT"), "{saida}");
         assert!(saida.contains("ARCABOOT"), "{saida}");
-        assert!(saida.contains("MBR"), "{saida}");
+        assert!(saida.contains("GPT"), "{saida}");
         assert!(saida.contains("1,6 GB"), "o tamanho do ARCABOOT: {saida}");
     }
 
     #[test]
-    fn o_plano_diz_por_que_e_mbr_e_nao_gpt() {
-        // A tentacao que o ADR-0014 manda resistir esta na tela, e a razao
-        // junto: quem lê "MBR" num dispositivo novo em 2026 vai achar que e
-        // engano.
+    fn o_plano_diz_que_a_arcaboot_nao_e_uma_esp_e_que_a_msr_sai() {
+        // Duas coisas que quem lê a tela nao adivinha, e as duas mudariam o
+        // dispositivo se fossem outras. A ARCABOOT ser dados basicos em vez de
+        // ESP e a Variante B do marco — a que bootou —, e a MSR e a particao
+        // que o Windows cria sozinho e que ninguem pediu.
         let saida = montar_o_plano(&preparacao_da_mesa(), None);
-        assert!(saida.contains("nao GPT"), "{saida}");
-        assert!(saida.contains("NAO BOOTA"), "{saida}");
+
+        assert!(saida.contains("nao e uma ESP"), "{saida}");
+        assert!(saida.contains("Microsoft Reserved"), "{saida}");
+        assert!(saida.contains("BOOTOU"), "{saida}");
+        assert!(
+            !saida.contains("nao GPT"),
+            "a tela ainda diz que o esquema nao e GPT: {saida}"
+        );
     }
 
     #[test]
@@ -1641,12 +1653,21 @@ mod testes {
     // ─────────────────── as telas de depois ───────────────────
 
     #[test]
-    fn a_tela_das_particoes_mostra_os_tipos_mbr_relidos() {
-        // Os dois numeros sao a transcricao provada: o `New-Partition` cria
-        // com 6, e sao o 7 e o 12 que dizem que o `Format-Volume` acertou.
+    fn a_tela_das_particoes_mostra_o_esquema_e_o_tipo_relidos() {
+        // O GptType e **um** e nao dois, porque em GPT o tipo nao distingue as
+        // duas particoes (ADR-0025). E a linha nomeia a MSR: ela e o passo que
+        // o GPT trouxe, e um `prepare` que a tivesse deixado em pe teria
+        // parado na releitura — quem le a tela merece saber que aquele passo
+        // existe e deu certo.
         let saida = montar_as_particoes(&o_que_o_particionamento_deixou());
 
-        assert!(saida.contains("MbrType 7 e 12"), "{saida}");
+        assert!(saida.contains("GPT, 2 particoes"), "{saida}");
+        assert!(
+            saida.contains(crate::preparacao::TIPO_GPT_DADOS_BASICOS),
+            "{saida}"
+        );
+        assert!(saida.contains("sem a MSR"), "{saida}");
+        assert!(!saida.contains("MbrType"), "{saida}");
         assert!(saida.contains("nenhuma particao ativa"), "{saida}");
         assert!(saida.contains("relido do disco"), "{saida}");
     }
@@ -1837,13 +1858,14 @@ mod testes {
 
     #[test]
     fn o_fim_nomeia_as_letras_e_diz_que_elas_mudam() {
-        // Medido nesta sessao: o `ARCAVAULT` deste projeto ja apareceu em `E:`
-        // e em `D:`, e o dispositivo ja foi o disco 1 e o disco 2. A tela diz
-        // isso em vez de deixar alguem anotar a letra.
+        // Medido: o `ARCAVAULT` deste projeto ja apareceu em `E:`, em `F:` e em
+        // `D:`, e o dispositivo ja foi o disco 1 e o disco 2. A tela diz isso
+        // em vez de deixar alguem anotar a letra — e as letras deste fixture
+        // sao as do marco em GPT de 25/08/2026, que sairam `D:` e `E:`.
         let saida = montar_o_fim(&o_que_o_particionamento_deixou(), None);
 
+        assert!(saida.contains("em D:"), "{saida}");
         assert!(saida.contains("em E:"), "{saida}");
-        assert!(saida.contains("em F:"), "{saida}");
         assert!(saida.contains("As letras mudam"), "{saida}");
     }
 

@@ -3,6 +3,19 @@
 **Supersede o princípio P1** na parte que proibia particionar. Decidido em
 23/08/2026.
 
+> **Superseded em parte pelo [ADR-0025](0025-o-arca-particiona-em-gpt.md), em
+> 25/08/2026: o esquema agora é GPT.** A seção *"E há original, o que muda a
+> natureza do trabalho"*, abaixo, manda resistir a "modernizar para GPT+ESP"
+> porque seria trocar um esquema medido por um suposto — e o argumento estava
+> certo. O que se fez foi trocar por outro **medido**: o marco em hardware que
+> esta seção pedia aconteceu, um dispositivo GPT bootou, e o device path foi
+> lido de dentro do boot.
+>
+> A premissa de que a falha "só se descobre depois de o Windows já ter sido
+> apagado" é a única coisa deste ADR que estava errada, e o ADR-0025 mostra por
+> quê. **Todo o resto continua valendo**: P1 revisado, as sete defesas, e o que
+> continua fora.
+
 ## A decisão, e o argumento que a sustenta
 
 > *"Na realidade eu quero que ele particione sozinho, e renomeie as duas

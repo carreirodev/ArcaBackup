@@ -813,16 +813,27 @@ positiva, e é mais barata de guardar do que de refazer.
 
 **Bootando**, o caminho no código é curto e mecânico, e cada item tem endereço:
 
-| Onde | O que muda |
-|---|---|
-| `src/adaptadores/windows/particionador.rs:157` | `-PartitionStyle MBR` → `GPT`, e a remoção da MSR **sempre** — ela apareceu nos dois dispositivos |
-| `src/preparacao.rs:573,576` | **troca de critério, não de constante**: o `GptType` é o mesmo nas duas, e não separa a ARCAVAULT da ARCABOOT |
-| `src/preparacao.rs:510-540` | a releitura confere `GptType` como tipo *comum*, e passa a distinguir as duas por rótulo/sistema de arquivos/ordem |
-| `src/comandos/prepare.rs:981` | o parágrafo "A estrutura e MBR, e nao GPT" sai da tela |
-| `src/comandos/prepare.rs:1525` | o teste `o_plano_diz_por_que_e_mbr_e_nao_gpt` sai junto |
-| `tests/e10_preparar_o_dispositivo.rs` | os 17 asserts passam a citar a captura nova |
-| `src/duplos.rs:1120,1139` | os fixtures |
-| `docs/adr/` | **ADR novo** que supersede o ADR-0014, com a captura como evidência |
+**Feito em 25/08/2026**, e o que saiu está no
+[ADR-0025](../docs/adr/0025-o-arca-particiona-em-gpt.md):
+
+| Onde | O que mudou | ✅ |
+|---|---|---|
+| `adaptadores/windows/particionador.rs` | `-PartitionStyle MBR` → `GPT`, e um `Remove-Partition` entre o `Initialize-Disk` e o `New-Partition` — a MSR sai **sempre** | ✅ |
+| `portas/particionador.rs` | `ParticaoFeita::tipo_mbr: u32` → `tipo_gpt: String` | ✅ |
+| `preparacao.rs` | `TIPO_MBR_IFS`/`TIPO_MBR_FAT32_LBA` saíram; entrou `TIPO_GPT_DADOS_BASICOS`, **um** para as duas, e `TIPO_GPT_MSR` | ✅ |
+| `preparacao.rs::conferir_o_que_saiu` | confere o tipo comum, e distingue as duas por rótulo, sistema de arquivos e ordem | ✅ |
+| `preparacao.rs::ALINHAMENTO_BYTES` | 2 973 696 (MBR) → **1 400 832** (GPT), e a estimativa passou a bater ao byte com o que o hardware devolveu | ✅ |
+| `adaptadores/…/ler_o_que_saiu` | conta as partições **antes** de exigir letra, para uma MSR sobrevivente ser recusada pelo nome | ✅ |
+| `comandos/prepare.rs` | as três telas — a tabela de hoje, o que vai ficar, e o que a releitura leu | ✅ |
+| `duplos.rs`, `preparacao.rs`, `tests/e10_*` | os fixtures e os asserts passam a citar a captura nova | ✅ |
+| `README.md`, `PRD/o-que-falta-para-fechar.md` | as telas de exemplo e a lista do que fica fora | ✅ |
+| `docs/adr/0025-…` | o ADR que supersede o esquema do ADR-0014 | ✅ |
+
+A suíte passou de **862 para 869 testes**, com os sete novos amarrando o que o
+marco mediu: que o `GptType` é o mesmo nas duas, que ele não muda ao formatar,
+que a MSR apareceu nos dois dispositivos, que a estimativa da tela bate com o
+hardware, e que o device path lido de dentro do boot é o `HD(2,GPT,…)` cujo GUID
+é o PARTUUID da ARCABOOT.
 
 O ADR novo precisa responder **três coisas** que só este roteiro mede:
 

@@ -131,9 +131,10 @@ impl DiscoParaPreparar {
 /// arquivos.
 ///
 /// É a estrutura **transcrita** de
-/// `recursos/capturas/estrutura-de-particoes-do-dispositivo-2026-08-23.txt`,
-/// e não uma inventada — ver [`crate::preparacao`] para o plano e o ADR-0014
-/// para por que MBR e não GPT+ESP.
+/// `recursos/capturas/medicao-gpt-2026-08-25.txt`, e não uma inventada — ver
+/// [`crate::preparacao`] para o plano e o
+/// [ADR-0025](../../docs/adr/0025-o-arca-particiona-em-gpt.md) para por que
+/// GPT com duas partições de dados, e não MBR nem GPT+ESP.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanoDeParticoes {
     pub indice_do_disco: u32,
@@ -159,15 +160,22 @@ pub struct ParticaoFeita {
     pub rotulo: String,
     pub sistema_de_arquivos: String,
 
-    /// O tipo MBR que o Windows escreveu. A captura registra **7** para o
-    /// `ARCAVAULT` (IFS) e **12** para o `ARCABOOT` (FAT32 LBA), e medir isto
-    /// de volta é o que prova que a transcrição saiu certa.
+    /// O `GptType` que o Windows escreveu, como ele o devolve: entre chaves e
+    /// em minúsculas.
     ///
-    /// Medido em 23/08/2026: o `New-Partition` cria as duas com `MbrType 6`, e
-    /// **quem acerta o tipo é o `Format-Volume`**. Não há `Set-Partition` no
-    /// caminho, e é por isso que a releitura importa: o tipo é efeito colateral
-    /// de outra operação.
-    pub tipo_mbr: u32,
+    /// **É o mesmo nas duas** —
+    /// [`crate::preparacao::TIPO_GPT_DADOS_BASICOS`] —, e essa é a diferença
+    /// que mais muda em relação ao MBR, onde `7` e `12` distinguiam a
+    /// `ARCAVAULT` da `ARCABOOT`. Conferi-lo continua valendo: ele descarta uma
+    /// ESP, uma MSR ou o que o Windows tivesse criado por conta. O que ele
+    /// deixou de fazer é dizer **qual é qual**, e quem faz isso é o rótulo, o
+    /// sistema de arquivos e a ordem no disco — que já eram conferidos.
+    ///
+    /// Medido em 25/08/2026 nos dois dispositivos do marco: **o `GptType` sai
+    /// pronto do `New-Partition`, e o `Format-Volume` não encosta nele.** É o
+    /// contrário do MBR, em que o tipo era efeito colateral do formato. Ver o
+    /// [ADR-0025](../../docs/adr/0025-o-arca-particiona-em-gpt.md).
+    pub tipo_gpt: String,
 
     pub tamanho_bytes: u64,
     pub offset_bytes: u64,

@@ -1160,30 +1160,40 @@ pub fn discos_para_preparar_desta_mesa() -> Vec<crate::portas::particionador::Di
     ]
 }
 
-/// O que o Windows respondeu depois do particionamento à mão de 23/08/2026.
+/// O que o Windows respondeu depois do particionamento em GPT de 25/08/2026.
+///
+/// Transcrito de `recursos/capturas/medicao-gpt-2026-08-25.txt`, do KGSSE100
+/// 256 — o dispositivo que **bootou** no marco em hardware, e não de um
+/// particionamento qualquer. Os mesmos números saíram do Kingston DataTraveler
+/// Max horas antes, o que os torna medição repetida em vez de refeita.
+///
+/// O `GptType` é **o mesmo nas duas**, e é assim que a captura o registra: em
+/// GPT o tipo não distingue a `ARCAVAULT` da `ARCABOOT`. Ver o
+/// [ADR-0025](../docs/adr/0025-o-arca-particiona-em-gpt.md).
 pub fn o_que_o_particionamento_deixou() -> crate::portas::particionador::ParticoesFeitas {
     use crate::portas::particionador::{ParticaoFeita, ParticoesFeitas};
+    use crate::preparacao::TIPO_GPT_DADOS_BASICOS;
 
     ParticoesFeitas {
         vault: ParticaoFeita {
             numero: 1,
-            letra: 'E',
+            letra: 'D',
             rotulo: "ARCAVAULT".to_string(),
             sistema_de_arquivos: "NTFS".to_string(),
-            tipo_mbr: 7,
-            tamanho_bytes: 478_423_285_760,
+            tipo_gpt: TIPO_GPT_DADOS_BASICOS.to_string(),
+            tamanho_bytes: 254_381_391_872,
             offset_bytes: 1_048_576,
             unidade_de_alocacao: 4096,
             ativa: false,
         },
         boot: ParticaoFeita {
             numero: 2,
-            letra: 'F',
+            letra: 'E',
             rotulo: "ARCABOOT".to_string(),
             sistema_de_arquivos: "FAT32".to_string(),
-            tipo_mbr: 12,
+            tipo_gpt: TIPO_GPT_DADOS_BASICOS.to_string(),
             tamanho_bytes: 1_677_721_600,
-            offset_bytes: 478_424_334_336,
+            offset_bytes: 254_382_440_448,
             unidade_de_alocacao: 4096,
             ativa: false,
         },

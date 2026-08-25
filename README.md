@@ -328,9 +328,9 @@ Os três são respondidos pelo próprio `clap`, saem com código `0`, e **não p
 Um **dispositivo** é um disco externo com duas partições, rotuladas sempre com os mesmos nomes. É o rótulo — nunca a letra, nunca `sda`, nunca o número de série — que torna a receita reproduzível e os dispositivos intercambiáveis.
 
 ```
-[dispositivo]  — um SSD externo, tabela MBR, duas partições
+[dispositivo]  — um SSD externo, tabela GPT, duas partições
 │
-├── ARCABOOT  — FAT32, 1600 MiB, no fim do disco (MbrType 12)
+├── ARCABOOT  — FAT32, 1600 MiB, no fim do disco (dados básicos)
 │   ├── EFI/boot/bootx64.efi        ← para onde a entrada de firmware aponta
 │   ├── live/                       ← kernel, initrd, filesystem.squashfs
 │   ├── boot/grub/grub.cfg          ← A RECEITA, reescrita a cada operação
@@ -338,7 +338,7 @@ Um **dispositivo** é um disco externo com duas partições, rotuladas sempre co
 │       ├── arca.exe                ← o próprio ARCA (§4.1)
 │       └── estado.json             ← o job: selo, operação, nome, disco, momento
 │
-└── ARCAVAULT — NTFS, todo o resto (MbrType 7)
+└── ARCAVAULT — NTFS, todo o resto (dados básicos)
     ├── ARCA-LOGS/
     │   ├── backup-2026-08-22_Apps/arca-fim.txt
     │   ├── restauracao-2026-08-22_Apps/
@@ -562,7 +562,7 @@ Sem `--dispositivo`, o ensaio ainda passa pelo menu — ele pergunta o número, 
   Disco 1 ......................... JMicron Generic · USB · 447,1 GB
   Tipo de midia ................... External hard disk media · nao e disco fixo (PR-5)
   Sistema ......................... IsSystem false · IsBoot false · nao carrega o C:
-  Tabela de particao hoje ......... MBR · vai ser reescrita como MBR
+  Tabela de particao hoje ......... MBR · vai ser reescrita como GPT
 
 O QUE EXISTE NESTE DISCO HOJE, e vai ser APAGADO:
   1  NTFS    445,6 GB  "ARCAVAULT"                E:
@@ -573,8 +573,17 @@ O QUE EXISTE NESTE DISCO HOJE, e vai ser APAGADO:
   cada uma, e o ARCA nunca apaga imagem em nenhum outro caminho (B-10).
 
 O QUE VAI FICAR NO LUGAR:
-  MBR  1  NTFS   445,6 GB  ARCAVAULT   as imagens moram aqui
+  GPT  1  NTFS   445,6 GB  ARCAVAULT   as imagens moram aqui
        2  FAT32    1,6 GB  ARCABOOT    o Clonezilla e o ARCA moram aqui
+
+  A estrutura e GPT, e as duas particoes sao de dados basicos — a ARCABOOT
+  nao e uma ESP. E o que foi medido em 25/08/2026: um dispositivo assim
+  BOOTOU nesta maquina, e o caminho que o firmware carregou foi lido de
+  dentro do boot pelo efibootmgr (ADR-0025).
+
+  O Windows cria sozinho uma particao Microsoft Reserved ao inicializar em
+  GPT, e o ARCA a remove: deixada em pe, ela empurraria estas duas para 2 e
+  3, e o dispositivo seria outro.
 
 E O QUE MAIS VAI ACONTECER:
   Clonezilla 3.3.3-15 · baixado (535,5 MB), com o SHA256 conferido contra
@@ -593,7 +602,7 @@ Podemos continuar? (s/N): s
   Conferido antes de escrever ..... ok · o disco 1 continua sendo `JMicron Generic` de 447,1 GB
 
 Digite o modelo do disco para confirmar: JMicron Generic
-  Particionando ................... ok · MBR, 2 particoes · MbrType 7 e 12
+  Particionando ................... ok · GPT, 2 particoes de dados basicos ({ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}) · sem a MSR
   Formatando e rotulando .......... ok · ARCAVAULT (NTFS) em E: · ARCABOOT (FAT32) em F:
   Conferido apos escrever ......... ok · relido do disco · nenhuma particao ativa, unidade 4096 (C-3)
   Baixando Clonezilla ............. 3.3.3-15 · 535,5 MB · pode levar minutos
@@ -2068,7 +2077,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | **`PRD/PRD-ARCA-v5_1.md`** | O documento de requisitos, com as telas de execução real, as medições e os requisitos identificados (`C-*`, `B-*`, `R-*`, `S-*`, `L-*`, `V-*`, `PR-*`, `SD-*`) |
 | **`PRD/implementation_stages.md`** | O plano de etapas — E0 a E12 —, o que cada uma entregou e o que aprendeu |
 | **`PRD/o-que-falta-para-fechar.md`** | As pendências abertas |
-| **`docs/adr/`** | 24 decisões de arquitetura, cada uma com o contexto que a forçou |
+| **`docs/adr/`** | 25 decisões de arquitetura, cada uma com o contexto que a forçou |
 | **`recursos/capturas/`** | **A evidência.** Saídas reais de ferramentas, `grub.cfg` preservados, logs de execução, o `estado.json` de cada marco. Ver `PROVENIENCIA.md` |
 | **`docs/agents/`** | Convenções para agentes que trabalham neste repositório: issue tracker, labels de triagem, docs de domínio |
 | `cargo doc --open` | A documentação interna — densa, e onde as razões estão |
@@ -2090,7 +2099,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | 0011 | As capturas de 21/08 são de dois boots |
 | 0012 | A restauração devolve a ordem permanente **que está dentro da imagem** |
 | 0013 | Colher devolve o `{bootmgr}` ao topo da ordem |
-| 0014 | **O ARCA particiona o dispositivo** |
+| 0014 | **O ARCA particiona o dispositivo** *(o esquema, superseded pelo 0025)* |
 | 0015 | A restauração só restaura **no disco de origem** |
 | 0016 | A verificação armada é a terceira operação |
 | 0017 | A entrada de firmware nasce de uma **cópia do `{bootmgr}`**, e sai da ordem |
@@ -2101,6 +2110,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | 0022 | O `arca-restore.log` é truncado **por baixo** |
 | 0023 | O `bootsequence` não é o gatilho da reescrita |
 | 0024 | O `arca prepare` **oferece a lista**, e continua não deduzindo o disco |
+| 0025 | **O ARCA particiona em GPT**, e o marco em hardware aconteceu |
 
 ---
 

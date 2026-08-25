@@ -275,68 +275,177 @@ fn o_noeject_cabe_no_orcamento_da_linha_do_kernel() {
 /// A medição de 23/08/2026, feita **antes** de o código existir.
 const MEDICAO: &str = include_str!("../recursos/capturas/medicao-particionamento-2026-08-23.txt");
 
+/// O marco em hardware de 25/08/2026: as nove etapas que mediram o GPT.
+///
+/// É o oráculo do [ADR-0025](../docs/adr/0025-o-arca-particiona-em-gpt.md), e o
+/// que estes testes fazem é impedir que as constantes do código andem sem que
+/// alguém volte ao hardware.
+const MEDICAO_GPT: &str = include_str!("../recursos/capturas/medicao-gpt-2026-08-25.txt");
+
 #[test]
 fn a_estrutura_que_o_arca_transcreve_e_a_que_foi_medida() {
-    // O que a captura da estrutura do dispositivo registra, e o que o
-    // particionamento à mão reproduziu no segundo dispositivo. Os dois tipos
-    // MBR e a unidade de alocação são constantes deste projeto porque são
-    // **medidas**, e este teste é o que liga as constantes ao arquivo.
-    const ESTRUTURA: &str =
-        include_str!("../recursos/capturas/estrutura-de-particoes-do-dispositivo-2026-08-23.txt");
-
+    // O que a medição de 25/08/2026 registra do dispositivo que **bootou**. A
+    // constante de tipo, a unidade de alocação e o tamanho do ARCABOOT são
+    // constantes deste projeto porque são **medidas**, e este teste é o que as
+    // liga ao arquivo.
     assert!(
-        ESTRUTURA.contains(&format!("MbrType         : {}", preparacao::TIPO_MBR_IFS)),
-        "o MbrType do ARCAVAULT"
-    );
-    assert!(
-        ESTRUTURA.contains(&format!(
-            "MbrType         : {}",
-            preparacao::TIPO_MBR_FAT32_LBA
+        MEDICAO_GPT.contains(&format!(
+            "GptType         : {}",
+            preparacao::TIPO_GPT_DADOS_BASICOS
         )),
-        "o MbrType do ARCABOOT"
+        "o GptType das duas particoes"
     );
     assert!(
-        ESTRUTURA.contains(&format!(
+        MEDICAO_GPT.contains(&format!(
             "AllocationUnitSize : {}",
             preparacao::UNIDADE_DE_ALOCACAO
         )),
         "a unidade de alocacao"
     );
     assert!(
-        ESTRUTURA.contains(&format!("Size            : {}", preparacao::ARCABOOT_BYTES)),
+        MEDICAO_GPT.contains(&format!("Size            : {}", preparacao::ARCABOOT_BYTES)),
         "o tamanho do ARCABOOT"
     );
     assert!(
-        ESTRUTURA.contains("PartitionStyle : MBR"),
-        "o esquema e MBR, e nao GPT (ADR-0014)"
+        MEDICAO_GPT.contains("PartitionStyle    : GPT"),
+        "o esquema e GPT, e nao MBR (ADR-0025)"
     );
 }
 
 #[test]
-fn o_new_partition_cria_com_o_tipo_errado_e_o_format_volume_acerta() {
-    // **A medição que muda o desenho**, e ela não era óbvia: `New-Partition`
-    // cria as duas partições com `MbrType 6`, e quem as leva a 7 e 12 é o
-    // `Format-Volume`. Não há `Set-Partition -MbrType` no caminho.
+fn o_gpttype_nao_distingue_as_duas_particoes() {
+    // **O achado que muda o critério da releitura.** Em MBR, `7` e `12`
+    // diziam qual partição era qual. Em GPT as duas nascem com o mesmo tipo, e
+    // quem diz qual é qual passa a ser o rótulo, o sistema de arquivos e a
+    // ordem no disco.
     //
-    // É por isso que a releitura de PR-5 importa: o tipo é **efeito colateral
-    // de outra operação**, e nada no script o pede diretamente.
-    let antes_de_formatar = MEDICAO
-        .split("### Format-Volume 1")
-        .next()
-        .expect("a medicao tem a parte de antes de formatar");
+    // O teste conta as ocorrências na releitura do dispositivo que bootou: têm
+    // de ser duas, e do mesmo GUID.
+    let releitura = MEDICAO_GPT
+        .split("### ETAPA 4 (SSD) — RELEITURA")
+        .nth(1)
+        .expect("a medicao tem a releitura do dispositivo que bootou");
+
+    let iguais = releitura
+        .matches(&format!(
+            "GptType         : {}",
+            preparacao::TIPO_GPT_DADOS_BASICOS
+        ))
+        .count();
+
+    assert_eq!(
+        iguais, 2,
+        "as duas particoes tem de sair com o MESMO GptType:\n{releitura}"
+    );
+}
+
+#[test]
+fn o_gpttype_sai_do_new_partition_e_o_format_volume_nao_encosta_nele() {
+    // **A medição que muda o desenho, e ela é o inverso do MBR.** Lá o
+    // `New-Partition` criava as duas com `MbrType 6` e quem acertava para 7 e
+    // 12 era o `Format-Volume` — o tipo era efeito colateral de outra
+    // operação. Em GPT o tipo já sai pronto da criação.
+    //
+    // A releitura de PR-5 continua importando, e por outro motivo: ela é o que
+    // pega uma ESP ou uma MSR no lugar do que se pediu.
+    let antes = MEDICAO_GPT
+        .split("### ETAPA 4 — GptType ANTES de formatar")
+        .nth(1)
+        .and_then(|resto| resto.split("### ETAPA 4 — Format-Volume 1").next())
+        .expect("a medicao tem o GptType de antes de formatar");
+
+    let depois = MEDICAO_GPT
+        .split("### ETAPA 4 — GptType DEPOIS de formatar")
+        .nth(1)
+        .and_then(|resto| resto.split("### ETAPA 4 — Atribuindo letras").next())
+        .expect("a medicao tem o GptType de depois de formatar");
+
+    let alvo = format!("GptType         : {}", preparacao::TIPO_GPT_DADOS_BASICOS);
+
+    assert_eq!(
+        antes.matches(&alvo).count(),
+        2,
+        "as duas ja saem do New-Partition com o tipo final:\n{antes}"
+    );
+    assert_eq!(
+        depois.matches(&alvo).count(),
+        2,
+        "e o Format-Volume nao encostou nele:\n{depois}"
+    );
+}
+
+#[test]
+fn a_msr_existe_e_e_por_isso_que_o_script_a_remove() {
+    // Em MBR o `Initialize-Disk` deixa o disco vazio. Em GPT ele cria sozinho
+    // uma Microsoft Reserved — medido nos **dois** dispositivos do marco, com
+    // os mesmos três números. É o que justifica a linha do `Remove-Partition`
+    // ser um passo, e não uma condicional (ADR-0025).
+    assert!(
+        MEDICAO_GPT.contains(&format!("GptType         : {}", preparacao::TIPO_GPT_MSR)),
+        "a MSR que o Initialize-Disk cria"
+    );
+    assert!(
+        MEDICAO_GPT.contains("Offset          : 17408"),
+        "o offset da MSR"
+    );
+    assert_eq!(
+        MEDICAO_GPT
+            .matches(&format!("GptType         : {}", preparacao::TIPO_GPT_MSR))
+            .count(),
+        2,
+        "a MSR apareceu nos dois dispositivos, e e isso que a torna comportamento e nao acidente"
+    );
+    assert!(
+        MEDICAO_GPT.contains("particoes restantes: 0"),
+        "e ela foi removida, deixando o disco vazio como o MBR deixava"
+    );
+}
+
+#[test]
+fn o_dispositivo_gpt_bootou_e_o_device_path_esta_lido_de_dentro_do_boot() {
+    // **A Etapa 7, que é a que decide**, e a Etapa 8, que é a que prova. O
+    // ADR-0014 dizia que a falha de um dispositivo GPT "só se descobre depois
+    // de o Windows já ter sido apagado"; este arquivo é a medição que mostra
+    // que não — e o `efibootmgr`, lido de dentro do live, é a evidência da
+    // mesma qualidade que as seis leituras de NVRAM do ADR-0023.
+    const DE_DENTRO_DO_BOOT: &str =
+        include_str!("../recursos/capturas/efibootmgr-gpt-2026-08-25.txt");
 
     assert!(
-        antes_de_formatar.contains("MbrType         : 6"),
-        "a medicao devia mostrar as particoes cruas com MbrType 6"
+        DE_DENTRO_DO_BOOT.contains("HD(2,GPT,9c86b84a-596f-47e6-b92a-cd5b84b4a1fe,"),
+        "o device path em GPT, com o PARTUUID da particao no lugar da assinatura do disco"
+    );
+    assert!(
+        DE_DENTRO_DO_BOOT.contains(r"\EFI\BOOT\BOOTX64.EFI"),
+        "e o caminho do que o firmware carregou"
     );
 
-    let depois = MEDICAO
-        .split("### MbrType DEPOIS de formatar")
-        .nth(1)
-        .expect("a medicao tem a releitura depois de formatar");
+    // O par de números do ADR-0023, e ele é o mesmo em GPT: bootou pela
+    // entrada do dispositivo com o Windows à frente da ordem permanente. C-5
+    // não custa nada aqui.
+    assert!(
+        DE_DENTRO_DO_BOOT.contains("BootCurrent: 0001"),
+        "bootou pela segunda entrada"
+    );
+    assert!(
+        DE_DENTRO_DO_BOOT.contains("BootOrder: 0000,0001"),
+        "com o Windows a frente da ordem"
+    );
 
-    assert!(depois.contains("MbrType         : 7"), "{depois}");
-    assert!(depois.contains("MbrType         : 12"), "{depois}");
+    // E o PARTUUID do device path é o da ARCABOOT, e não de outra partição —
+    // é o `blkid` do mesmo arquivo que fecha essa amarração.
+    assert!(
+        DE_DENTRO_DO_BOOT.contains(r#"LABEL="ARCABOOT""#),
+        "o blkid nomeia a ARCABOOT"
+    );
+    let linha_da_arcaboot = DE_DENTRO_DO_BOOT
+        .lines()
+        .find(|linha| linha.contains(r#"LABEL="ARCABOOT""#))
+        .expect("a linha do blkid da ARCABOOT");
+    assert!(
+        linha_da_arcaboot.contains("9c86b84a-596f-47e6-b92a-cd5b84b4a1fe"),
+        "o GUID do device path e o PARTUUID da ARCABOOT: {linha_da_arcaboot}"
+    );
 }
 
 #[test]
@@ -552,9 +661,15 @@ fn o_marco_produziu_a_estrutura_transcrita() {
     // saiu com os dois tipos MBR da captura — o 7 e o 12 — e sem partição
     // ativa. É a transcrição do ADR-0014 provada pelo lado da execução, e não
     // só pelo do teste.
+    //
+    // **Esta captura é histórica, e o texto abaixo não é o que o comando diz
+    // hoje.** Em 25/08/2026 o ADR-0025 trocou o esquema por GPT, e a linha
+    // passou a falar de dados básicos e da MSR removida. O teste continua aqui
+    // porque o que ele guarda é que o marco em MBR **aconteceu** — e é contra
+    // ele que o marco em GPT se compara.
     assert!(
         MARCO.contains("Particionando ................... ok · MBR, 2 particoes · MbrType 7 e 12"),
-        "a linha do particionamento do marco"
+        "a linha do particionamento do marco de 23/08, que e historia e nao a tela de hoje"
     );
     assert!(
         MARCO.contains("nenhuma particao ativa, unidade 4096 (C-3)"),

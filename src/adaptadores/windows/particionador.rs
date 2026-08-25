@@ -54,7 +54,7 @@ use crate::portas::particionador::{
     DiscoParaPreparar, ParticaoExistente, ParticaoFeita, Particionador, ParticoesFeitas,
     PlanoDeParticoes,
 };
-use crate::preparacao::{ARCABOOT, ARCAVAULT, UNIDADE_DE_ALOCACAO};
+use crate::preparacao::{ARCABOOT, ARCAVAULT, TIPO_GPT_MSR, UNIDADE_DE_ALOCACAO};
 use std::process::Command;
 
 use super::texto::{de_pagina_de_codigo, pagina_do_console};
@@ -133,7 +133,8 @@ impl Particionador for ParticionadorDoWindows {
 /// | Passo | Se parar aqui, o disco fica |
 /// |---|---|
 /// | `Clear-Disk` | `RAW`, sem partição nenhuma. **O conteúdo já se foi.** |
-/// | `Initialize-Disk` | MBR vazio, pronto para receber partições |
+/// | `Initialize-Disk` | GPT com uma MSR que o Windows criou sozinho |
+/// | `Remove-Partition` | GPT vazio, pronto para receber partições |
 /// | `New-Partition` ×2 | duas partições cruas, sem sistema de arquivos e sem letra |
 /// | `Format-Volume` ×2 | as duas formatadas e rotuladas, ainda sem letra |
 /// | `Add-PartitionAccessPath` ×2 | pronto |
@@ -143,6 +144,25 @@ impl Particionador for ParticionadorDoWindows {
 /// `arca prepare`, e tudo o que vem depois é construção. Um `prepare`
 /// interrompido no meio deixa um disco vazio ou meio pronto, e rodá-lo de novo
 /// resolve — ele começa apagando.
+///
+/// # A linha do `Remove-Partition`, que em MBR não existia
+///
+/// Em MBR o `Initialize-Disk` deixa o disco vazio. **Em GPT ele cria sozinho
+/// uma *Microsoft Reserved*** de 16 759 808 bytes no offset 17 408, com
+/// [`crate::preparacao::TIPO_GPT_MSR`] — medido em 25/08/2026 nos **dois**
+/// dispositivos do marco, com os três números idênticos.
+///
+/// Deixá-la em pé faria a `ARCAVAULT` nascer partição 2 e a `ARCABOOT`
+/// partição 3, mudaria o device path da entrada de firmware para
+/// `HD(3,GPT,…)`, e faria a releitura ver três partições onde o plano pede
+/// duas. Ela não serve para nada num dispositivo de dados.
+///
+/// **Removem-se todas, e não só as do tipo `Reserved`.** Neste ponto do script
+/// o `Clear-Disk` acabou de rodar: o que existir aqui é obra do
+/// `Initialize-Disk`, e a linha não precisa saber o nome do que remove para
+/// estar certa. Duas medições bastam para isso ser um passo, e não uma
+/// condicional — ver o
+/// [ADR-0025](../../../docs/adr/0025-o-arca-particiona-em-gpt.md).
 ///
 /// O `$ErrorActionPreference='Stop'` faz o script **parar no primeiro erro** em
 /// vez de seguir construindo sobre um passo que falhou. É o contrário do que a
@@ -154,7 +174,8 @@ fn script_do_particionamento(plano: &PlanoDeParticoes) -> String {
 $ErrorActionPreference='Stop'
 $n = {indice}
 Clear-Disk -Number $n -RemoveData -RemoveOEM -Confirm:$false
-Initialize-Disk -Number $n -PartitionStyle MBR
+Initialize-Disk -Number $n -PartitionStyle GPT
+Get-Partition -DiskNumber $n -ErrorAction SilentlyContinue | Remove-Partition -Confirm:$false
 $p1 = New-Partition -DiskNumber $n -Size {vault}
 $p2 = New-Partition -DiskNumber $n -UseMaximumSize
 Format-Volume -Partition $p1 -FileSystem NTFS -NewFileSystemLabel '{vault_rotulo}' -AllocationUnitSize {unidade} -Force -Confirm:$false | Out-Null
@@ -165,7 +186,7 @@ foreach ($numero in @($p1.PartitionNumber, $p2.PartitionNumber)) {{
 $saida = @(Get-Partition -DiskNumber $n | ForEach-Object {{
   $p = $_
   $v = Get-Volume -Partition $p -ErrorAction SilentlyContinue
-  [pscustomobject]@{{ Numero=$p.PartitionNumber; Letra=[string]$p.DriveLetter; Rotulo=[string]$v.FileSystemLabel; Sistema=[string]$v.FileSystem; Tipo=[int]$p.MbrType; Tamanho=$p.Size; Offset=$p.Offset; Unidade=$v.AllocationUnitSize; Ativa=[bool]$p.IsActive }}
+  [pscustomobject]@{{ Numero=$p.PartitionNumber; Letra=[string]$p.DriveLetter; Rotulo=[string]$v.FileSystemLabel; Sistema=[string]$v.FileSystem; Tipo=[string]$p.GptType; Tamanho=$p.Size; Offset=$p.Offset; Unidade=$v.AllocationUnitSize; Ativa=[bool]$p.IsActive }}
 }})
 ConvertTo-Json -InputObject @($saida) -Compress -Depth 4"#,
         indice = plano.indice_do_disco,
@@ -276,43 +297,76 @@ fn ler_o_que_saiu(json: &str) -> Resultado<ParticoesFeitas> {
         ),
     };
 
-    let mut feitas = Vec::new();
+    // A letra vem como `Option` ate a contagem estar conferida, e a ordem das
+    // duas conferencias e deliberada. Sobrando uma MSR — o `Remove-Partition`
+    // do script tendo falhado —, ela nao tem letra, e exigir letra primeiro
+    // faria o ARCA reclamar de letra faltando quando o problema e outro.
+    // Contar primeiro deixa a recusa dizer o que de fato aconteceu.
+    let mut lidas = Vec::new();
     for objeto in objetos(json) {
         let numero_da_particao =
             numero(&objeto, "Numero").ok_or_else(|| recusar("falta o numero".to_string()))?;
         let letra = cadeia(&objeto, "Letra")
             .and_then(|texto| texto.chars().next())
-            .filter(char::is_ascii_alphabetic);
+            .filter(char::is_ascii_alphabetic)
+            .map(|letra| letra.to_ascii_uppercase());
 
-        let Some(letra) = letra else {
-            return Err(recusar(format!(
-                "a particao {numero_da_particao} ficou SEM LETRA, e o ARCA precisa de uma para \
-                 achar o `grub.cfg` e o `estado.json` do lado Windows"
-            )));
-        };
-
-        feitas.push(ParticaoFeita {
-            numero: numero_da_particao as u32,
-            letra: letra.to_ascii_uppercase(),
-            rotulo: cadeia(&objeto, "Rotulo").unwrap_or_default(),
-            sistema_de_arquivos: cadeia(&objeto, "Sistema").unwrap_or_default(),
-            tipo_mbr: numero(&objeto, "Tipo").unwrap_or(0) as u32,
-            tamanho_bytes: numero(&objeto, "Tamanho").unwrap_or(0),
-            offset_bytes: numero(&objeto, "Offset").unwrap_or(0),
-            unidade_de_alocacao: numero(&objeto, "Unidade").unwrap_or(0),
-            ativa: booleano(&objeto, "Ativa").unwrap_or(false),
-        });
+        lidas.push((
+            letra,
+            ParticaoFeita {
+                numero: numero_da_particao as u32,
+                letra: '?',
+                rotulo: cadeia(&objeto, "Rotulo").unwrap_or_default(),
+                sistema_de_arquivos: cadeia(&objeto, "Sistema").unwrap_or_default(),
+                tipo_gpt: cadeia(&objeto, "Tipo").unwrap_or_default(),
+                tamanho_bytes: numero(&objeto, "Tamanho").unwrap_or(0),
+                offset_bytes: numero(&objeto, "Offset").unwrap_or(0),
+                unidade_de_alocacao: numero(&objeto, "Unidade").unwrap_or(0),
+                ativa: booleano(&objeto, "Ativa").unwrap_or(false),
+            },
+        ));
     }
 
     // Duas, e exatamente duas. Um disco que voltasse com tres particoes teria
     // sobrado alguma coisa de antes — e escrever o Clonezilla em cima disso
     // produziria um dispositivo que ninguem sabe o que e.
-    let [vault, boot] = <[ParticaoFeita; 2]>::try_from(feitas).map_err(|sobraram| {
-        recusar(format!(
-            "o disco voltou com {} particoes, e o plano pede duas",
-            sobraram.len()
-        ))
-    })?;
+    if lidas.len() != 2 {
+        let msr = lidas
+            .iter()
+            .any(|(_, particao)| particao.tipo_gpt.eq_ignore_ascii_case(TIPO_GPT_MSR));
+        let porque = if msr {
+            // Vale nomear: a MSR e a unica particao que este comando espera
+            // encontrar e mandar embora, e quem ler a recusa merece saber que
+            // o passo que falhou tem endereco.
+            format!(
+                "o disco voltou com {} particoes, e o plano pede duas. Uma delas e a Microsoft \
+                 Reserved que o `Initialize-Disk -PartitionStyle GPT` cria sozinho, e que o \
+                 `Remove-Partition` devia ter tirado",
+                lidas.len()
+            )
+        } else {
+            format!(
+                "o disco voltou com {} particoes, e o plano pede duas",
+                lidas.len()
+            )
+        };
+        return Err(recusar(porque));
+    }
+
+    let mut feitas = Vec::new();
+    for (letra, particao) in lidas {
+        let Some(letra) = letra else {
+            return Err(recusar(format!(
+                "a particao {} ficou SEM LETRA, e o ARCA precisa de uma para achar o `grub.cfg` \
+                 e o `estado.json` do lado Windows",
+                particao.numero
+            )));
+        };
+        feitas.push(ParticaoFeita { letra, ..particao });
+    }
+
+    let [vault, boot] = <[ParticaoFeita; 2]>::try_from(feitas)
+        .unwrap_or_else(|_| unreachable!("a contagem foi conferida logo acima"));
 
     Ok(ParticoesFeitas { vault, boot })
 }
@@ -399,6 +453,7 @@ fn booleano(objeto: &str, chave: &str) -> Option<bool> {
 mod testes {
     use super::*;
     use crate::portas::TipoDeMidia;
+    use crate::preparacao::TIPO_GPT_DADOS_BASICOS;
 
     /// A resposta desta máquina em 23/08/2026, com os três discos na mesa.
     const DESTA_MESA: &str = concat!(
@@ -550,28 +605,36 @@ mod testes {
 
     // ─────────────────── o que saiu do particionamento ───────────────────
 
-    /// O que o Windows respondeu em 23/08/2026, depois de o particionamento
-    /// rodar à mão no segundo dispositivo.
+    /// O que o Windows respondeu em 25/08/2026, depois de o particionamento em
+    /// GPT rodar à mão no KGSSE100 256 — o dispositivo que bootou no marco.
+    ///
+    /// Note o `Tipo`: **o mesmo nas duas**, e é assim que a captura o registra.
     const O_QUE_SAIU: &str = concat!(
-        r#"[{"Numero":1,"Letra":"E","Rotulo":"ARCAVAULT","Sistema":"NTFS","Tipo":7,"#,
-        r#""Tamanho":478423285760,"Offset":1048576,"Unidade":4096,"Ativa":false},"#,
-        r#"{"Numero":2,"Letra":"F","Rotulo":"ARCABOOT","Sistema":"FAT32","Tipo":12,"#,
-        r#""Tamanho":1677721600,"Offset":478424334336,"Unidade":4096,"Ativa":false}]"#
+        r#"[{"Numero":1,"Letra":"D","Rotulo":"ARCAVAULT","Sistema":"NTFS","#,
+        r#""Tipo":"{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}","#,
+        r#""Tamanho":254381391872,"Offset":1048576,"Unidade":4096,"Ativa":false},"#,
+        r#"{"Numero":2,"Letra":"E","Rotulo":"ARCABOOT","Sistema":"FAT32","#,
+        r#""Tipo":"{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}","#,
+        r#""Tamanho":1677721600,"Offset":254382440448,"Unidade":4096,"Ativa":false}]"#
     );
 
     #[test]
     fn a_releitura_medida_em_hardware_se_lê() {
         let feitas = ler_o_que_saiu(O_QUE_SAIU).expect("a resposta medida se lê");
 
-        assert_eq!(feitas.vault.letra, 'E');
+        assert_eq!(feitas.vault.letra, 'D');
         assert_eq!(feitas.vault.rotulo, "ARCAVAULT");
-        assert_eq!(feitas.vault.tipo_mbr, 7);
+        assert_eq!(feitas.vault.tipo_gpt, TIPO_GPT_DADOS_BASICOS);
         assert_eq!(feitas.vault.offset_bytes, 1_048_576);
 
-        assert_eq!(feitas.boot.letra, 'F');
+        assert_eq!(feitas.boot.letra, 'E');
         assert_eq!(feitas.boot.rotulo, "ARCABOOT");
-        assert_eq!(feitas.boot.tipo_mbr, 12);
+        assert_eq!(feitas.boot.tipo_gpt, TIPO_GPT_DADOS_BASICOS);
         assert_eq!(feitas.boot.tamanho_bytes, 1_677_721_600);
+
+        // O achado que muda o criterio: o tipo e o **mesmo** nas duas, e nao
+        // serve mais para dizer qual e qual.
+        assert_eq!(feitas.vault.tipo_gpt, feitas.boot.tipo_gpt);
 
         // E ela passa na conferencia de PR-5.
         assert_eq!(crate::preparacao::conferir_o_que_saiu(&feitas), Ok(()));
@@ -583,7 +646,7 @@ mod testes {
         // `Add-PartitionAccessPath` que a atribui pode falhar. Sem letra o ARCA
         // nao acha o `grub.cfg` nem o `estado.json` — e o disco ja foi apagado
         // quando isto se descobre, entao a mensagem tem de dizer isso.
-        let sem_letra = O_QUE_SAIU.replace(r#""Letra":"F""#, r#""Letra":"""#);
+        let sem_letra = O_QUE_SAIU.replace(r#""Letra":"E""#, r#""Letra":"""#);
 
         let erro = ler_o_que_saiu(&sem_letra).unwrap_err();
         assert!(erro.to_string().contains("SEM LETRA"), "{erro}");
@@ -597,11 +660,35 @@ mod testes {
         // ninguem sabe o que e.
         let com_tres = O_QUE_SAIU.replace(
             r#""Ativa":false}]"#,
-            r#""Ativa":false},{"Numero":3,"Letra":"G","Rotulo":"SOBRA","Sistema":"NTFS","Tipo":7,"Tamanho":1,"Offset":2,"Unidade":4096,"Ativa":false}]"#,
+            r#""Ativa":false},{"Numero":3,"Letra":"G","Rotulo":"SOBRA","Sistema":"NTFS","Tipo":"{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}","Tamanho":1,"Offset":2,"Unidade":4096,"Ativa":false}]"#,
         );
 
         let erro = ler_o_que_saiu(&com_tres).unwrap_err();
         assert!(erro.to_string().contains("3 particoes"), "{erro}");
+    }
+
+    #[test]
+    fn a_msr_sobrevivente_e_recusada_pelo_nome_e_nao_por_falta_de_letra() {
+        // O caso que o GPT trouxe e o MBR nao tinha: o `Initialize-Disk` cria
+        // uma Microsoft Reserved sozinho, o script a remove, e se essa remocao
+        // falhar o disco volta com tres. A MSR **nao tem letra** — e a recusa
+        // tem de falar da particao a mais, que e o problema, e nao da letra que
+        // falta, que e consequencia. E por isso que `ler_o_que_saiu` conta
+        // antes de exigir letra.
+        let com_msr = O_QUE_SAIU.replace(
+            r#"[{"Numero":1"#,
+            &format!(
+                r#"[{{"Numero":1,"Letra":"","Rotulo":"","Sistema":"","Tipo":"{TIPO_GPT_MSR}","Tamanho":16759808,"Offset":17408,"Unidade":0,"Ativa":false}},{{"Numero":1"#
+            ),
+        );
+
+        let erro = ler_o_que_saiu(&com_msr).unwrap_err();
+        assert!(erro.to_string().contains("3 particoes"), "{erro}");
+        assert!(erro.to_string().contains("Microsoft Reserved"), "{erro}");
+        assert!(
+            !erro.to_string().contains("SEM LETRA"),
+            "a MSR nao tem letra, e reclamar disso esconderia o que houve: {erro}"
+        );
     }
 
     #[test]
@@ -630,12 +717,15 @@ mod testes {
             boot_bytes: 1_677_721_600,
         });
 
-        // A ordem dos cinco passos, e ela nao e negociavel: `Clear-Disk` deixa
+        // A ordem dos seis passos, e ela nao e negociavel: `Clear-Disk` deixa
         // o disco RAW e sem espaco livre, entao o `Initialize-Disk` **tem** de
-        // vir depois.
+        // vir depois — e o `Remove-Partition` que tira a MSR tem de vir entre
+        // o `Initialize-Disk`, que a cria, e o `New-Partition`, que numeraria
+        // as duas a partir dela.
         let posicoes: Vec<usize> = [
             "Clear-Disk",
             "Initialize-Disk",
+            "Remove-Partition",
             "New-Partition",
             "Format-Volume",
             "Add-PartitionAccessPath",
@@ -670,19 +760,40 @@ mod testes {
     }
 
     #[test]
-    fn o_script_nao_moderniza_para_gpt() {
-        // A tentacao que o ADR-0014 manda resistir. Trocar MBR por GPT seria
-        // abandonar um esquema medido por um suposto, num lugar cujo modo de
-        // falha e um dispositivo que nao boota — descoberto **depois** de o
-        // Windows ter sido apagado.
+    fn o_script_inicializa_em_gpt_e_tira_a_msr() {
+        // O ADR-0014 mandava resistir a "modernizar para GPT" porque seria
+        // trocar um esquema medido por um suposto. O ADR-0025 troca por outro
+        // **medido**: em 25/08/2026 um dispositivo GPT bootou, e o device path
+        // foi lido de dentro do boot pelo `efibootmgr`.
+        //
+        // A MSR e o que o GPT trouxe de novo. Sem a linha que a remove, a
+        // `ARCAVAULT` nasceria particao 2, a `ARCABOOT` particao 3, e o device
+        // path da entrada de firmware viraria `HD(3,GPT,...)`.
         let script = script_do_particionamento(&PlanoDeParticoes {
             indice_do_disco: 1,
             vault_bytes: 100,
             boot_bytes: 200,
         });
 
-        assert!(script.contains("-PartitionStyle MBR"), "{script}");
-        assert!(!script.contains("GPT"), "{script}");
+        assert!(script.contains("-PartitionStyle GPT"), "{script}");
+        assert!(!script.contains("-PartitionStyle MBR"), "{script}");
+        assert!(script.contains("Remove-Partition"), "{script}");
+    }
+
+    #[test]
+    fn o_script_le_o_gpttype_de_volta_e_nao_o_mbrtype() {
+        // Em GPT o `MbrType` sai **vazio** — nao zero, ausente —, e ler um
+        // campo ausente como numero daria `0` em silencio, que passaria por
+        // uma conferencia frouxa. O que a releitura le e o `GptType`, que e o
+        // campo que existe.
+        let script = script_do_particionamento(&PlanoDeParticoes {
+            indice_do_disco: 1,
+            vault_bytes: 100,
+            boot_bytes: 200,
+        });
+
+        assert!(script.contains("[string]$p.GptType"), "{script}");
+        assert!(!script.contains("MbrType"), "{script}");
     }
 
     #[test]

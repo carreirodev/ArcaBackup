@@ -514,9 +514,14 @@ geral, BIOS legada, BitLocker, RAID, Storage Spaces.
 - **Reinstalar o Clonezilla sem apagar as imagens** — o `arca prepare` começa
   reescrevendo a tabela de partição, e a tela diz isso a quem aponta um
   dispositivo que já existe.
-- **GPT+ESP** — o ADR-0014 manda resistir, e a razão não mudou: trocar um esquema
-  medido por um suposto, num lugar cujo modo de falha só aparece depois de o
-  Windows ter sido apagado.
+- **A ESP canônica** — a Variante A do marco em GPT. O esquema passou a ser GPT
+  em 25/08/2026 ([ADR-0025](../docs/adr/0025-o-arca-particiona-em-gpt.md)), mas
+  com as duas partições de **dados básicos**: a ARCABOOT não é uma ESP. Marcá-la
+  como `{c12a7328-…}` acrescentaria o tipo canônico, que rende em firmwares muito
+  estritos, ao custo de três superfícies novas — o Windows esconde a ESP e tira a
+  letra, então o `bcdedit` passaria a apontar por `\Device\HarddiskVolumeN`, a
+  instalação precisaria de `mountvol`, e a releitura mudaria junto. Fica como o
+  primeiro lugar a olhar se um firmware algum dia recusar, e não como dívida.
 - **Uma segunda coluna no `arca list`**, separando o veredito do `ocs-chkimg` da
   conferência de V-1 (ADR-0016).
 

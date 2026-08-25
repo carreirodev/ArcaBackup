@@ -360,10 +360,8 @@ pub fn julgar(
             // de verdade e o Windows, depois de escrever a tabela, e o
             // adaptador o recalcula pelo espaco livre real. O numero desta
             // struct existe para a tela poder dizer o tamanho antes de agir, e
-            // por isso ele desconta o mesmo 1 MiB de alinhamento que o
-            // `New-Partition` reserva — medido em 23/08/2026 no disco desta
-            // mesa: `LargestFreeExtent` saiu 2.973.696 bytes abaixo do tamanho
-            // do disco.
+            // por isso ele desconta o que a tabela cobra — ver
+            // [`ALINHAMENTO_BYTES`].
             vault_bytes: disco
                 .tamanho_bytes
                 .saturating_sub(ARCABOOT_BYTES)
@@ -373,19 +371,28 @@ pub fn julgar(
     })
 }
 
-/// O que o `New-Partition` reserva antes da primeira partição e depois da
-/// última.
+/// O que a tabela GPT cobra do disco: o alinhamento antes da primeira
+/// partição, e a cópia secundária da tabela no fim.
 ///
-/// Medido em 23/08/2026, no `JMicron Generic` de 480.103.981.056 bytes: depois
-/// do `Initialize-Disk -PartitionStyle MBR`, o `LargestFreeExtent` respondeu
-/// 480.101.007.360 — **2.973.696 bytes a menos**. A primeira partição saiu no
-/// offset 1.048.576, que é o 1 MiB de alinhamento que o Windows usa desde o
-/// Vista; o resto é reserva de fim.
+/// Medido em 25/08/2026 nos **dois** dispositivos do marco, os dois de
+/// 256.060.514.304 bytes: depois do `Initialize-Disk -PartitionStyle GPT` e da
+/// remoção da MSR, o `LargestFreeExtent` respondeu 256.059.113.472 nos dois —
+/// **1.400.832 bytes a menos**. A primeira partição saiu no offset 1.048.576,
+/// que é o 1 MiB de alinhamento que o Windows usa desde o Vista; os 352.256
+/// restantes são a GPT secundária e a reserva de fim.
 ///
-/// O número entra só na **estimativa** que a tela imprime. Quem manda no
-/// tamanho de verdade é o espaço livre que o Windows reporta na hora, e o
-/// adaptador o lê em vez de calcular.
-const ALINHAMENTO_BYTES: u64 = 2_973_696;
+/// Em MBR este número era 2.973.696, medido no `JMicron Generic` de 480 GB.
+/// **A GPT cobra menos**, e não mais, apesar de ter duas cópias da tabela — o
+/// que surpreende e é o que está medido.
+///
+/// Os dois discos medidos têm o mesmo tamanho, então esta medição **não**
+/// separa "a GPT cobra 1.400.832" de "a GPT cobra isso num disco deste
+/// tamanho". A GPT tem 128 entradas de tamanho fixo, o que sugere a primeira
+/// leitura, mas sugerir não é medir — e é por isso que o número entra só na
+/// **estimativa** que a tela imprime. Quem manda no tamanho de verdade é o
+/// espaço livre que o Windows reporta na hora, e o adaptador o lê em vez de
+/// calcular.
+const ALINHAMENTO_BYTES: u64 = 1_400_832;
 
 /// Os discos desta máquina repartidos entre o que se pode preparar e o que
 /// não, cada recusa com o motivo que [`julgar`] deu.
@@ -507,8 +514,25 @@ pub fn e_o_mesmo_disco(planejado: &DiscoParaPreparar, relido: &DiscoParaPreparar
 /// A releitura de PR-5 depois de escrever: saiu o que se pediu?
 ///
 /// Confere **a estrutura transcrita**, e não só "deu certo": os dois rótulos, os
-/// dois sistemas de arquivos, os dois tipos MBR da captura, e que **nenhuma das
-/// duas está ativa**.
+/// dois sistemas de arquivos, o `GptType` das duas, a ordem delas no disco, e
+/// que **nenhuma das duas está ativa**.
+///
+/// # O tipo confere, e não distingue
+///
+/// Em MBR isto conferia `7` para o `ARCAVAULT` e `12` para o `ARCABOOT`, e o
+/// tipo servia a duas coisas ao mesmo tempo: dizer que a partição é do feitio
+/// certo, e dizer **qual é qual**. Em GPT as duas nascem com o mesmo
+/// [`TIPO_GPT_DADOS_BASICOS`], e só a primeira coisa sobra.
+///
+/// Não se perde defesa nenhuma com isso, e vale dizer por quê: o `MbrType`
+/// nunca foi o que impedia as duas de trocarem de lugar — disso cuidam os
+/// offsets, no fim desta função — nem o que as identificava, porque o rótulo já
+/// era conferido campo a campo. O que ele acrescentava era um segundo
+/// testemunho do sistema de arquivos, e o `FileSystem` continua aqui.
+///
+/// O que o tipo comum ainda pega é o que importa: uma ESP, uma MSR, ou qualquer
+/// coisa que o Windows tivesse criado por conta no lugar do que se pediu. Ver o
+/// [ADR-0025](../docs/adr/0025-o-arca-particiona-em-gpt.md).
 ///
 /// O `IsActive` merece a conferência: a captura registra `False` nas duas, e é
 /// isso que confirma que o boot é UEFI puro e não BIOS. Uma partição ativa não
@@ -517,9 +541,9 @@ pub fn e_o_mesmo_disco(planejado: &DiscoParaPreparar, relido: &DiscoParaPreparar
 pub fn conferir_o_que_saiu(feitas: &ParticoesFeitas) -> Result<(), Divergencia> {
     let mut problemas = Vec::new();
 
-    for (particao, rotulo, sistema, tipo_mbr) in [
-        (&feitas.vault, ARCAVAULT, "NTFS", TIPO_MBR_IFS),
-        (&feitas.boot, ARCABOOT, "FAT32", TIPO_MBR_FAT32_LBA),
+    for (particao, rotulo, sistema) in [
+        (&feitas.vault, ARCAVAULT, "NTFS"),
+        (&feitas.boot, ARCABOOT, "FAT32"),
     ] {
         if particao.rotulo != rotulo {
             problemas.push(format!(
@@ -533,10 +557,13 @@ pub fn conferir_o_que_saiu(feitas: &ParticoesFeitas) -> Result<(), Divergencia> 
                 particao.sistema_de_arquivos
             ));
         }
-        if particao.tipo_mbr != tipo_mbr {
+        if !particao
+            .tipo_gpt
+            .eq_ignore_ascii_case(TIPO_GPT_DADOS_BASICOS)
+        {
             problemas.push(format!(
-                "a particao `{rotulo}` devia ter MbrType {tipo_mbr} e tem {}",
-                particao.tipo_mbr
+                "a particao `{rotulo}` devia ter GptType {TIPO_GPT_DADOS_BASICOS} (dados basicos) e tem `{}`",
+                particao.tipo_gpt
             ));
         }
         if particao.ativa {
@@ -569,11 +596,27 @@ pub fn conferir_o_que_saiu(feitas: &ParticoesFeitas) -> Result<(), Divergencia> 
     }
 }
 
-/// `MbrType 7` — IFS, que é como o Windows marca NTFS numa tabela MBR.
-pub const TIPO_MBR_IFS: u32 = 7;
+/// `{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}` — *Basic data partition*, o
+/// `GptType` das **duas** partições do dispositivo.
+///
+/// Uma constante só, e não duas, porque em GPT o tipo não distingue a
+/// `ARCAVAULT` da `ARCABOOT` — medido em 25/08/2026 nos dois dispositivos do
+/// marco, e confirmado de dentro do live pelo `lsblk`, pelo `parted` e pelo
+/// `gdisk`. Ver [`conferir_o_que_saiu`] para o que isso muda na releitura, e o
+/// [ADR-0025](../docs/adr/0025-o-arca-particiona-em-gpt.md) para o resto.
+///
+/// Em minúsculas e entre chaves, que é como o `Get-Partition` o devolve. A
+/// comparação é feita sem distinguir maiúsculas assim mesmo: o formato do GUID
+/// é do PowerShell, e não é a ele que a defesa está presa.
+pub const TIPO_GPT_DADOS_BASICOS: &str = "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}";
 
-/// `MbrType 12` — FAT32 com endereçamento LBA (0x0C).
-pub const TIPO_MBR_FAT32_LBA: u32 = 12;
+/// `{e3c9e316-0b5c-4db8-817d-f92df00215ae}` — a *Microsoft Reserved* que o
+/// `Initialize-Disk -PartitionStyle GPT` cria sozinho.
+///
+/// Não é usada para conferir nada: está aqui porque é o número que explica a
+/// linha do script que remove as partições logo depois de inicializar o disco.
+/// Medida nos dois dispositivos, com offset 17 408 e 16 759 808 bytes nos dois.
+pub const TIPO_GPT_MSR: &str = "{e3c9e316-0b5c-4db8-817d-f92df00215ae}";
 
 /// A unidade de alocação das duas partições, transcrita da captura.
 pub const UNIDADE_DE_ALOCACAO: u64 = 4096;
@@ -664,11 +707,46 @@ mod testes {
         assert_eq!(preparacao.plano.boot_bytes, 1_677_721_600);
 
         // O `ARCAVAULT` fica com o resto, e o resto e o disco menos o
-        // `ARCABOOT` menos o alinhamento medido.
+        // `ARCABOOT` menos o que a tabela GPT cobra.
         assert_eq!(
             preparacao.plano.vault_bytes,
-            480_103_981_056 - 1_677_721_600 - 2_973_696
+            480_103_981_056 - 1_677_721_600 - 1_400_832
         );
+    }
+
+    #[test]
+    fn a_estimativa_da_tela_bate_com_o_que_o_hardware_devolveu() {
+        // O `vault_bytes` do plano e uma estimativa, e este teste e o que diz
+        // o quanto ela vale. No marco de 25/08/2026 o disco tinha
+        // 256.060.514.304 bytes e a `ARCAVAULT` saiu com 254.381.391.872 — e a
+        // conta desta struct, feita **antes** de escrever, da o mesmo numero
+        // ao byte.
+        //
+        // Nao e coincidencia nem sorte: e `ALINHAMENTO_BYTES` ter vindo da
+        // mesma medicao. Se um dia a estimativa e a releitura divergirem, e
+        // aqui que se descobre por que — e continua sendo a releitura que
+        // manda, porque o adaptador le o espaco livre real em vez de calcular.
+        const DISCO_DO_MARCO: u64 = 256_060_514_304;
+        const VAULT_MEDIDA: u64 = 254_381_391_872;
+
+        let disco = DiscoParaPreparar {
+            indice: 1,
+            modelo: "KGSSE100 256".to_string(),
+            modelo_no_wmi: Some("KGSSE100 256 SCSI Disk Device".to_string()),
+            tamanho_bytes: DISCO_DO_MARCO,
+            barramento: "USB".to_string(),
+            tipo_de_midia: TipoDeMidia::DiscoExterno,
+            estilo_de_particao: "GPT".to_string(),
+            e_do_sistema: false,
+            e_de_boot: false,
+            somente_leitura: false,
+            particoes: Vec::new(),
+        };
+
+        let preparacao = julgar_o_da_mesa(&disco).expect("o dispositivo do marco passa");
+
+        assert_eq!(preparacao.plano.vault_bytes, VAULT_MEDIDA);
+        assert_eq!(preparacao.plano.boot_bytes, ARCABOOT_BYTES);
     }
 
     #[test]
@@ -1077,28 +1155,30 @@ mod testes {
 
     // ─────────────────── a releitura depois de escrever ───────────────────
 
-    /// O que a medição de 23/08/2026 leu do disco depois de particionar.
+    /// O que a medição de 25/08/2026 leu do disco depois de particionar em GPT.
+    ///
+    /// Do KGSSE100 256 — o dispositivo que **bootou** no marco em hardware.
     fn o_que_saiu() -> ParticoesFeitas {
         ParticoesFeitas {
             vault: ParticaoFeita {
                 numero: 1,
-                letra: 'E',
+                letra: 'D',
                 rotulo: ARCAVAULT.to_string(),
                 sistema_de_arquivos: "NTFS".to_string(),
-                tipo_mbr: 7,
-                tamanho_bytes: 478_423_285_760,
+                tipo_gpt: TIPO_GPT_DADOS_BASICOS.to_string(),
+                tamanho_bytes: 254_381_391_872,
                 offset_bytes: 1_048_576,
                 unidade_de_alocacao: 4096,
                 ativa: false,
             },
             boot: ParticaoFeita {
                 numero: 2,
-                letra: 'F',
+                letra: 'E',
                 rotulo: ARCABOOT.to_string(),
                 sistema_de_arquivos: "FAT32".to_string(),
-                tipo_mbr: 12,
+                tipo_gpt: TIPO_GPT_DADOS_BASICOS.to_string(),
                 tamanho_bytes: 1_677_721_600,
-                offset_bytes: 478_424_334_336,
+                offset_bytes: 254_382_440_448,
                 unidade_de_alocacao: 4096,
                 ativa: false,
             },
@@ -1108,25 +1188,50 @@ mod testes {
     #[test]
     fn a_estrutura_medida_em_hardware_passa_na_conferencia() {
         // O oraculo desta etapa: estes numeros sao os que o Windows respondeu
-        // em 23/08/2026, depois de o particionamento rodar a mao no segundo
-        // dispositivo. O teste nao pode ser ajustado para passar.
+        // em 25/08/2026, depois de o particionamento em GPT rodar a mao no
+        // dispositivo que bootou. O teste nao pode ser ajustado para passar.
         assert_eq!(conferir_o_que_saiu(&o_que_saiu()), Ok(()));
     }
 
     #[test]
-    fn os_tipos_mbr_sao_os_da_captura_e_nao_os_que_o_new_partition_cria() {
-        // **Medido**: o `New-Partition` cria as duas com `MbrType 6`, e quem
-        // acerta para 7 e 12 e o `Format-Volume`. O tipo e efeito colateral de
-        // outra operacao, e por isso a releitura importa: nada no caminho o
-        // pede diretamente.
-        let mut cru = o_que_saiu();
-        cru.vault.tipo_mbr = 6;
-        cru.boot.tipo_mbr = 6;
+    fn o_gpttype_e_o_mesmo_nas_duas_e_por_isso_nao_distingue_nada() {
+        // O achado de 25/08/2026, e e o que mais muda em relacao ao MBR. La,
+        // `7` e `12` diziam qual particao era qual; aqui as duas nascem
+        // iguais. A conferencia continua existindo — ela descarta uma ESP ou
+        // uma MSR —, mas quem diz qual e qual e o rotulo, o sistema de
+        // arquivos e a ordem no disco.
+        let saiu = o_que_saiu();
+        assert_eq!(saiu.vault.tipo_gpt, saiu.boot.tipo_gpt);
+        assert_eq!(saiu.vault.tipo_gpt, TIPO_GPT_DADOS_BASICOS);
+    }
 
-        let divergencia = conferir_o_que_saiu(&cru).unwrap_err();
-        assert_eq!(divergencia.problemas.len(), 2);
-        assert!(divergencia.to_string().contains("MbrType 7"));
-        assert!(divergencia.to_string().contains("MbrType 12"));
+    #[test]
+    fn um_tipo_que_nao_e_o_de_dados_basicos_e_divergencia() {
+        // O que esta conferencia ainda pega, e e o que importa: uma particao
+        // que voltasse marcada como EFI System, ou como Microsoft Reserved,
+        // nao e a estrutura que bootou. A Variante A do roteiro — a ESP
+        // canonica — foi deliberadamente **nao** escolhida (ADR-0025), e um
+        // dispositivo que aparecesse assim veio de outro lugar.
+        const ESP: &str = "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}";
+        let mut com_esp = o_que_saiu();
+        com_esp.boot.tipo_gpt = ESP.to_string();
+
+        let divergencia = conferir_o_que_saiu(&com_esp).unwrap_err();
+        assert_eq!(divergencia.problemas.len(), 1);
+        assert!(divergencia.to_string().contains(ARCABOOT), "{divergencia}");
+        assert!(divergencia.to_string().contains(ESP), "{divergencia}");
+    }
+
+    #[test]
+    fn o_gpttype_confere_sem_distinguir_maiusculas() {
+        // O formato com chaves e em minusculas e do PowerShell, e a defesa nao
+        // esta presa a ele: um `Get-Partition` que um dia devolvesse o GUID em
+        // maiusculas continuaria descrevendo a mesma particao.
+        let mut gritado = o_que_saiu();
+        gritado.vault.tipo_gpt = TIPO_GPT_DADOS_BASICOS.to_uppercase();
+        gritado.boot.tipo_gpt = TIPO_GPT_DADOS_BASICOS.to_uppercase();
+
+        assert_eq!(conferir_o_que_saiu(&gritado), Ok(()));
     }
 
     #[test]
