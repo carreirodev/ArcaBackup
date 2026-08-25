@@ -375,6 +375,17 @@ fn obter_o_pacote(
 /// que faça isso sozinho. Rodar `arca prepare` de novo faz, junto com apagar o
 /// disco; à mão é uma cópia.
 ///
+/// **E há uma armadilha a mais, que só apareceu em 24/08/2026:** o que se
+/// instala é o executável que está rodando, e não o mais novo que existe. Rodar
+/// `arca prepare` a partir do `arca.exe` de um dispositivo antigo faz o
+/// dispositivo novo **herdar a idade do velho**. Prepare sempre a partir do
+/// `target\release\`.
+///
+/// Desde a mesma data o binário sabe responder de onde veio — `arca --version`
+/// carimba o commit e a data (`cli::VERSAO`, `build.rs`). Antes disso os dois
+/// executáveis diziam `arca 0.1.0`, e descobrir que o do `ARCABOOT` estava três
+/// consertos atrás exigiu procurar strings dentro do `.exe`.
+///
 /// Um `arca atualizar` que só trocasse o binário é concebível, e fica de fora
 /// até o uso pedir — como P-14.
 fn instalar_o_arca(contexto: &Contexto, raiz_do_boot: &Path) -> Resultado<()> {

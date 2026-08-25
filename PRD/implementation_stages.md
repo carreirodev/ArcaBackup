@@ -2176,6 +2176,26 @@ conserto que só existisse no `target\release\` não chegaria a quem precisa
 dele"*. Foi copiado antes do marco, e o `--dry-run` rodado **do próprio
 `ARCABOOT`** confirmou que o binário de lá já montava a receita nova.
 
+> **E em 24/08/2026 a lição mordeu de novo, calada.** Depois do ciclo que fechou
+> P-23, o `R:\arca\arca.exe` ainda era o de 23/08 19:06 — **sem C-14 e sem o
+> `arca sondar`**. Não bloqueou nada, porque quem armou e colheu foi o binário
+> do `C:`; mas é justamente o binário do dispositivo que colhe quando a
+> restauração devolve um `C:` antigo, que é o cenário para o qual §4.1 existe.
+> Um `arca resultado` colhido por ele teria a tela que P-28 nomeou — a que
+> afirma segurança quando não sabe.
+>
+> **Descobrir isso exigiu procurar strings dentro do `.exe`**, porque
+> `--version` respondia `arca 0.1.0` nos dois. Foi o que motivou o carimbo do
+> `build.rs`: desde então a pergunta *"de que versão é este binário?"* tem
+> resposta direta, e ela também diz se a árvore estava suja quando ele foi
+> compilado — um hash de árvore suja diz de onde o código partiu, não o que ele
+> é.
+>
+> **A armadilha irmã, que ninguém tinha escrito:** o `arca prepare` instala o
+> executável que está rodando. Preparar um SSD novo a partir do `arca.exe` de um
+> SSD antigo faz o novo **nascer velho**. Prepare sempre a partir do
+> `target\release\`, recém-compilado.
+
 ---
 
 ### E12 · `arca sondar`

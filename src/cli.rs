@@ -8,10 +8,19 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+/// O que o `--version` responde: a versão do `Cargo.toml` mais o commit de onde
+/// este binário veio, carimbado pelo `build.rs`.
+///
+/// Existe porque o `arca.exe` mora em dois lugares — o `target\release\` do `C:`
+/// e o `arca\arca.exe` do `ARCABOOT` (§4.1) — e eles envelhecem em ritmos
+/// diferentes. Sem o carimbo, os dois respondiam `arca 0.1.0` e não havia como
+/// saber qual era mais novo sem procurar strings dentro do executável.
+pub const VERSAO: &str = env!("ARCA_VERSAO");
+
 #[derive(Parser, Debug, PartialEq, Eq)]
 #[command(
     name = "arca",
-    version,
+    version = VERSAO,
     about = "Automatizador de Clonezilla para backup e restauracao de imagem de disco",
     long_about = "O ARCA nunca lê nem escreve disco. Ele prepara o ambiente, monta a receita,\n\
                   dispara o boot unico e colhe o que o Clonezilla deixou escrito.",
@@ -359,5 +368,44 @@ mod testes {
     fn version_curto_circuita_sem_comando() {
         let erro = Cli::try_parse_from(["arca", "--version"]).unwrap_err();
         assert_eq!(erro.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    /// O carimbo do `build.rs` é o que distingue o binário do `target\release\`
+    /// do binário do `ARCABOOT` (§4.1), e eles envelhecem em ritmos diferentes.
+    ///
+    /// Até 24/08/2026 os dois respondiam `arca 0.1.0`, e descobrir que o do
+    /// dispositivo estava três consertos atrás exigiu procurar strings dentro do
+    /// executável. Este teste existe para que voltar ao `version` simples do
+    /// clap — que é uma linha a menos e parece inofensivo — não passe calado.
+    #[test]
+    fn a_versao_carimba_de_onde_o_binario_veio() {
+        let pacote = env!("CARGO_PKG_VERSION");
+
+        assert!(
+            VERSAO.starts_with(pacote),
+            "a versao do pacote abre a linha: `{VERSAO}`"
+        );
+        assert!(
+            VERSAO.len() > pacote.len(),
+            "sem carimbo, `--version` nao distingue dois binarios: `{VERSAO}`"
+        );
+        assert!(
+            VERSAO.contains('(') && VERSAO.ends_with(')'),
+            "o carimbo vem entre parenteses: `{VERSAO}`"
+        );
+    }
+
+    /// De nada adianta o carimbo existir se a tela não o imprime — e o `version`
+    /// do clap aceita tanto a constante quanto o `CARGO_PKG_VERSION` sem
+    /// reclamar de nenhum dos dois.
+    #[test]
+    fn o_version_imprime_o_carimbo() {
+        let erro = Cli::try_parse_from(["arca", "--version"]).unwrap_err();
+        let tela = erro.to_string();
+
+        assert!(
+            tela.contains(VERSAO),
+            "a tela do `--version` traz o carimbo inteiro.\n  tela: {tela}\n  carimbo: {VERSAO}"
+        );
     }
 }
