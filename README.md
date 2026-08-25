@@ -612,12 +612,22 @@ Dispositivo pronto.
   A entrada de firmware existe e esta FORA da ordem permanente — ligar a
   maquina continua subindo o Windows, com ou sem este dispositivo conectado.
 
-  O ARCAVAULT esta em E: e o ARCABOOT em F:. As letras mudam de uma
+  O ARCAVAULT esta em D: e o ARCABOOT em E:. As letras mudam de uma
   conexao para outra; os rotulos, nao — e e por rotulo que o ARCA acha o
   dispositivo (B-1, S-3).
 
-  Primeiro backup:  arca backup <nome>
+  SE VOCE TEM OUTRO DISPOSITIVO ARCA CONECTADO, desconecte um dos dois: o
+  ARCA opera um por vez, e com dois `arca backup` e `arca restore` recusam
+  por rotulo repetido (C-10).
+
+  ANTES DO PRIMEIRO BACKUP, RODE:  arca sondar
+
+  Ele reinicia a maquina, roda no Clonezilla e desliga — nao faz backup
+  nem restauracao. Depois dele, `arca resultado`. Sem isso, `arca backup`
+  recusa.
 ```
+
+> **A tela manda sondar, e não explica por quê.** O motivo está no [§6.2](#62-arca-sondar) e no ADR-0019: a receita nomeia o disco pelo nome que o **Linux** lhe dá, e o Windows não conhece esse nome. Isso é registro de projeto, e não tem que aparecer para quem acabou de preparar um disco — a tela diz o que fazer, o que vai acontecer e o que acontece se não fizer.
 
 > **A entrada de firmware é única.** O ARCA mantém **uma** entrada chamada `ARCA`, e não uma por dispositivo: duas seriam duas formas de bootar no Clonezilla, uma delas sem ninguém olhando. Se você voltar a usar outro dispositivo ARCA, o `arca backup` reaponta a entrada para ele ao armar, e **confere** que reapontou.
 

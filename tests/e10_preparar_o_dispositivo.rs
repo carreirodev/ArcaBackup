@@ -697,11 +697,20 @@ fn o_marco_em_gpt_rodou_pelo_codigo_e_nao_a_mao() {
     );
     assert!(MARCO_GPT.contains("Dispositivo pronto."), "e terminou");
 
-    // E o que ele **não** conseguiu conferir sozinho continua dito na tela, em
-    // vez de ficar implícito: quem responde se o dispositivo boota é o boot.
+    // **Esta captura é histórica, e a tela mudou depois dela.** Ela ainda traz
+    // os parágrafos que explicavam o §4.5 e o P-26, e que saíram da tela por
+    // decisão de quem opera o comando: aquilo é registro de projeto, e não
+    // texto para quem acabou de preparar um disco. Ver
+    // `o_fim_manda_sondar_sem_explicar_o_projeto`, em `src/comandos/prepare.rs`.
+    //
+    // O que este teste guarda é o que o **código** fez naquele dia, e isso não
+    // muda: as linhas do particionamento, da releitura e da entrada de firmware,
+    // acima. O texto de orientação não é asserido aqui de propósito — quem
+    // cobra a tela de hoje são os testes de unidade, contra a função que a
+    // monta, e não contra um arquivo de 25/08.
     assert!(
-        MARCO_GPT.contains("se este dispositivo boota mesmo"),
-        "a tela nao promete o que o comando nao mediu (P-26)"
+        MARCO_GPT.contains("ANTES DO PRIMEIRO BACKUP, RODE:  arca sondar"),
+        "a orientacao que sobreviveu as duas versoes da tela"
     );
 }
 

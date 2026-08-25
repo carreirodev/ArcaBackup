@@ -1201,20 +1201,9 @@ pub fn montar_o_fim(feitas: &ParticoesFeitas, ordem_sem_alvo: Option<&str>) -> S
          \x20 ARCA opera um por vez, e com dois `arca backup` e `arca restore` recusam\n\
          \x20 por rotulo repetido (C-10).\n\n\
          \x20 ANTES DO PRIMEIRO BACKUP, RODE:  arca sondar\n\n\
-         \x20 A receita nomeia o disco pelo nome que o LINUX lhe da (`nvme0n1`), e o\n\
-         \x20 Windows nao conhece esse nome. O ARCA o descobre lendo um `blkdev.list`,\n\
-         \x20 casando o modelo do disco (§4.5) — e este dispositivo acabou de nascer,\n\
-         \x20 entao nao ha nenhum aqui. Um `arca backup` agora RECUSA, dizendo isso.\n\n\
-         \x20 O ARCA nao pergunta o nome nem o deduz do indice: um `nvme1n1` digitado\n\
-         \x20 por engano entraria numa receita que apaga um disco, e nao ha nada do\n\
-         \x20 lado Windows contra o que conferi-lo.\n\n\
-         \x20 `arca sondar` resolve isso num reinicio: ele NAO faz backup nem\n\
-         \x20 restauracao — roda o `lsblk` no Linux do Clonezilla, grava a saida no\n\
-         \x20 ARCAVAULT e desliga. Depois de `arca resultado`, `arca backup <nome>`\n\
-         \x20 funciona.\n\n\
-         \x20 E ele responde, de quebra, a unica coisa que o `arca prepare` NAO consegue\n\
-         \x20 conferir sozinho: se este dispositivo boota mesmo, pela entrada de firmware\n\
-         \x20 que acabou de ser criada (P-26).\n",
+         \x20 Ele reinicia a maquina, roda no Clonezilla e desliga — nao faz backup\n\
+         \x20 nem restauracao. Depois dele, `arca resultado`. Sem isso, `arca backup`\n\
+         \x20 recusa.\n",
         feitas.vault.letra, feitas.boot.letra
     )
 }
@@ -1868,10 +1857,6 @@ mod testes {
             "a tela tem de mandar sondar: {saida}"
         );
         assert!(
-            saida.contains("§4.5"),
-            "a tela tem de dizer por que: {saida}"
-        );
-        assert!(
             !saida.contains("menu do Clonezilla, faca um backup"),
             "a tela voltou a mandar para o menu do Clonezilla:\n{saida}"
         );
@@ -1882,22 +1867,42 @@ mod testes {
     }
 
     #[test]
-    fn o_fim_explica_a_razao_em_vez_de_so_mandar_fazer() {
-        // Um aviso que só diz "rode `arca sondar`" empurra o problema de volta
-        // para quem não sabe por que ele existe — e este tem uma razão boa, que
-        // é a mesma pela qual o ARCA não pergunta o nome do disco.
+    fn o_fim_manda_sondar_sem_explicar_o_projeto() {
+        // **Este teste já foi o contrário, e a troca foi deliberada.**
+        //
+        // Ele se chamava `o_fim_explica_a_razao_em_vez_de_so_mandar_fazer` e
+        // cobrava o oposto: que a tela dissesse `blkdev.list`, `nvme1n1`, o
+        // §4.5 e o P-26. O argumento era que *"um aviso que só diz `rode arca
+        // sondar` empurra o problema de volta para quem não sabe por que ele
+        // existe"*.
+        //
+        // Quem opera o comando decidiu que não: aquilo é coisa de
+        // desenvolvimento, e não tem que aparecer para quem acabou de preparar
+        // um disco. A tela diz **o que fazer**, **o que vai acontecer** — ele
+        // reinicia a máquina — e **o que acontece se não fizer**. Isso é o que
+        // a pessoa precisa para se organizar. O resto é registro de projeto, e
+        // mora no §4.5 e no ADR-0019.
+        //
+        // Está escrito aqui para a próxima pessoa não "consertar" de volta
+        // achando que foi descuido.
         let saida = montar_o_fim(&o_que_o_particionamento_deixou(), None);
 
-        assert!(saida.contains("blkdev.list"), "{saida}");
-        assert!(saida.contains("nvme1n1"), "o risco de digitar: {saida}");
+        assert!(saida.contains("arca sondar"), "o que fazer: {saida}");
         assert!(
-            saida.contains("RECUSA"),
-            "a tela diz o que acontece se alguem tentar antes: {saida}"
+            saida.contains("reinicia a maquina"),
+            "o que vai acontecer, que e o que muda o dia de quem le: {saida}"
         );
         assert!(
-            saida.contains("NAO faz backup nem\n"),
-            "e diz o que a sondagem nao faz, que e o que a torna barata: {saida}"
+            saida.contains("recusa"),
+            "o que acontece se nao fizer: {saida}"
         );
+
+        for vazamento in ["blkdev.list", "nvme1n1", "§4.5", "P-26", "lsblk"] {
+            assert!(
+                !saida.contains(vazamento),
+                "a tela do fim vazou `{vazamento}`, que e coisa de registro de projeto:\n{saida}"
+            );
+        }
     }
 
     #[test]
