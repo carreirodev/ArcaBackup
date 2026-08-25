@@ -978,17 +978,26 @@ ao subir. Ver
 
 ## A medição do dispositivo em GPT, e ela está pela metade (25/08/2026)
 
-O roteiro de `PRD/marco-em-hardware-gpt-2026-08-25.md` tem nove etapas, e este
-arquivo é o que as **sete primeiras** escreveram. **A sétima é a que decide, e
-ela passou:** o dispositivo GPT bootou, e o menu do Clonezilla subiu.
+O roteiro de `PRD/marco-em-hardware-gpt-2026-08-25.md` tem nove etapas, e as
+**nove** estão feitas. **A sétima é a que decide, e ela passou:** o dispositivo
+GPT bootou, o menu do Clonezilla subiu, e o device path foi lido de dentro do
+boot. São dois arquivos:
 
 | Arquivo | O que é | SHA256 |
 |---|---|---|
-| `medicao-gpt-2026-08-25.txt` | As etapas 1 a 7 em **dois** dispositivos de 238,5 GB, 45 532 bytes | `6a89ab7e…98c98930` |
+| `medicao-gpt-2026-08-25.txt` | As nove etapas em **dois** dispositivos de 238,5 GB, 52 951 bytes | `d9a65529…1ae04589` |
+| `efibootmgr-gpt-2026-08-25.txt` | O que o **Linux** viu de dentro do live, 6145 bytes | `c7a07e73…2e0a54c4` |
 
-**O SHA256 vale para o arquivo parado na Etapa 7.** Ele muda quando as etapas
-seguintes escreverem nele, e é para isso que serve estar anotado aqui: a
-medição continua no mesmo arquivo, e não numa cópia.
+**Os dois são finais: o roteiro acabou.** O primeiro é o que o PowerShell e o
+`bcdedit` responderam, escrito etapa a etapa no mesmo arquivo; o segundo é o
+`efibootmgr -v`, `parted -l`, `blkid`, `lsblk` e `sgdisk -p` de dentro do boot,
+copiado do dispositivo sem edição.
+
+**O segundo existe porque o primeiro não alcança o que ele mede.** O `bcdedit`
+lê a NVRAM pela API do Windows; o `efibootmgr` lê as variáveis UEFI de um
+sistema que bootou pelo dispositivo. As duas leituras discordaram — e a
+discordância está registrada abaixo, porque é o achado, e não um erro de uma
+delas.
 
 **São dois dispositivos, e a troca no meio é parte do achado.** O roteiro correu
 no Kingston DataTraveler Max até a Etapa 6, emperrou lá, e recomeçou da Etapa 2
@@ -1075,18 +1084,61 @@ postas na ordem pelo ciclo de boot e não por ninguém — que é o
 entrada de teste **não** voltou para o `displayorder`. Nada disso foi desfeito,
 nem para rearmar o segundo boot: C-5 vale para o ARCA, que lê e não mexe.
 
+**O device path em GPT, lido de dentro do boot.** É o que dá à mudança a mesma
+qualidade de evidência que as seis leituras de NVRAM do ADR-0023:
+
+```text
+GPT:  HD(2,GPT,9c86b84a-596f-47e6-b92a-cd5b84b4a1fe,0x1d9d3000,0x320000)/\EFI\BOOT\BOOTX64.EFI
+MBR:  HD(2,MBR,0x4049dea9,0x1d9d2000,0x320000)
+```
+
+O número da partição continua 2; `MBR` vira `GPT`; a assinatura do **disco** dá
+lugar ao PARTUUID da **partição**, que o `blkid` confirma ser o da ARCABOOT; o
+tamanho `0x320000` é idêntico nos dois — 3 276 800 setores, os 1600 MiB fixos. O
+offset difere, mas os discos são diferentes: essa linha não compara.
+
+**Bootou pela entrada do dispositivo com o Windows à frente da ordem.**
+`BootCurrent: 0001` com `BootOrder: 0000,0001` — os mesmos dois números que
+`armar.rs:441` registra para o marco em MBR. C-5 continua sustentável em GPT.
+
+**A entrada pela qual se bootou não é a que o `bcdedit` criou.** O `efibootmgr`
+viu duas variáveis `Boot####`, e só duas: `Boot0000 Windows Boot Manager` e
+`Boot0001 UEFI OS` — esta apontando para o mesmo `HD(2,GPT,…)`, com o caminho em
+**maiúsculas**. A entrada `ARCA GPT TESTE`, criada pelo `bcdedit` com o caminho
+em minúsculas, não estava na NVRAM naquele momento.
+
+**E o Linux também não distingue as duas partições pelo tipo:** `lsblk` dá
+`PARTTYPE ebd0a0a2-…` para as duas, `parted` chama as duas de *Basic data
+partition* com flag `msftdata`, `gdisk` dá código `0700` para as duas. O achado
+da Etapa 4 é da tabela de partição, e não do PowerShell.
+
+### O achado que não estava previsto: o identificador não é identidade
+
+O `{31cc955f-a0ae-11f1-8a54-806e6f6e6963}` era, antes do segundo boot,
+`UEFI:CD/DVD Drive` **sem `device`**. Depois do segundo boot, o **mesmo GUID**
+era `ARCA GPT TESTE`, `device partition=E:`, `path \EFI\boot\bootx64.efi`. Ele
+nomeia o *slot* `Boot####` da NVRAM, e não a entrada que está nele.
+
+Por isso a Etapa 9 não deletou por lista: releu o firmware a cada passo e
+escolheu pelo que a leitura corrente dizia, com recusa de segurança contra
+qualquer alvo parecido com o do sistema. Foram **três** entradas apontando para
+a ARCABOOT, e não uma. A NVRAM voltou aos dois blocos da Etapa 1, com o
+`{bootmgr}` conferido campo a campo.
+
+**E o `displayorder` do `bcdedit` não previu o comportamento do firmware.** Ele
+trazia a entrada de teste em primeiro, na frente do `{bootmgr}`, com `timeout 1`;
+mesmo assim, com o SSD conectado, a máquina entrou no Windows. O `efibootmgr`
+media `BootOrder: 0000,0001` — o Windows primeiro —, e foi ele que acertou.
+
 ### O que ainda não está
 
-**O device path lido de dentro do boot.** Quem operava desligou antes de entrar
-no shell do Clonezilla, e a Etapa 8 ficou para a segunda passada. O boot foi
-rearmado no mesmo dia — `bootsequence` apontando para
-`{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}`, com o `displayorder` conferido igual
-antes e depois do rearme —, e o roteiro da etapa foi escrito no próprio
-dispositivo, em `D:\etapa8.sh`, para não depender de digitação no live.
+**Se o identificador é estável dentro de uma sessão.** Nas seis releituras deste
+roteiro, sem reinício, nada mudou; entre boots, mudou. A distinção não foi
+medida de propósito, e todo lugar do código que guarda um identificador de
+firmware e o usa depois depende dela.
 
-É o que falta para a mudança ter a mesma qualidade de evidência que as seis
-leituras de NVRAM do ADR-0023: confirmar que a linha que hoje, em MBR, lê
-`HD(2,MBR,0x4049dea9,0x1d9d2000,0x320000)` passa a ler `HD(2,GPT,<guid>,…)`.
+**Se o bloqueio do DataTraveler Max é do modelo ou daquela unidade.** Um
+dispositivo só foi testado.
 
 > **A primeira tentativa da Etapa 3 rodou e o registro dela se perdeu.** O
 > script foi executado por `powershell.exe` 5.1, que leu o arquivo UTF-8 como

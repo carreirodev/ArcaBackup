@@ -1,0 +1,85 @@
+# Etapa 8 — lido de dentro do boot do Clonezilla
+# data do live: 2026-08-25 15:06:08 UTC
+
+### efibootmgr -v
+BootCurrent: 0001
+Timeout: 1 seconds
+BootOrder: 0000,0001
+Boot0000* Windows Boot Manager	HD(1,GPT,efc7b437-93ee-479b-9817-3fd8d46ffdaa,0x800,0x96000)/\EFI\Microsoft\Boot\bootmgfw.efi57494e444f5753000100000088000000780000004200430044004f0042004a004500430054003d007b00390064006500610038003600320063002d0035006300640064002d0034006500370030002d0061006300630031002d006600330032006200330034003400640034003700390035007d00000012000100000010000000040000007fff0400
+      dp: 04 01 2a 00 01 00 00 00 00 08 00 00 00 00 00 00 00 60 09 00 00 00 00 00 37 b4 c7 ef ee 93 9b 47 98 17 3f d8 d4 6f fd aa 02 02 / 04 04 46 00 5c 00 45 00 46 00 49 00 5c 00 4d 00 69 00 63 00 72 00 6f 00 73 00 6f 00 66 00 74 00 5c 00 42 00 6f 00 6f 00 74 00 5c 00 62 00 6f 00 6f 00 74 00 6d 00 67 00 66 00 77 00 2e 00 65 00 66 00 69 00 00 00 / 7f ff 04 00
+    data: 57 49 4e 44 4f 57 53 00 01 00 00 00 88 00 00 00 78 00 00 00 42 00 43 00 44 00 4f 00 42 00 4a 00 45 00 43 00 54 00 3d 00 7b 00 39 00 64 00 65 00 61 00 38 00 36 00 32 00 63 00 2d 00 35 00 63 00 64 00 64 00 2d 00 34 00 65 00 37 00 30 00 2d 00 61 00 63 00 63 00 31 00 2d 00 66 00 33 00 32 00 62 00 33 00 34 00 34 00 64 00 34 00 37 00 39 00 35 00 7d 00 00 00 12 00 01 00 00 00 10 00 00 00 04 00 00 00 7f ff 04 00
+Boot0001* UEFI OS	HD(2,GPT,9c86b84a-596f-47e6-b92a-cd5b84b4a1fe,0x1d9d3000,0x320000)/\EFI\BOOT\BOOTX64.EFI0000424f
+      dp: 04 01 2a 00 02 00 00 00 00 30 9d 1d 00 00 00 00 00 00 32 00 00 00 00 00 4a b8 86 9c 6f 59 e6 47 b9 2a cd 5b 84 b4 a1 fe 02 02 / 04 04 30 00 5c 00 45 00 46 00 49 00 5c 00 42 00 4f 00 4f 00 54 00 5c 00 42 00 4f 00 4f 00 54 00 58 00 36 00 34 00 2e 00 45 00 46 00 49 00 00 00 / 7f ff 04 00
+    data: 00 00 42 4f
+
+### parted -l
+Model: KGSSE100 256 (scsi)
+Disk /dev/sda: 256GB
+Sector size (logical/physical): 512B/512B
+Partition Table: gpt
+Disk Flags: 
+
+Number  Start   End    Size    File system  Name                  Flags
+ 1      1049kB  254GB  254GB   ntfs         Basic data partition  msftdata
+ 2      254GB   256GB  1678MB  fat32        Basic data partition  msftdata
+
+
+Model: KINGSTON SNV3S500G (nvme)
+Disk /dev/nvme0n1: 500GB
+Sector size (logical/physical): 512B/512B
+Partition Table: gpt
+Disk Flags: 
+
+Number  Start   End    Size    File system  Name                          Flags
+ 1      1049kB  316MB  315MB   fat32        EFI system partition          boot, esp
+ 2      316MB   332MB  16.8MB               Microsoft reserved partition  msftres
+ 3      332MB   499GB  499GB   ntfs         Basic data partition          msftdata
+ 4      499GB   500GB  1074MB  ntfs         Basic data partition          hidden, diag, no_automount
+
+
+
+### blkid
+/dev/nvme0n1p1: LABEL="SYSTEM" UUID="EE6F-C0CD" BLOCK_SIZE="512" TYPE="vfat" PARTLABEL="EFI system partition" PARTUUID="efc7b437-93ee-479b-9817-3fd8d46ffdaa"
+/dev/nvme0n1p3: LABEL="Windows" BLOCK_SIZE="512" UUID="263A70C43A709293" TYPE="ntfs" PARTLABEL="Basic data partition" PARTUUID="bebce31f-1cdc-4784-9b99-dc64dd05cc57"
+/dev/nvme0n1p4: LABEL="Recovery" BLOCK_SIZE="512" UUID="FCDA711BDA70D2FE" TYPE="ntfs" PARTLABEL="Basic data partition" PARTUUID="e1c3695c-d270-4220-af42-f1acbbb490b5"
+/dev/sda1: LABEL="ARCAVAULT" BLOCK_SIZE="512" UUID="DE72939A7293764D" TYPE="ntfs" PARTLABEL="Basic data partition" PARTUUID="4ed02e76-3182-42db-a631-0e84777f245c"
+/dev/sda2: LABEL="ARCABOOT" UUID="E294-E8B4" BLOCK_SIZE="512" TYPE="vfat" PARTLABEL="Basic data partition" PARTUUID="9c86b84a-596f-47e6-b92a-cd5b84b4a1fe"
+/dev/loop0: BLOCK_SIZE="1048576" TYPE="squashfs"
+/dev/nvme0n1p2: PARTLABEL="Microsoft reserved partition" PARTUUID="eda3dced-45b9-4c2c-b9b0-066b79e981ca"
+
+### lsblk
+NAME          SIZE FSTYPE   LABEL     PARTLABEL                    PARTTYPE                             MOUNTPOINT
+loop0       466.2M squashfs                                                                             /run/live/rootfs/filesystem.squashfs
+sda         238.5G                                                                                      
+├─sda1      236.9G ntfs     ARCAVAULT Basic data partition         ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 /mnt/vault
+└─sda2        1.6G vfat     ARCABOOT  Basic data partition         ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 /run/live/medium
+nvme0n1     465.8G                                                                                      
+├─nvme0n1p1   300M vfat     SYSTEM    EFI system partition         c12a7328-f81f-11d2-ba4b-00a0c93ec93b 
+├─nvme0n1p2    16M                    Microsoft reserved partition e3c9e316-0b5c-4db8-817d-f92df00215ae 
+├─nvme0n1p3 464.5G ntfs     Windows   Basic data partition         ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 
+└─nvme0n1p4     1G ntfs     Recovery  Basic data partition         de94bba4-06d1-4d40-a16a-bfd50179d6ac 
+
+### gdisk -l no disco da ARCABOOT
+disco: /dev/sda
+Disk /dev/sda: 500118192 sectors, 238.5 GiB
+Model: 256             
+Sector size (logical/physical): 512/512 bytes
+Disk identifier (GUID): 9F88557E-6C96-4C83-9B31-2D5715144A61
+Partition table holds up to 128 entries
+Main partition table begins at sector 2 and ends at sector 33
+First usable sector is 34, last usable sector is 500118158
+Partitions will be aligned on 2048-sector boundaries
+Total free space is 2669 sectors (1.3 MiB)
+
+Number  Start (sector)    End (sector)  Size       Code  Name
+   1            2048       496840703   236.9 GiB   0700  Basic data partition
+   2       496840704       500117503   1.6 GiB     0700  Basic data partition
+
+### mount
+/dev/sda2 on /run/live/medium type vfat (ro,noatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro)
+/dev/loop0 on /run/live/rootfs/filesystem.squashfs type squashfs (ro,noatime,errors=continue)
+tmpfs on /run/live/overlay type tmpfs (rw,noatime,size=15994544k,mode=755,inode64)
+overlay on / type overlay (rw,noatime,lowerdir=/run/live/rootfs/filesystem.squashfs/,upperdir=/run/live/overlay/rw,workdir=/run/live/overlay/work,redirect_dir=on,uuid=on)
+/dev/sda1 on /mnt/vault type ntfs3 (rw,relatime,uid=0,gid=0,iocharset=utf8,prealloc)
+
+FIM DA ETAPA 8

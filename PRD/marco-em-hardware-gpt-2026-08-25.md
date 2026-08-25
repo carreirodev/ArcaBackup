@@ -22,23 +22,31 @@ código vem depois, na Etapa 9.
 | 5 | Instalar o Clonezilla na ARCABOOT | ✅ | 2026-08-25 · `bootx64.efi` no lugar; o `grub.cfg` tinha aspas |
 | 6 | Criar a entrada de firmware de teste | ✅ | 2026-08-25 · `partition=E:` pegou no SSD, `bootsequence` armado |
 | 7 | **O boot, que é o que decide** | ✅ | 2026-08-25 · **o menu do Clonezilla subiu** |
-| 8 | Capturar a NVRAM de dentro do boot | ⏳ | rearmada; o script está em `D:\etapa8.sh` |
-| 9 | Voltar ao normal | — | o id a remover é `{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}` |
+| 8 | Capturar a NVRAM de dentro do boot | ✅ | 2026-08-25 · `HD(2,GPT,9c86b84a-…,0x1d9d3000,0x320000)` |
+| 9 | Voltar ao normal | ✅ | 2026-08-25 · **três** entradas removidas, NVRAM como na Etapa 1 |
 
-> # O dispositivo GPT bootou.
+> # O dispositivo GPT bootou, e o marco está fechado.
 >
 > Em 25/08/2026 o boot único levou o firmware ao dispositivo e **o menu do
 > Clonezilla subiu**. Sem tela preta, sem erro de firmware, sem volta direta
-> para o Windows. É o que este roteiro existia para decidir, e está decidido: um
-> dispositivo GPT com ARCABOOT FAT32 *Basic Data*, apontado por `partition=E:` e
-> `\EFI\boot\bootx64.efi`, boota nesta máquina.
+> para o Windows. Um dispositivo GPT com ARCABOOT FAT32 *Basic Data*, apontado
+> por `partition=E:` e `\EFI\boot\bootx64.efi`, boota nesta máquina.
+>
+> **E o device path foi lido de dentro do boot**, num segundo reinício:
+>
+> ```text
+> HD(2,GPT,9c86b84a-596f-47e6-b92a-cd5b84b4a1fe,0x1d9d3000,0x320000)/\EFI\BOOT\BOOTX64.EFI
+> ```
+>
+> contra o `HD(2,MBR,0x4049dea9,0x1d9d2000,0x320000)` que o ADR-0023 mediu. A
+> partição continua a 2, `MBR` vira `GPT`, a assinatura do **disco** dá lugar ao
+> PARTUUID da **partição**, e o tamanho `0x320000` é idêntico — os 1600 MiB
+> fixos da ARCABOOT.
 >
 > **O ADR-0014 não tinha razão, e agora isso está medido em vez de suposto.** Ele
 > dizia que a falha "só se descobre depois de o Windows já ter sido apagado" —
-> não só se descobre antes como não houve falha.
->
-> Falta a Etapa 8: o device path lido *de dentro* do boot. O boot foi rearmado
-> para ela.
+> não só se descobre antes como não houve falha. As **três** perguntas estão
+> respondidas, e a Etapa 9 devolveu a NVRAM ao estado da Etapa 1.
 
 **O alvo é o disco 1, KGSSE100 256** — SSD externo USB, GPT, ARCAVAULT em `D:` (NTFS 4096,
 254 381 391 872) e ARCABOOT em `E:` (FAT32 4096, 1 677 721 600), com o Clonezilla
@@ -62,34 +70,35 @@ registrada em `PROVENIENCIA.md` com o SHA256 do arquivo **parado na Etapa 6**.
 > **duas estão respondidas, e cada uma foi medida duas vezes**, em dois
 > dispositivos, com números idênticos. A primeira é da Etapa 7.
 
-### `cargo test` fica vermelho enquanto o marco estiver montado, e está certo
+### A suíte foi o oitavo instrumento de medição, e pegou coisa que ninguém viu
 
-Oito testes falham com o dispositivo armado na mesa. **Nenhum deles é
-regressão** — os oito leem a máquina de verdade, e a máquina está, de propósito,
-no estado que eles existem para acusar:
+Enquanto o marco esteve montado, **oito** testes ficaram vermelhos — e nenhum
+por regressão. Os oito leem a máquina de verdade, e ela estava, de propósito, no
+estado que eles existem para acusar. O interessante é o que cada grupo custou
+para apagar:
 
-| Teste | Por quê |
-|---|---|
-| `e2:a_leitura_do_firmware_nao_arma_nada` | há `bootsequence` armado — fui eu, na Etapa 6 |
-| `e7:nao_ha_boot_unico_pendente_nesta_maquina` | o mesmo `bootsequence` |
-| `e4:o_grub_cfg_do_dispositivo_e_um_inerte_conhecido` | o `grub.cfg` está em `timeout="-1"`, e o inerte é `"30"` |
-| `e4:o_dispositivo_esta_inerte_agora` | idem |
-| `e4:desarmar_o_grub_cfg_do_dispositivo_nao_mudaria_um_byte` | idem |
-| `e7:o_grub_cfg_do_dispositivo_continua_inerte_e_e_um_dos_conhecidos` | idem |
-| `e7:armar_e_desarmar_o_dispositivo_de_verdade_se_cancelam` | idem |
-| `e7:a_entrada_do_arca_existe_nesta_maquina_e_e_a_propria` | **anterior a este roteiro**: a entrada `ARCA` não sobreviveu à reinstalação do Windows |
+| Teste | Por quê | O que o apagou |
+|---|---|---|
+| `e2:a_leitura_do_firmware_nao_arma_nada` | havia `bootsequence` armado | a Etapa 9 |
+| `e7:nao_ha_boot_unico_pendente_nesta_maquina` | o mesmo `bootsequence` | a Etapa 9 |
+| `e4:o_grub_cfg_do_dispositivo_e_um_inerte_conhecido` | o `grub.cfg` era o do pacote **cru** | o `desarmar` que a Etapa 5 esquecia |
+| `e4:o_dispositivo_esta_inerte_agora` | idem | idem |
+| `e4:desarmar_o_grub_cfg_do_dispositivo_nao_mudaria_um_byte` | idem | idem |
+| `e7:o_grub_cfg_do_dispositivo_continua_inerte_e_e_um_dos_conhecidos` | idem | idem |
+| `e7:armar_e_desarmar_o_dispositivo_de_verdade_se_cancelam` | idem | idem |
+| `e7:a_entrada_do_arca_existe_nesta_maquina_e_e_a_propria` | **anterior a este roteiro**: a entrada `ARCA` não sobreviveu à reinstalação do Windows | *continua vermelho* |
 
-Os sete primeiros somem quando a Etapa 9 desfizer o que a 6 fez e o disco de
-teste sair da mesa. O oitavo é de outra história.
+Hoje passam **861 de 862**, e o que sobra é de outra história.
+
+**Os cinco do meio é que valem.** Eles não estavam acusando o `timeout=-1`, como
+parecia: acusavam que o `grub.cfg` do dispositivo era o do zip **cru**, byte a
+byte, e não o que o `arca prepare` instalaria. Ver a Etapa 5.
 
 **E há um detalhe que vale saber:** os testes de E4 e E7 acham "o dispositivo"
 pelo rótulo, e o disco de teste deste roteiro tem uma partição `ARCABOOT` e uma
-`ARCAVAULT`. Eles não estão lendo o dispositivo de produção — que nem está
-conectado —, estão lendo **este**. O rótulo não distingue um do outro, e isso
+`ARCAVAULT`. Eles não estavam lendo o dispositivo de produção — que nem foi
+conectado —, estavam lendo **este**. O rótulo não distingue um do outro, e isso
 é uma pergunta em aberto para o código, não para o roteiro.
-
-Os outros **854 testes passam** — 862 no total, oito vermelhos, e os oito com
-endereço conhecido.
 
 ---
 
@@ -454,7 +463,19 @@ $LB = (Get-Partition -DiskNumber $n | Get-Volume | Where-Object FileSystemLabel 
 > linha real é `set timeout="30"`, com o número **entre aspas**, e o padrão
 > `set timeout=\d+` não casa com aspas. O comando respondeu sem erro e não mudou
 > nada — quem pegou foi a releitura. O que casa é `set timeout="?-?\d+"?`, e é o
-> que está no bloco abaixo; a linha 4 do arquivo está hoje em `set timeout="-1"`.
+> que está no bloco abaixo.
+>
+> **E faltava uma coisa maior, que a suíte é que pegou: o `desarmar`.** Esta
+> etapa extrai o zip e para aí. O `arca prepare` não: `prepare.rs:228` faz
+> `grub::desarmar(&do_pacote)` e instala o **resultado** — é literalmente o nome
+> do [ADR-0018](../docs/adr/0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md),
+> *"o pacote é o zip e o prepare desarma o que instala"*. Sem esse passo, o
+> dispositivo fica com o `grub.cfg` cru, que **não é** nenhum dos dois inertes
+> que o projeto conhece, e cinco testes de E4 e E7 acusam.
+>
+> A diferença é uma linha: o `desarmar` aponta o `set default` para o `menuentry`
+> inerte. Depois de extrair, o roteiro tem de fazer o que o `prepare` faz —
+> `set default="0"` → `set default="live-default"`. Feito isso, os cinco passam.
 
 Extraia o **zip** (não o ISO) para a raiz da ARCABOOT:
 
@@ -618,10 +639,36 @@ botão e vá para a Etapa 9 — o teste principal já passou.
 É o que dá à mudança a mesma qualidade de evidência que as seis leituras do
 ADR-0023. Vale o esforço: é a diferença entre "bootou uma vez" e "está medido".
 
-> **O roteiro dela está no próprio dispositivo, em `D:\etapa8.sh`**, escrito em
-> 25/08/2026 depois do primeiro boot. É para a etapa não depender de digitar
-> comando nenhum no live: uma linha monta a ARCAVAULT pelo rótulo, roda o
-> script, e ele salva a saída ao lado, em `etapa8-saida.txt`.
+> **Feita em 25/08/2026 às 15:06 UTC**, no segundo boot, pelo script deixado em
+> `D:\etapa8.sh`. A saída crua está em
+> [`recursos/capturas/efibootmgr-gpt-2026-08-25.txt`](../recursos/capturas/efibootmgr-gpt-2026-08-25.txt).
+>
+> **O device path é o do topo deste documento**, e responde a primeira das três
+> perguntas na forma que o roteiro previa. Mas a etapa rendeu mais três coisas
+> que ninguém tinha pensado em perguntar:
+>
+> **1. Bootou pela entrada do dispositivo com o Windows à frente da ordem.**
+> `BootCurrent: 0001`, `BootOrder: 0000,0001` — os **mesmos dois números** que
+> `armar.rs:441` registra para o marco em MBR. O `bootsequence` pega em GPT do
+> mesmo jeito, e C-5 continua sustentável: não há troca a fazer entre armar e
+> não mexer na ordem permanente.
+>
+> **2. A entrada pela qual se bootou não é a que o `bcdedit` criou.** O
+> `efibootmgr` viu duas variáveis `Boot####`, e só duas: `Boot0000 Windows Boot
+> Manager` e `Boot0001 UEFI OS` — esta apontando para o mesmo
+> `HD(2,GPT,…)/\EFI\BOOT\BOOTX64.EFI`, com o caminho em **maiúsculas**. A entrada
+> `ARCA GPT TESTE`, que o `bcdedit` criou com o caminho em minúsculas, **não
+> estava na NVRAM** naquele momento. Quem bootou foi uma entrada que o firmware
+> fez sozinho.
+>
+> **3. O Linux também não distingue as duas partições pelo tipo.** O `lsblk` dá
+> `PARTTYPE ebd0a0a2-…` para as duas, o `parted` chama as duas de *Basic data
+> partition* com flag `msftdata`, o `gdisk` dá código `0700` para as duas. O
+> achado da Etapa 4 não é peculiaridade do PowerShell — é a tabela de partição.
+
+O roteiro da etapa fica no próprio dispositivo, em `D:\etapa8.sh`, para não
+depender de digitar comando nenhum no live: uma linha monta a ARCAVAULT pelo
+rótulo, roda o script, e ele salva a saída ao lado.
 
 No menu do Clonezilla, escolha a entrada padrão, aceite idioma e teclado, e no
 menu de modo escolha **`Enter_shell`** — *Enter command line prompt*. Serve
@@ -672,6 +719,34 @@ Desligue pelo botão e volte ao Windows.
 ---
 
 ## Etapa 9 — Voltar ao normal
+
+> **Feita em 25/08/2026, e ela não foi o `/delete` de uma linha que este bloco
+> promete.** Eram **três** entradas apontando para `partition=E:`, não uma, e o
+> caminho até descobrir isso é o achado mais desconfortável do roteiro.
+>
+> **O identificador que o `bcdedit /enum firmware` mostra não é identidade.** O
+> `{31cc955f-a0ae-11f1-8a54-806e6f6e6963}` era, antes do segundo boot,
+> `UEFI:CD/DVD Drive` **sem `device`**. Depois do segundo boot, o **mesmo GUID**
+> era `ARCA GPT TESTE`, `device partition=E:`, `path \EFI\boot\bootx64.efi`. Ele
+> nomeia o *slot* `Boot####` da NVRAM, e não a entrada que está nele — e o
+> firmware reescreveu os slots entre um boot e outro.
+>
+> A consequência prática é direta: **deletar por lista guardada acertaria o slot
+> errado**. A limpeza foi feita relendo o firmware a cada passo e escolhendo pelo
+> que a leitura corrente dizia, com uma recusa de segurança contra qualquer alvo
+> que se parecesse com o do sistema. Três voltas, três removidas, e a NVRAM
+> voltou aos dois blocos que a Etapa 1 mediu, com o `{bootmgr}` conferido campo a
+> campo.
+>
+> **E o `displayorder` do `bcdedit` não previu o comportamento do firmware.** Ele
+> trazia a entrada de teste em **primeiro**, na frente do `{bootmgr}`, com
+> `timeout 1` — pela leitura do `bcdedit`, o religamento seguinte iria para o
+> dispositivo sozinho. Foi medido o contrário: com o SSD conectado, a máquina
+> entrou no Windows. E o `efibootmgr`, lido de dentro do boot, media
+> `BootOrder: 0000,0001` — o Windows primeiro. Quem acertou o comportamento foi o
+> `efibootmgr`. Isso encosta no
+> [ADR-0020](../docs/adr/0020-o-bcdedit-enum-firmware-le-a-nvram.md), e é
+> pergunta em aberto, não conclusão.
 
 **Faça isto mesmo que o teste tenha falhado.** Deixar uma entrada morta na
 NVRAM é o que o
@@ -752,8 +827,9 @@ positiva, e é mais barata de guardar do que de refazer.
 O ADR novo precisa responder **três coisas** que só este roteiro mede:
 
 1. o dispositivo GPT bootou, e o device path lido de dentro do boot é *qual* —
-   **metade respondida**: bootou, em 25/08/2026, e o menu do Clonezilla subiu. O
-   device path é a Etapa 8, e o boot está rearmado para ela;
+   **respondida**: bootou, o menu do Clonezilla subiu, e o device path é
+   `HD(2,GPT,9c86b84a-596f-47e6-b92a-cd5b84b4a1fe,0x1d9d3000,0x320000)`. O GUID
+   é o **PARTUUID da partição**, e não a assinatura do disco que o MBR usava;
 2. houve MSR, e o que foi feito com ela — **respondida duas vezes**: houve nos
    dois dispositivos, `{e3c9e316-…}`, offset 17 408, 16 759 808 bytes, e foi
    removida nos dois. O código a remove sempre, não "se houver";
@@ -769,6 +845,17 @@ DataTraveler Max**, e o C-6 deixou de ser uma precaução abstrata para virar um
 caso com nome, modelo e quatro controles. A defesa que já existe —
 `Erro::AlvoDoFirmwareRecusado`, em `prepare.rs:694` — é a única coisa entre esse
 silêncio e um dispositivo que o `arca prepare` diria ter preparado.
+
+E uma quinta, que é a mais incômoda das cinco: **o identificador que o
+`bcdedit /enum firmware` devolve não é identidade.** O mesmo GUID trocou de
+descrição e de `device` entre dois boots, porque nomeia o slot `Boot####` e não
+a entrada. Todo lugar do código que guarda um identificador de firmware e o usa
+depois — `armar.rs` entre o `/set` e a releitura, `prepare.rs` entre o `/copy` e
+os três `/set`, o `$id` anotado para a Etapa 9 — está apostando numa estabilidade
+que **não foi medida**. Dentro de uma mesma sessão, sem reinício, nada disso
+mudou nas seis vezes em que este roteiro releu; entre boots, mudou. É a diferença
+que o ADR novo precisa registrar, e a que separa uma releitura de C-3 que
+protege de uma que só parece proteger.
 
 E há duas pendências que valem issues **independentes do resultado**:
 
