@@ -979,28 +979,38 @@ ao subir. Ver
 ## A medição do dispositivo em GPT, e ela está pela metade (25/08/2026)
 
 O roteiro de `PRD/marco-em-hardware-gpt-2026-08-25.md` tem nove etapas, e este
-arquivo é o que as **três primeiras** escreveram. Elas não decidem nada — quem
-decide é a Etapa 7, o boot. O que elas produzem é a preparação medida, e uma
-delas já respondeu a uma das três perguntas que o ADR novo precisa responder.
+arquivo é o que as **seis primeiras** escreveram. Elas não decidem nada — quem
+decide é a Etapa 7, o boot. O que elas produzem é a preparação medida, e duas
+das três perguntas que o ADR novo precisa responder já estão respondidas.
 
 | Arquivo | O que é | SHA256 |
 |---|---|---|
-| `medicao-gpt-2026-08-25.txt` | As etapas 1 a 3 num Kingston DataTraveler Max de 238,5 GB, 4634 bytes | `335e0d0b…a928c7f5` |
+| `medicao-gpt-2026-08-25.txt` | As etapas 1 a 6 em **dois** dispositivos de 238,5 GB, 40 650 bytes | `faad0a3a…6f52849a` |
 
-**O SHA256 vale para o arquivo parado na Etapa 3.** Ele muda quando as etapas
+**O SHA256 vale para o arquivo parado na Etapa 6.** Ele muda quando as etapas
 seguintes escreverem nele, e é para isso que serve estar anotado aqui: a
 medição continua no mesmo arquivo, e não numa cópia.
 
+**São dois dispositivos, e a troca no meio é parte do achado.** O roteiro correu
+no Kingston DataTraveler Max até a Etapa 6, emperrou lá, e recomeçou da Etapa 2
+num KGSSE100 256 do mesmo tamanho. As Etapas 3, 4 e 5 estão medidas **duas
+vezes**, e as duas bateram em tudo — o que faz delas medição repetida, e não
+medição refeita.
+
 ### O que já está respondido
 
-**Houve MSR, e é o achado.** O `Initialize-Disk -PartitionStyle GPT` criou
-sozinho uma partição `Reserved` de 16 759 808 bytes no offset 17 408, com
+**Houve MSR, e nos dois dispositivos.** O `Initialize-Disk -PartitionStyle GPT`
+criou sozinho uma partição `Reserved` de 16 759 808 bytes no offset 17 408, com
 `GptType {e3c9e316-0b5c-4db8-817d-f92df00215ae}` — coisa que em MBR o
 `Initialize-Disk` não faz, e que o `arca prepare` não espera. Deixada em pé,
 ela empurraria a ARCAVAULT para partição 2 e a ARCABOOT para 3, o device path
 da entrada de firmware viraria `HD(3,GPT,…)`, e a releitura que confere a ordem
 das duas partições no disco passaria a ver três. Foi removida, e o disco voltou
 a zero partições — que é como o MBR sai do `Initialize-Disk`.
+
+Ela apareceu de novo no segundo dispositivo, com os mesmos três números. Isso é
+o que separa "aconteceu" de "acontece": `particionador.rs` tem de removê-la
+**sempre**, e não "se houver".
 
 **A GPT cobra 1 400 832 bytes, e o `LargestFreeExtent` já os desconta.** Num
 disco de 256 060 514 304 bytes, o extent livre depois de remover a MSR é
@@ -1014,11 +1024,44 @@ Windows foi reinstalado, e o que as capturas de 22 a 24/08 mediram nesta NVRAM
 não está mais lá. É o número de referência da Etapa 6 — ao final dela devem ser
 duas, e a Etapa 9 volta a uma.
 
+**O `GptType` sai pronto do `New-Partition`, e o `Format-Volume` não encosta
+nele.** As duas partições nascem `{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}` e
+continuam assim depois de formatadas — medido nos dois dispositivos. É o
+contrário do MBR, onde as duas nascem `MbrType 6` e só chegam a 7 e a 12 depois
+do `Format-Volume`.
+
+**E a resposta trouxe uma pergunta que ninguém tinha feito: em GPT o tipo não
+distingue as duas.** Em MBR, `7` (IFS) e `12` (FAT32 LBA) separavam a ARCAVAULT
+da ARCABOOT, e é disso que vivem as constantes de `preparacao.rs:573,576`. Em
+GPT as duas têm o mesmo `GptType`. A releitura não perde a conferência — perde o
+**critério**: quem quiser saber qual é qual precisa do rótulo, do sistema de
+arquivos ou da ordem no disco.
+
+**O `bcdedit` recusa em silêncio o Kingston DataTraveler Max.** O
+`/set <id> device partition=E:` responde *"A operação foi concluída com êxito"*,
+código 0, e a releitura traz o device antigo. Por caminho de dispositivo, igual.
+O `path`, no mesmo comando e na mesma entrada, pega de primeira. Quatro alvos
+cercaram a causa: `partition=C:` (NVMe, GPT) pega; `partition=D:` e
+`partition=E:` (DataTraveler, GPT) não; `partition=F:` (KGSSE100, MBR) pega; e
+`partition=E:` (**o mesmo KGSSE100 convertido para GPT**) pega. Não é o GPT e não
+é o USB — é aquele dispositivo.
+
+Isto é o C-6 que `prepare.rs:678` já descrevia sem ter um caso, e é a razão de
+`Erro::AlvoDoFirmwareRecusado` existir em `prepare.rs:694`. A releitura de C-3 é
+a única coisa entre esse silêncio e um `arca prepare` que diria ter preparado um
+dispositivo que não boota.
+
+**Um detalhe de leitura que só o segundo dispositivo esclareceu:** apontar o
+device por `\Device\HarddiskVolumeN` é relido como `partition=X:` quando aquele
+volume tem letra. É **normalização**, e não recusa — o que confirma o
+`Alvo::ParticaoSemLetra` de `firmware.rs:79` como forma de escrita válida.
+
 ### O que ainda não está
 
-O `GptType` sai do `New-Partition` ou do `Format-Volume` — o análogo do achado
-do `MbrType 6` — é Etapa 4, e não foi medido. O boot é Etapa 7, e é ele que
-decide se o ADR-0014 muda ou se confirma.
+O boot é a Etapa 7, e é ele que decide se o ADR-0014 muda ou se confirma. O
+dispositivo está armado para ele desde 25/08/2026: `{fwbootmgr}` com
+`bootsequence` apontando para `{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}`, e
+`displayorder` inalterado, trazendo só o `{bootmgr}` — que é C-5.
 
 > **A primeira tentativa da Etapa 3 rodou e o registro dela se perdeu.** O
 > script foi executado por `powershell.exe` 5.1, que leu o arquivo UTF-8 como
@@ -1028,3 +1071,20 @@ decide se o ADR-0014 muda ou se confirma.
 > o disco RAW, e é ela que está no arquivo — com o parágrafo dizendo que o
 > `Clear-Disk` do registro é o efeito da primeira. Entre uma e outra nada foi
 > escrito no disco.
+
+> **Dois comandos do roteiro não faziam o que diziam, e a captura registra as
+> duas coisas — o que eles fizeram e o que os substituiu.** O
+> `-replace 'set timeout=\d+'` da Etapa 5 não casa com a linha real do
+> `grub.cfg`, que é `set timeout="30"`, com o número entre aspas: respondeu sem
+> erro e não mudou nada. E o `bcdedit /displayorder <id> /remove` e o
+> `bcdedit /bootsequence <id>` da Etapa 6, sem alvo, operam sobre o `{bootmgr}` —
+> o gerenciador do Windows — e não sobre o `{fwbootmgr}`. O segundo chegou a
+> escrever um `bootsequence` no `{bootmgr}` apontando para um `bootx64.efi` que a
+> ESP do sistema não tem; foi desfeito com `bcdedit /deletevalue` na mesma
+> sessão, e a releitura do `{bootmgr}` está no arquivo, sem `bootsequence`.
+>
+> As duas entradas de firmware criadas no DataTraveler — a de teste e a de
+> controle — foram removidas na mesma noite, com a NVRAM relida em ambos os
+> casos e voltando às duas entradas da Etapa 1. Deixar entrada morta na ordem é
+> o que o [ADR-0021](../../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md)
+> diz não ser segurança, e vale para entrada de medição também.

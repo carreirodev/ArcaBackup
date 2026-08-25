@@ -16,24 +16,66 @@ código vem depois, na Etapa 9.
 | Etapa | O que faz | Status | Feita em |
 |---|---|---|---|
 | 1 | Registrar o estado antes de tocar em nada | ✅ | 2026-08-25 · NVRAM com **uma** entrada só |
-| 2 | Escolher o alvo e conferir as quatro defesas | ✅ | 2026-08-25 · disco 2, as quatro passaram |
-| 3 | Apagar e inicializar em GPT | ✅ | 2026-08-25 · **houve MSR**, removida |
-| 4 | Criar as duas partições | — | |
-| 5 | Instalar o Clonezilla na ARCABOOT | — | |
-| 6 | Criar a entrada de firmware de teste | — | |
-| 7 | **O boot, que é o que decide** | — | |
+| 2 | Escolher o alvo e conferir as quatro defesas | ✅ | 2026-08-25 · **duas vezes**: disco 2 e depois disco 1 |
+| 3 | Apagar e inicializar em GPT | ✅ | 2026-08-25 · **houve MSR nos dois**, removida nos dois |
+| 4 | Criar as duas partições | ✅ | 2026-08-25 · o `GptType` **não** muda ao formatar, e **não** distingue as duas |
+| 5 | Instalar o Clonezilla na ARCABOOT | ✅ | 2026-08-25 · `bootx64.efi` no lugar; o `grub.cfg` tinha aspas |
+| 6 | Criar a entrada de firmware de teste | ✅ | 2026-08-25 · `partition=E:` pegou no SSD, `bootsequence` armado |
+| 7 | **O boot, que é o que decide** | ⏳ | **pronta — é reiniciar** |
 | 8 | Capturar a NVRAM de dentro do boot | — | |
-| 9 | Voltar ao normal | — | |
+| 9 | Voltar ao normal | — | o id a remover é `{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}` |
 
-**O disco está parado em GPT com zero partições**, `LargestFreeExtent`
-256 059 113 472, esperando o `New-Partition` da Etapa 4. A captura viva é
+**O dispositivo está armado e o próximo boot vai para ele.** O alvo é o **disco
+1, KGSSE100 256** — SSD externo USB, GPT, ARCAVAULT em `D:` (NTFS 4096,
+254 381 391 872) e ARCABOOT em `E:` (FAT32 4096, 1 677 721 600), com o Clonezilla
+extraído, o `E:\EFI\boot\bootx64.efi` no lugar e o `grub.cfg` em
+`set timeout="-1"`. A NVRAM tem o `{fwbootmgr}` com `displayorder` inalterado —
+só o `{bootmgr}` — e `bootsequence` apontando para a entrada de teste. A captura
+viva é
 [`recursos/capturas/medicao-gpt-2026-08-25.txt`](../recursos/capturas/medicao-gpt-2026-08-25.txt),
-e ela cresce a cada etapa — está registrada em `PROVENIENCIA.md` com o SHA256 do
-arquivo **parado na Etapa 3**, que muda quando as seguintes escreverem nele.
+registrada em `PROVENIENCIA.md` com o SHA256 do arquivo **parado na Etapa 6**.
 
-> **Nada foi decidido ainda.** Três das nove etapas são preparação, e quem decide
-> é a **Etapa 7**. Das três perguntas que o ADR novo precisa responder — no fim
-> deste documento —, só a segunda está respondida: houve MSR, e ela foi removida.
+> **Trocou-se de dispositivo no meio, e a troca é que produziu o melhor achado
+> do dia.** O roteiro correu inteiro no Kingston DataTraveler Max e emperrou na
+> Etapa 6: o `bcdedit /set device` responde *"A operação foi concluída com
+> êxito"* e **não escreve**, para qualquer partição daquele disco e por qualquer
+> forma. Três controles depois — o `C:` pega, o `F:` de um SSD externo em MBR
+> pega, e o **mesmo SSD convertido para GPT também pega** — a causa está isolada:
+> **não é o GPT, é aquele pendrive.** É o C-6 que `prepare.rs:678` já previa, e
+> agora ele tem um caso concreto com nome e modelo.
+>
+> Das três perguntas que o ADR novo precisa responder — no fim deste documento —,
+> **duas estão respondidas, e cada uma foi medida duas vezes**, em dois
+> dispositivos, com números idênticos. A primeira é da Etapa 7.
+
+### `cargo test` fica vermelho enquanto o marco estiver montado, e está certo
+
+Oito testes falham com o dispositivo armado na mesa. **Nenhum deles é
+regressão** — os oito leem a máquina de verdade, e a máquina está, de propósito,
+no estado que eles existem para acusar:
+
+| Teste | Por quê |
+|---|---|
+| `e2:a_leitura_do_firmware_nao_arma_nada` | há `bootsequence` armado — fui eu, na Etapa 6 |
+| `e7:nao_ha_boot_unico_pendente_nesta_maquina` | o mesmo `bootsequence` |
+| `e4:o_grub_cfg_do_dispositivo_e_um_inerte_conhecido` | o `grub.cfg` está em `timeout="-1"`, e o inerte é `"30"` |
+| `e4:o_dispositivo_esta_inerte_agora` | idem |
+| `e4:desarmar_o_grub_cfg_do_dispositivo_nao_mudaria_um_byte` | idem |
+| `e7:o_grub_cfg_do_dispositivo_continua_inerte_e_e_um_dos_conhecidos` | idem |
+| `e7:armar_e_desarmar_o_dispositivo_de_verdade_se_cancelam` | idem |
+| `e7:a_entrada_do_arca_existe_nesta_maquina_e_e_a_propria` | **anterior a este roteiro**: a entrada `ARCA` não sobreviveu à reinstalação do Windows |
+
+Os sete primeiros somem quando a Etapa 9 desfizer o que a 6 fez e o disco de
+teste sair da mesa. O oitavo é de outra história.
+
+**E há um detalhe que vale saber:** os testes de E4 e E7 acham "o dispositivo"
+pelo rótulo, e o disco de teste deste roteiro tem uma partição `ARCABOOT` e uma
+`ARCAVAULT`. Eles não estão lendo o dispositivo de produção — que nem está
+conectado —, estão lendo **este**. O rótulo não distingue um do outro, e isso
+é uma pergunta em aberto para o código, não para o roteiro.
+
+Os outros **854 testes passam** — 862 no total, oito vermelhos, e os oito com
+endereço conhecido.
 
 ---
 
@@ -61,6 +103,12 @@ depois é registro.
 | Extrair o Clonezilla | copiar para `R:\` como hoje | precisa de `mountvol` primeiro |
 | Superfície de mudança | tabela de partição, e só | tabela + `bcdedit` + instalação + releitura |
 
+**A Variante B se confirmou em 25/08/2026, nas Etapas 4 a 6.** A ARCABOOT nasceu
+`{ebd0a0a2-…}` como previsto, o Windows lhe deu letra, e o
+`bcdedit /set device partition=E:` foi aceito e relido — as três linhas da coluna
+da esquerda são medição agora, e não expectativa. Falta só a linha que nenhuma
+das duas colunas antecipa: se o firmware boota.
+
 **Siga a Variante B.** Ela entrega os três ganhos reais que motivam a mudança —
 o limite de 2 TiB some, a tabela ganha cópia secundária com CRC32, e o esquema
 deixa de ser legado — sem tocar em mais nada. A Variante A só acrescenta o tipo
@@ -83,7 +131,9 @@ bootar**.
 
 ## Pré-requisitos
 
-- [x] Um **segundo** SSD/HD externo, cujo conteúdo você pode perder — o Kingston DataTraveler Max de 238,5 GB
+- [x] Um **segundo** SSD/HD externo, cujo conteúdo você pode perder — começou no
+      Kingston DataTraveler Max de 238,5 GB e terminou no **KGSSE100 256**, do
+      mesmo tamanho; o porquê da troca está na Etapa 6
 - [x] O dispositivo ARCA de produção **desconectado** durante todo o roteiro
 - [x] `clonezilla-live-3.3.3-15-amd64.zip` — a mesma versão do
       [ADR-0018](../docs/adr/0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md);
@@ -198,10 +248,18 @@ CapOut (Get-Partition -DiskNumber $n | Get-Volume | Select-Object DriveLetter,Fi
 > responde a **segunda** das três perguntas do fim do documento, e deixa de ser
 > hipótese para virar requisito de `particionador.rs`.
 >
+> **E ela se repetiu.** Horas depois, no KGSSE100 256 — outro fabricante de
+> controladora, outra porta —, o `Initialize-Disk -PartitionStyle GPT` criou uma
+> MSR **de novo**, com o mesmo `GptType`, o mesmo offset 17 408 e os mesmos
+> 16 759 808 bytes. Duas medições independentes e idênticas: a MSR não é acidente
+> de dispositivo, é o que o Windows faz em GPT, e `particionador.rs` tem de
+> removê-la sempre — não "se houver".
+>
 > **A GPT cobra 1 400 832 bytes.** Num disco de 256 060 514 304, o
 > `LargestFreeExtent` depois de remover a MSR é **256 059 113 472** — a tabela
 > primária no começo e a cópia secundária no fim. É esse o número que a Etapa 4
-> usa nas contas, e a razão de elas não saírem de constante.
+> usa nas contas, e a razão de elas não saírem de constante. Os dois discos
+> mediram o mesmo, o que é esperado: eles têm o mesmo tamanho.
 >
 > Um tropeço registrado: a primeira tentativa desta etapa rodou sob
 > `powershell.exe` 5.1, que leu o `.ps1` UTF-8 como ANSI — o `—` virou `â€"`, a
@@ -258,7 +316,43 @@ mais provável entre MBR e GPT neste projeto, e o código vai precisar dela.
 
 ---
 
-## Etapa 4 — Criar as duas partições
+## Etapa 4 — Criar as duas partições ✅
+
+> **Feita em 25/08/2026, e ela responde a terceira pergunta: o `GptType` sai
+> pronto do `New-Partition`.** As duas partições nasceram com
+> `{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}` — *Basic Data* —, e o `Format-Volume`
+> **não mexeu nele**. É o contrário do MBR, onde as duas nascem com `MbrType 6` e
+> só chegam a 7 e a 12 depois de formatar. Em GPT não há esse segundo passo, e a
+> releitura pode conferir o tipo logo depois de criar.
+>
+> **E há um achado que ninguém tinha pensado em perguntar: o `GptType` não
+> distingue as duas.** Em MBR, `7` (IFS) e `12` (FAT32 LBA) separavam a ARCAVAULT
+> da ARCABOOT, e é disso que vivem as constantes de `preparacao.rs:573,576`. Em
+> GPT as duas têm **o mesmo tipo**, e a releitura deixa de poder dizer qual é qual
+> por aí — sobram o rótulo, o sistema de arquivos e a ordem no disco. Isso muda a
+> linha `preparacao.rs:573,576` da tabela do fim: não é trocar duas constantes por
+> outras duas, é trocar o critério.
+>
+> Os números medidos, e são eles que o código transcreve:
+>
+> | | ARCAVAULT | ARCABOOT |
+> |---|---|---|
+> | partição | 1 | 2 |
+> | offset | 1 048 576 | 254 382 440 448 |
+> | tamanho | 254 381 391 872 | 1 677 721 600 |
+> | `GptType` | `{ebd0a0a2-…}` | `{ebd0a0a2-…}` |
+> | `MbrType` | *vazio* | *vazio* |
+> | `IsActive` | `False` | `False` |
+> | letra | `D:` | `E:` |
+>
+> `IsActive` sai `False` nas duas, como saía em MBR — o boot continua UEFI puro, e
+> `particionador.rs:659` continua certo em não passar `-IsActive`. O `MbrType` sai
+> **vazio**, e não zero: quem o lê em GPT lê ausência.
+>
+> **Esta tabela foi medida duas vezes, e as duas bateram em tudo** — nos dois
+> discos de 256 060 514 304 bytes, os mesmos offsets, os mesmos tamanhos, o mesmo
+> `GptType`, as mesmas letras. Os números acima são do KGSSE100, e os do
+> DataTraveler estão na captura, idênticos.
 
 As contas saem do `LargestFreeExtent` lido agora, e **não** de constante — a
 GPT secundária ocupa espaço no fim do disco que o MBR não ocupava:
@@ -335,7 +429,18 @@ $LB = (Get-Partition -DiskNumber $n | Get-Volume | Where-Object FileSystemLabel 
 
 ---
 
-## Etapa 5 — Instalar o Clonezilla na ARCABOOT
+## Etapa 5 — Instalar o Clonezilla na ARCABOOT ✅
+
+> **Feita em 25/08/2026, nos dois dispositivos.** O `Expand-Archive` levou 3,1 s
+> num e 3,7 s no outro, o `E:\EFI\boot\bootx64.efi` existe com 1 088 816 bytes, e
+> sobraram 1 101 430 784 dos 1 673 527 296 da ARCABOOT — os mesmos bytes nos dois.
+> O Clonezilla cabe folgado nos 1600 MiB, e a conta da Etapa 4 não precisa mudar.
+>
+> **O `-replace` do `grub.cfg` abaixo não funciona, e é um bug do roteiro.** A
+> linha real é `set timeout="30"`, com o número **entre aspas**, e o padrão
+> `set timeout=\d+` não casa com aspas. O comando respondeu sem erro e não mudou
+> nada — quem pegou foi a releitura. O que casa é `set timeout="?-?\d+"?`, e é o
+> que está no bloco abaixo; a linha 4 do arquivo está hoje em `set timeout="-1"`.
 
 Extraia o **zip** (não o ISO) para a raiz da ARCABOOT:
 
@@ -354,7 +459,7 @@ Deixe o menu do Clonezilla parando sozinho, para você ver que subiu:
 
 ```powershell
 $cfg = "${LB}:\boot\grub\grub.cfg"
-(Get-Content $cfg -Raw) -replace 'set timeout=\d+', 'set timeout=-1' | Set-Content $cfg -NoNewline
+(Get-Content $cfg -Raw) -replace 'set timeout="?-?\d+"?', 'set timeout="-1"' | Set-Content $cfg -NoNewline
 
 Cap "grub.cfg — timeout"
 CapOut (Select-String -Path $cfg -Pattern 'set timeout' | Select-Object -First 3)
@@ -362,7 +467,49 @@ CapOut (Select-String -Path $cfg -Pattern 'set timeout' | Select-Object -First 3
 
 ---
 
-## Etapa 6 — Criar a entrada de firmware de teste
+## Etapa 6 — Criar a entrada de firmware de teste ✅
+
+> **Feita em 25/08/2026, na segunda tentativa e noutro dispositivo — e o caminho
+> até ela vale mais do que o resultado.**
+>
+> No DataTraveler Max, o `bcdedit /set <id> device partition=E:` respondeu *"A
+> operação foi concluída com êxito"*, código 0, e a releitura mostrou o device
+> **antigo**: `partition=\Device\HarddiskVolume1`, a ESP do Windows. Repetido,
+> mesma coisa. Por `\Device\HarddiskVolume9` — o caminho real daquela partição —,
+> mesma coisa. O `path`, no mesmo comando e na mesma entrada, pegou de primeira:
+> não era a entrada estar travada, era o elemento `device`.
+>
+> **Isto é o C-6, e `prepare.rs:678` já o tinha escrito** — *"o sucesso do
+> `bcdedit` nunca é prova, e com mídia removível ele responde êxito mantendo o
+> valor antigo"*. O que faltava era um caso concreto. Três controles o cercaram:
+>
+> | Alvo | Disco | Esquema | Pegou? |
+> |---|---|---|---|
+> | `partition=C:` | 0, NVMe interno | GPT | **sim** |
+> | `partition=D:` / `partition=E:` | 2, DataTraveler Max | GPT | não |
+> | `partition=F:` | 1, KGSSE100 256 | MBR | **sim** |
+> | `partition=E:` | 1, KGSSE100 256 | **GPT** | **sim** |
+>
+> A primeira linha mata "é o GPT". A terceira mata "é o USB". **A quarta é a que
+> decide**: mesmo disco, mesma porta, mesma FAT32 com o mesmo Clonezilla dentro,
+> só o esquema mudou de MBR para GPT — e pegou. Sobra um culpado só, e ele tem
+> nome: o **Kingston DataTraveler Max**. O ADR-0014 não tinha razão nisto.
+>
+> **De quebra, uma ambiguidade fechou.** No primeiro controle, apontar por
+> `\Device\HarddiskVolumeN` deu "não pegou" sem dar para dizer se era recusa ou
+> se o `bcdedit` normalizava o caminho de volta para a letra. No SSD deu para
+> dizer: o `/set` do `\Device\…` do `F:` foi relido como `partition=F:`. É
+> **normalização**, e não recusa — o que confirma o `Alvo::ParticaoSemLetra` de
+> `firmware.rs:79` como forma de escrita válida.
+>
+> **E o roteiro tinha um bug de verdade nos dois comandos do fim.** O
+> `bcdedit /displayorder <id> /remove` e o `bcdedit /bootsequence <id>` sem alvo
+> operam sobre o **`{bootmgr}`**, o gerenciador do Windows — não sobre o
+> `{fwbootmgr}`, que é o do firmware. O desenho medido do projeto é outro:
+> `armar.rs:459` faz `/set {fwbootmgr} bootsequence <id>` e `prepare.rs:835` faz
+> `/set {fwbootmgr} displayorder <id> /remove`. Deixado como o roteiro escrevia,
+> o próximo boot mandaria o **Windows Boot Manager** para um `bootx64.efi` que a
+> ESP do sistema não tem. Os blocos abaixo já estão corrigidos.
 
 Ela nasce de uma cópia do `{bootmgr}`, como manda o
 [ADR-0017](../docs/adr/0017-a-entrada-de-firmware-nasce-de-uma-copia-do-bootmgr.md):
@@ -386,16 +533,29 @@ Tire-a da ordem permanente e arme só o próximo boot — o mesmo desenho do
 `bootsequence` que o ADR-0023 mediu:
 
 ```powershell
-bcdedit /displayorder $id /remove
-bcdedit /bootsequence $id
+bcdedit /set "{fwbootmgr}" displayorder $id /remove
+bcdedit /set "{fwbootmgr}" bootsequence $id
 
 Cap "NVRAM com a entrada de teste, antes de reiniciar"
+CapOut (bcdedit /enum "{fwbootmgr}")
 CapOut (bcdedit /enum firmware)
 ```
+
+O `{fwbootmgr}` tem de sair com `displayorder` trazendo **só** o `{bootmgr}` — é
+C-5, a ordem permanente não muda — e `bootsequence` apontando para o `$id`. Foi
+assim que ele saiu em 25/08/2026.
 
 ---
 
 ## Etapa 7 — O boot, que é o que decide
+
+> **Está armada, desde 25/08/2026.** O `{fwbootmgr}` tem `bootsequence`
+> apontando para `{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}`, que aponta para
+> `partition=E:` — a ARCABOOT do KGSSE100 — e para `\EFI\boot\bootx64.efi`. O
+> `displayorder` continua trazendo só o `{bootmgr}`, que é C-5. **É reiniciar.**
+>
+> É um boot único: falhando, o firmware volta para o Windows sozinho, e a marca
+> se gasta. Falhar aqui não deixa a máquina em estado ruim.
 
 > Confira que `$CAP` está salvo antes de reiniciar — o arquivo está no
 > repositório e sobrevive, mas as variáveis da sessão não.
@@ -467,9 +627,17 @@ NVRAM é o que o
 não ser segurança.
 
 ```powershell
-bcdedit /delete $id /f          # o $id anotado na Etapa 6
+$id = "{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}"   # o anotado na Etapa 6
+bcdedit /set "{fwbootmgr}" displayorder $id /remove
+bcdedit /delete $id /f
 bcdedit /enum firmware          # confira: a entrada de teste sumiu
 ```
+
+O `/remove` antes do `/delete` não é supérfluo: o ciclo de boot põe a entrada de
+volta no `displayorder` do `{fwbootmgr}` por conta própria — é o
+[ADR-0009](../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md) —, e
+deletar sem tirar de lá deixaria um identificador órfão na ordem. A NVRAM tem de
+voltar a **duas** entradas: o `{fwbootmgr}` e o `{bootmgr}`, como a Etapa 1 mediu.
 
 Perdido o `$id`, ache pela descrição:
 
@@ -520,9 +688,9 @@ positiva, e é mais barata de guardar do que de refazer.
 
 | Onde | O que muda |
 |---|---|
-| `src/adaptadores/windows/particionador.rs:157` | `-PartitionStyle MBR` → `GPT`, e a remoção da MSR se a Etapa 3 mostrou uma |
-| `src/preparacao.rs:573,576` | `TIPO_MBR_IFS`/`TIPO_MBR_FAT32_LBA` → as constantes de `GptType` medidas |
-| `src/preparacao.rs:510-540` | a releitura passa a conferir `GptType`, e a MSR se ela existir |
+| `src/adaptadores/windows/particionador.rs:157` | `-PartitionStyle MBR` → `GPT`, e a remoção da MSR **sempre** — ela apareceu nos dois dispositivos |
+| `src/preparacao.rs:573,576` | **troca de critério, não de constante**: o `GptType` é o mesmo nas duas, e não separa a ARCAVAULT da ARCABOOT |
+| `src/preparacao.rs:510-540` | a releitura confere `GptType` como tipo *comum*, e passa a distinguir as duas por rótulo/sistema de arquivos/ordem |
 | `src/comandos/prepare.rs:981` | o parágrafo "A estrutura e MBR, e nao GPT" sai da tela |
 | `src/comandos/prepare.rs:1525` | o teste `o_plano_diz_por_que_e_mbr_e_nao_gpt` sai junto |
 | `tests/e10_preparar_o_dispositivo.rs` | os 17 asserts passam a citar a captura nova |
@@ -531,12 +699,29 @@ positiva, e é mais barata de guardar do que de refazer.
 
 O ADR novo precisa responder **três coisas** que só este roteiro mede:
 
-1. o dispositivo GPT bootou, e o device path lido de dentro do boot é *qual*;
-2. houve MSR, e o que foi feito com ela;
-3. o `GptType` sai do `New-Partition` ou do `Format-Volume` — o análogo do
-   achado do `MbrType 6`.
+1. o dispositivo GPT bootou, e o device path lido de dentro do boot é *qual* —
+   **em aberto**, é a Etapa 7;
+2. houve MSR, e o que foi feito com ela — **respondida duas vezes**: houve nos
+   dois dispositivos, `{e3c9e316-…}`, offset 17 408, 16 759 808 bytes, e foi
+   removida nos dois. O código a remove sempre, não "se houver";
+3. o `GptType` sai do `New-Partition` ou do `Format-Volume` — **respondida duas
+   vezes**: sai do `New-Partition`, e o `Format-Volume` não encosta nele. E a
+   resposta traz uma pergunta que ninguém tinha feito: em GPT o tipo **não
+   distingue** a ARCAVAULT da ARCABOOT, e é isso que muda a linha
+   `preparacao.rs:573,576` da tabela acima.
 
-E há uma pendência que vale abrir como issue **independente do resultado**: o
-limite de 2 TiB do MBR não tem defesa nem menção em lugar nenhum do código.
-Ficando em MBR, ele precisa de uma recusa explícita no `prepare`; indo para
-GPT, ele simplesmente deixa de existir — e vale registrar que deixou.
+E o ADR precisa registrar uma quarta coisa, que não estava prevista e que este
+roteiro mediu por acidente: **o `bcdedit` recusa em silêncio o Kingston
+DataTraveler Max**, e o C-6 deixou de ser uma precaução abstrata para virar um
+caso com nome, modelo e quatro controles. A defesa que já existe —
+`Erro::AlvoDoFirmwareRecusado`, em `prepare.rs:694` — é a única coisa entre esse
+silêncio e um dispositivo que o `arca prepare` diria ter preparado.
+
+E há duas pendências que valem issues **independentes do resultado**:
+
+- **O limite de 2 TiB do MBR** não tem defesa nem menção em lugar nenhum do
+  código. Ficando em MBR, ele precisa de uma recusa explícita no `prepare`; indo
+  para GPT, ele simplesmente deixa de existir — e vale registrar que deixou.
+- **A recusa silenciosa do `bcdedit`** merece uma mensagem que diga o que fazer.
+  Hoje o `AlvoDoFirmwareRecusado` diz *esperado* e *tem*; quem lê a tela com um
+  DataTraveler na mão não tem como saber que o problema é o dispositivo.
