@@ -1,0 +1,89 @@
+  Disco 1 ......................... KGSSE100 256 · USB · 238,5 GB
+  Tipo de midia ................... External hard disk media · nao e disco fixo (PR-5)
+  Sistema ......................... IsSystem false · IsBoot false · nao carrega o C:
+  Tabela de particao hoje ......... GPT · vai ser reescrita como GPT
+
+O QUE EXISTE NESTE DISCO HOJE, e vai ser APAGADO:
+  1  NTFS    236,9 GB  "ARCAVAULT"                D:
+  2  FAT32     1,6 GB  "ARCABOOT"                 E:
+
+  ESTE DISCO JA E UM DISPOSITIVO ARCA. Os rotulos acima sao os dele, e o
+  que esta no ARCAVAULT sao AS IMAGENS — todas. Preparar por cima apaga
+  cada uma, e o ARCA nunca apaga imagem em nenhum outro caminho (B-10).
+  Se o que voce quer e reinstalar o Clonezilla sem perder as imagens,
+  este comando NAO faz isso: ele comeca reescrevendo a tabela de particao.
+
+O QUE VAI FICAR NO LUGAR:
+  GPT  1  NTFS   236,9 GB  ARCAVAULT   as imagens moram aqui
+       2  FAT32    1,6 GB  ARCABOOT    o Clonezilla e o ARCA moram aqui
+
+  A estrutura e GPT, e as duas particoes sao de dados basicos — a ARCABOOT
+  nao e uma ESP. E o que foi medido em 25/08/2026: um dispositivo assim
+  BOOTOU nesta maquina, e o caminho que o firmware carregou foi lido de
+  dentro do boot pelo efibootmgr (ADR-0025).
+
+  O Windows cria sozinho uma particao Microsoft Reserved ao inicializar em
+  GPT, e o ARCA a remove: deixada em pe, ela empurraria estas duas para 2 e
+  3, e o dispositivo seria outro.
+
+E O QUE MAIS VAI ACONTECER:
+  Clonezilla 3.3.3-15 · do arquivo local C:\Users\Eduardo\Downloads\clonezilla-live-3.3.3-15-amd64.zip (PR-2)
+  Uma copia do pacote fica no ARCAVAULT, para o dispositivo se reconstruir
+     sozinho (PR-3)
+  Uma entrada de boot chamada `ARCA` e criada no firmware, apontando para o
+     ARCABOOT — e **tirada da ordem permanente** logo em seguida, para que
+     ligar a maquina continue subindo o Windows (C-5)
+  O proprio `arca.exe` e instalado no ARCABOOT, porque o que julga uma
+     restauracao nao pode morar no disco que ela substitui (§4.1)
+
+  O `grub.cfg` fica INERTE: nada roda sozinho ate um `arca backup` (§4.4)
+
+Podemos continuar? (s/N): 
+  Conferido antes de escrever ..... ok · o disco 1 continua sendo `KGSSE100 256` de 238,5 GB
+
+Digite o modelo do disco para confirmar: 
+  Particionando ................... ok · GPT, 2 particoes de dados basicos ({ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}) · sem a MSR que o Windows cria
+  Formatando e rotulando .......... ok · ARCAVAULT (NTFS) em D: · ARCABOOT (FAT32) em E:
+  Conferido apos escrever ......... ok · relido do disco · nenhuma particao ativa, unidade 4096 (C-3)
+  SHA256 conferido ................ ok · 00cee7700433 · de C:\Users\Eduardo\Downloads\clonezilla-live-3.3.3-15-amd64.zip
+  Copia do pacote em ARCAVAULT .... ok · D:\clonezilla-live-3.3.3-15-amd64.zip (PR-3)
+  Extraindo ....................... ok · E:\
+  Estado inerte ................... ok · o `set default` do pacote era "0", e voltou para `live-default`
+  Instalando o ARCA em ARCABOOT ... ok · E:\arca\arca.exe (§4.1)
+  Entrada de firmware ............. criada · ARCA · {f4057bd7-65a4-11f1-b0f1-aa4ed9bd2b34} · partition=E:
+  Ordem de boot ................... ok · a entrada saiu da ordem permanente · o boot unico nao precisa dela la (C-5)
+
+Dispositivo pronto.
+
+  O `grub.cfg` esta INERTE: bootar neste dispositivo abre o menu do
+  Clonezilla e espera alguem (§4.4). Nada roda sozinho ate um `arca backup`.
+  A entrada de firmware existe e esta FORA da ordem permanente — ligar a
+  maquina continua subindo o Windows, com ou sem este dispositivo conectado.
+
+  O ARCAVAULT esta em D: e o ARCABOOT em E:. As letras mudam de uma
+  conexao para outra; os rotulos, nao — e e por rotulo que o ARCA acha o
+  dispositivo (B-1, S-3).
+
+  SE VOCE TEM OUTRO DISPOSITIVO ARCA CONECTADO, desconecte um dos dois: o
+  ARCA opera um por vez, e com dois `arca backup` e `arca restore` recusam
+  por rotulo repetido (C-10).
+
+  ANTES DO PRIMEIRO BACKUP, RODE:  arca sondar
+
+  A receita nomeia o disco pelo nome que o LINUX lhe da (`nvme0n1`), e o
+  Windows nao conhece esse nome. O ARCA o descobre lendo um `blkdev.list`,
+  casando o modelo do disco (§4.5) — e este dispositivo acabou de nascer,
+  entao nao ha nenhum aqui. Um `arca backup` agora RECUSA, dizendo isso.
+
+  O ARCA nao pergunta o nome nem o deduz do indice: um `nvme1n1` digitado
+  por engano entraria numa receita que apaga um disco, e nao ha nada do
+  lado Windows contra o que conferi-lo.
+
+  `arca sondar` resolve isso num reinicio: ele NAO faz backup nem
+  restauracao — roda o `lsblk` no Linux do Clonezilla, grava a saida no
+  ARCAVAULT e desliga. Depois de `arca resultado`, `arca backup <nome>`
+  funciona.
+
+  E ele responde, de quebra, a unica coisa que o `arca prepare` NAO consegue
+  conferir sozinho: se este dispositivo boota mesmo, pela entrada de firmware
+  que acabou de ser criada (P-26).

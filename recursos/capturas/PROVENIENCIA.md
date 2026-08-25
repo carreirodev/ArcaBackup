@@ -985,8 +985,16 @@ boot. São dois arquivos:
 
 | Arquivo | O que é | SHA256 |
 |---|---|---|
-| `medicao-gpt-2026-08-25.txt` | As nove etapas em **dois** dispositivos de 238,5 GB, 52 951 bytes | `d9a65529…1ae04589` |
+| `medicao-gpt-2026-08-25.txt` | As nove etapas em **dois** dispositivos de 238,5 GB, 52 951 bytes | `eecd58a4…75651ed1` |
 | `efibootmgr-gpt-2026-08-25.txt` | O que o **Linux** viu de dentro do live, 6145 bytes | `c7a07e73…2e0a54c4` |
+| `arca-prepare-2026-08-25-marco-gpt.txt` | O `arca prepare` rodado **pelo código**, e não à mão, 4979 bytes | `26d8b08b…23bad99a` |
+
+> **Os quatro NUL da primeira captura viraram espaço, e é a única edição feita
+> nela.** O `Get-Partition` imprime o `DriveLetter` de uma partição sem letra
+> como `[char]0`, e o arquivo tinha quatro — dois por dispositivo. Era o que
+> fazia o git tratar a captura como binária e engolir o diff a cada commit, num
+> arquivo cujo valor é justamente poder ser lido linha a linha. O SHA256 acima é
+> o de depois da troca.
 
 **Os dois são finais: o roteiro acabou.** O primeiro é o que o PowerShell e o
 `bcdedit` responderam, escrito etapa a etapa no mesmo arquivo; o segundo é o
@@ -1130,12 +1138,48 @@ trazia a entrada de teste em primeiro, na frente do `{bootmgr}`, com `timeout 1`
 mesmo assim, com o SSD conectado, a máquina entrou no Windows. O `efibootmgr`
 media `BootOrder: 0000,0001` — o Windows primeiro —, e foi ele que acertou.
 
+### O `arca prepare` rodou pelo código, e essa distinção quase passou
+
+O marco acima foi feito **à mão**, com PowerShell. Ele prova que a *estrutura*
+GPT boota — não que o *código que a produz* funciona. As três capturas de
+execução do `arca prepare` que este diretório guardava eram todas de 23/08, de
+quando o código era MBR: um dispositivo preparado pelo comando novo nunca tinha
+existido.
+
+`arca-prepare-2026-08-25-marco-gpt.txt` é essa execução, no mesmo KGSSE100,
+horas depois. O que ela produziu foi conferido **por fora do ARCA**, com
+`Get-Partition` e `bcdedit`, e bate com o que a mão tinha feito:
+
+| | à mão | pelo código |
+|---|---|---|
+| partições | 2, sem MSR | 2, sem MSR |
+| `GptType` | `{ebd0a0a2-…}` nas duas | idem |
+| offsets | 1 048 576 · 254 382 440 448 | idem |
+| tamanhos | 254 381 391 872 · 1 677 721 600 | idem |
+| `IsActive` | `False` nas duas | idem |
+| unidade | 4096 | idem |
+| entrada de firmware | criada à mão | `criada · ARCA · partition=E:` |
+| `displayorder` | intocado | intocado — só o `{bootmgr}` |
+
+E o `grub.cfg` saiu **inerte** — `set default="live-default"` —, que é o
+`prepare` desarmando o que instala (ADR-0018), e é exatamente o passo que o
+roteiro do marco esquecia de fazer à mão.
+
 ### O que ainda não está
+
+**O boot pela entrada que o código criou.** O dispositivo de 25/08 bootou pela
+entrada que uma pessoa criou com `bcdedit`; a que o `arca prepare` criou nunca
+foi exercitada. A tela do próprio comando diz isso em vez de prometer o
+contrário — *"a unica coisa que o `arca prepare` NAO consegue conferir sozinho:
+se este dispositivo boota mesmo, pela entrada de firmware que acabou de ser
+criada (P-26)"*. Quem fecha isso é um `arca sondar`, que arma o boot único e
+reinicia.
 
 **Se o identificador é estável dentro de uma sessão.** Nas seis releituras deste
 roteiro, sem reinício, nada mudou; entre boots, mudou. A distinção não foi
-medida de propósito, e todo lugar do código que guarda um identificador de
-firmware e o usa depois depende dela.
+medida de propósito. Desde 25/08 ela não tem consequência para este código — o
+`armar` e o `prepare` conferem a identidade pela `description` —, mas continua
+valendo para quem escrever a próxima coisa que guarde um identificador.
 
 **Se o bloqueio do DataTraveler Max é do modelo ou daquela unidade.** Um
 dispositivo só foi testado.

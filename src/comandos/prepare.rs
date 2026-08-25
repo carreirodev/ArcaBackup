@@ -1001,13 +1001,12 @@ pub fn montar_o_plano(preparacao: &Preparacao, iso: Option<&Path>) -> String {
 
     saida.push_str(
         "\n  A estrutura e GPT, e as duas particoes sao de dados basicos — a ARCABOOT\n\
-         \x20nao e uma ESP. E o que foi medido em 25/08/2026: um dispositivo assim\n\
-         \x20BOOTOU nesta maquina, e o caminho que o firmware carregou foi lido de\n\
-         \x20dentro do boot pelo efibootmgr (ADR-0025).\n\
-         \x20\n\
-         \x20O Windows cria sozinho uma particao Microsoft Reserved ao inicializar em\n\
-         \x20GPT, e o ARCA a remove: deixada em pe, ela empurraria estas duas para 2 e\n\
-         \x203, e o dispositivo seria outro.\n",
+         \x20 nao e uma ESP. E o que foi medido em 25/08/2026: um dispositivo assim\n\
+         \x20 BOOTOU nesta maquina, e o caminho que o firmware carregou foi lido de\n\
+         \x20 dentro do boot pelo efibootmgr (ADR-0025).\n\n\
+         \x20 O Windows cria sozinho uma particao Microsoft Reserved ao inicializar em\n\
+         \x20 GPT, e o ARCA a remove: deixada em pe, ela empurraria estas duas para 2 e\n\
+         \x20 3, e o dispositivo seria outro.\n",
     );
 
     saida.push_str("\nE O QUE MAIS VAI ACONTECER:\n");

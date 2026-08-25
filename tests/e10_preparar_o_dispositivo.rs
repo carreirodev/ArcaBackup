@@ -655,6 +655,56 @@ const MARCO_2: &str = include_str!("../recursos/capturas/arca-prepare-2026-08-23
 const FIRMWARE_DO_MARCO: &str =
     include_str!("../recursos/capturas/arca-prepare-2026-08-23-criacao-da-entrada.txt");
 
+/// A tela do `arca prepare` rodado **de verdade** com o código GPT, em
+/// 25/08/2026, sobre o KGSSE100 desta mesa.
+///
+/// É o segundo marco de execução deste projeto, e ele existe por uma distinção
+/// que quase passou: o marco em GPT do mesmo dia foi feito **à mão**, com
+/// PowerShell, e provou que a *estrutura* boota. Não provava que o *código que
+/// a produz* funciona — as três capturas de execução do `arca prepare` eram
+/// todas de 23/08, de quando o código era MBR.
+const MARCO_GPT: &str = include_str!("../recursos/capturas/arca-prepare-2026-08-25-marco-gpt.txt");
+
+#[test]
+fn o_marco_em_gpt_rodou_pelo_codigo_e_nao_a_mao() {
+    // O que a execução real escreveu na tela, e cada linha é uma coisa que só
+    // o código faz — o `Remove-Partition` da MSR, o `GptType` relido, a
+    // entrada de firmware criada do zero e tirada da ordem.
+    assert!(
+        MARCO_GPT
+            .contains("Particionando ................... ok · GPT, 2 particoes de dados basicos"),
+        "a linha do particionamento em GPT"
+    );
+    assert!(
+        MARCO_GPT.contains(preparacao::TIPO_GPT_DADOS_BASICOS),
+        "e o GptType relido do disco, na tela"
+    );
+    assert!(
+        MARCO_GPT.contains("sem a MSR que o Windows cria"),
+        "a MSR foi removida pelo codigo, e a tela diz"
+    );
+    assert!(
+        MARCO_GPT.contains("nenhuma particao ativa, unidade 4096 (C-3)"),
+        "a releitura de PR-5"
+    );
+    assert!(
+        MARCO_GPT.contains("Entrada de firmware ............. criada · ARCA ·"),
+        "a entrada nasceu do `/copy`, e a tela distingue `criada` de `reusada`"
+    );
+    assert!(
+        MARCO_GPT.contains("a entrada saiu da ordem permanente"),
+        "C-5: o `bcdedit /copy` a poe no displayorder e o ARCA a tira"
+    );
+    assert!(MARCO_GPT.contains("Dispositivo pronto."), "e terminou");
+
+    // E o que ele **não** conseguiu conferir sozinho continua dito na tela, em
+    // vez de ficar implícito: quem responde se o dispositivo boota é o boot.
+    assert!(
+        MARCO_GPT.contains("se este dispositivo boota mesmo"),
+        "a tela nao promete o que o comando nao mediu (P-26)"
+    );
+}
+
 #[test]
 fn o_marco_produziu_a_estrutura_transcrita() {
     // O `arca prepare` rodou em hardware em 23/08/2026 e a releitura de PR-5
