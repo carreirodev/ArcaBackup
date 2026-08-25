@@ -82,7 +82,10 @@ fn main() {
 
     println!("═══ O ORCAMENTO DO §10.2.3, CONTRA A MEDICAO ═══\n");
     println!("  {:<46} {:>6}", "Teto do kernel (COMMAND_LINE_SIZE)", TETO);
-    println!("  {:<46} {:>6}", "Reservado para o menuentry base", RESERVADO);
+    println!(
+        "  {:<46} {:>6}",
+        "Reservado para o menuentry base", RESERVADO
+    );
     println!(
         "  {:<46} {:>6}",
         "Sobra orcada para o que o ARCA gera",
@@ -94,11 +97,7 @@ fn main() {
         "Linha do `live-toram` — o menuentry base",
         base.len()
     );
-    println!(
-        "  {:<46} {:>6}",
-        "Linha armada, inteira",
-        armada.len()
-    );
+    println!("  {:<46} {:>6}", "Linha armada, inteira", armada.len());
     println!();
 
     // Os dois numeros que o codigo de fato confere e a receita de fato gera. A
@@ -145,11 +144,7 @@ fn main() {
         "Receita sozinha, com o nome de 48",
         pior.comando().len()
     );
-    println!(
-        "  {:<46} {:>6}",
-        "Linha armada, inteira",
-        linha_pior.len()
-    );
+    println!("  {:<46} {:>6}", "Linha armada, inteira", linha_pior.len());
     println!(
         "  {:<46} {:>6}",
         "Folga da linha pronta contra o teto",

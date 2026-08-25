@@ -98,11 +98,9 @@ impl fmt::Display for Estimativa {
                 "~{quanto} · CABE POR POUCO: ha {} livres, menos de 1,5x o necessario",
                 tamanho(self.livre)
             ),
-            Veredito::Insuficiente => write!(
-                f,
-                "~{quanto} · NAO CABE: ha {} livres",
-                tamanho(self.livre)
-            ),
+            Veredito::Insuficiente => {
+                write!(f, "~{quanto} · NAO CABE: ha {} livres", tamanho(self.livre))
+            }
         }
     }
 }
@@ -194,7 +192,10 @@ mod testes {
         assert_eq!(minimo, 45_000);
 
         // Abaixo do minimo: recusa. Um byte abaixo ja e recusa.
-        assert_eq!(avaliar(0, 100_000, minimo - 1).veredito, Veredito::Insuficiente);
+        assert_eq!(
+            avaliar(0, 100_000, minimo - 1).veredito,
+            Veredito::Insuficiente
+        );
 
         // Exatamente o minimo: cabe, e por pouco.
         assert_eq!(avaliar(0, 100_000, minimo).veredito, Veredito::Apertado);

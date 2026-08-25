@@ -115,9 +115,8 @@ pub fn ler(texto: &str) -> Vec<DiscoDaImagem> {
             continue;
         }
 
-        let ate_o_fim = |de: usize| -> String {
-            caracteres[de.min(caracteres.len())..].iter().collect()
-        };
+        let ate_o_fim =
+            |de: usize| -> String { caracteres[de.min(caracteres.len())..].iter().collect() };
 
         // `disk` e o que separa um disco de uma particao (`part`) e de um
         // dispositivo de loop (`loop`). So o disco interessa: e ele que a
@@ -135,7 +134,11 @@ pub fn ler(texto: &str) -> Vec<DiscoDaImagem> {
         // para pegar o primeiro campo. Num disco em que os dois diferem — um
         // multipath tem `NAME=mpatha` e `KNAME=dm-0` — o nome lido seria o do
         // dispositivo de baixo, e a receita nomearia outra coisa.
-        let Some(nome) = ate_o_fim(nome_em).split_whitespace().next().map(str::to_string) else {
+        let Some(nome) = ate_o_fim(nome_em)
+            .split_whitespace()
+            .next()
+            .map(str::to_string)
+        else {
             continue;
         };
         let modelo = ate_o_fim(modelo_em).trim().to_string();
@@ -573,16 +576,16 @@ mod testes {
     /// O `blkdev.list` de `2026-08-21_WindowsCompleto`, copiado do dispositivo
     /// em 22/08/2026. As larguras de coluna sao as do arquivo.
     const DO_DISPOSITIVO: &str = concat!(
-"KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
-"loop0     loop0       466.2M loop squashfs /run/live/rootfs/filesystem.squashfs \n",
-"sda       sda         238.5G disk                                               KGSSE100256\n",
-"sda1      |-sda1      236.9G part ntfs     /home/partimag                       \n",
-"sda2      `-sda2        1.6G part vfat                                          \n",
-"nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G\n",
-"nvme0n1p1 |-nvme0n1p1   300M part vfat                                          \n",
-"nvme0n1p2 |-nvme0n1p2    16M part                                               \n",
-"nvme0n1p3 |-nvme0n1p3 464.5G part ntfs                                          \n",
-"nvme0n1p4 `-nvme0n1p4     1G part ntfs                                          \n",
+        "KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
+        "loop0     loop0       466.2M loop squashfs /run/live/rootfs/filesystem.squashfs \n",
+        "sda       sda         238.5G disk                                               KGSSE100256\n",
+        "sda1      |-sda1      236.9G part ntfs     /home/partimag                       \n",
+        "sda2      `-sda2        1.6G part vfat                                          \n",
+        "nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G\n",
+        "nvme0n1p1 |-nvme0n1p1   300M part vfat                                          \n",
+        "nvme0n1p2 |-nvme0n1p2    16M part                                               \n",
+        "nvme0n1p3 |-nvme0n1p3 464.5G part ntfs                                          \n",
+        "nvme0n1p4 `-nvme0n1p4     1G part ntfs                                          \n",
     );
 
     fn listas() -> Vec<Lista> {
@@ -639,8 +642,8 @@ mod testes {
         // multipath elas diferem — `NAME=mpatha`, `KNAME=dm-0` — e ler o
         // `KNAME` daria o dispositivo de baixo em vez do disco.
         let multipath = concat!(
-"KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
-"dm-0      mpatha      465.8G disk                                               ACME ARRAY\n",
+            "KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
+            "dm-0      mpatha      465.8G disk                                               ACME ARRAY\n",
         );
 
         assert_eq!(
@@ -705,7 +708,10 @@ mod testes {
     fn sem_imagem_nenhuma_o_nome_fica_por_determinar() {
         // O oraculo so existe depois do primeiro backup. Isto e uma resposta,
         // e nao uma falha a contornar com um palpite.
-        assert_eq!(nome_do_disco("KINGSTON SNV3S500G", &[]), Err(SemNome::SemOraculo));
+        assert_eq!(
+            nome_do_disco("KINGSTON SNV3S500G", &[]),
+            Err(SemNome::SemOraculo)
+        );
     }
 
     #[test]
@@ -874,9 +880,9 @@ mod testes {
     /// O que a sondagem veria nesta maquina hoje: o mesmo par nome-modelo do
     /// `blkdev.list` das imagens.
     const DA_SONDAGEM: &str = concat!(
-"KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
-"sda       sda         238.5G disk                                               KGSSE100256\n",
-"nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G\n",
+        "KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
+        "sda       sda         238.5G disk                                               KGSSE100256\n",
+        "nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G\n",
     );
 
     #[test]
@@ -1061,8 +1067,11 @@ mod testes {
         };
         let recente = DO_DISPOSITIVO.replace("nvme0n1   nvme0n1", "nvme1n1   nvme1n1");
 
-        let achado =
-            nome_do_disco("KINGSTON SNV3S500G", &[antiga, da_imagem("de-hoje", &recente)]).unwrap();
+        let achado = nome_do_disco(
+            "KINGSTON SNV3S500G",
+            &[antiga, da_imagem("de-hoje", &recente)],
+        )
+        .unwrap();
 
         assert_eq!(
             achado.disco.como_texto(),

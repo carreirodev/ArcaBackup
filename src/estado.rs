@@ -111,7 +111,9 @@ impl MomentoDoArmar {
         }
 
         // `DDDD-DD-DDTDD:DD:DD±DD:DD`, posicao a posicao.
-        const DIGITOS: [usize; 18] = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18, 20, 21, 23, 24];
+        const DIGITOS: [usize; 18] = [
+            0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18, 20, 21, 23, 24,
+        ];
         const FIXOS: [(usize, char); 6] = [
             (4, '-'),
             (7, '-'),
@@ -122,7 +124,9 @@ impl MomentoDoArmar {
         ];
 
         if DIGITOS.iter().any(|i| !caracteres[*i].is_ascii_digit())
-            || FIXOS.iter().any(|(i, esperado)| caracteres[*i] != *esperado)
+            || FIXOS
+                .iter()
+                .any(|(i, esperado)| caracteres[*i] != *esperado)
             || !matches!(caracteres[19], '+' | '-')
         {
             return Err(recusar());
@@ -457,7 +461,8 @@ pub fn ler(arquivos: &dyn Arquivos, caminho: &Path) -> Resultado<Estado> {
 /// caros deste projeto.
 fn campo(chave: &str, valor: &str) -> Result<String, RecusaDoEstado> {
     for caractere in valor.chars() {
-        if caractere == '"' || caractere == '\\' || caractere.is_control() || !caractere.is_ascii() {
+        if caractere == '"' || caractere == '\\' || caractere.is_control() || !caractere.is_ascii()
+        {
             return Err(RecusaDoEstado::ValorPrecisaEscape {
                 chave: chave.to_string(),
                 caractere,
@@ -907,7 +912,10 @@ mod testes {
         .to_string();
 
         for nome in ["backup", "restauracao", "verificacao", "sondagem"] {
-            assert!(recusa.contains(nome), "a mensagem nao cita `{nome}`: {recusa}");
+            assert!(
+                recusa.contains(nome),
+                "a mensagem nao cita `{nome}`: {recusa}"
+            );
         }
     }
 
@@ -1347,9 +1355,7 @@ mod testes {
 
         assert_eq!(
             Estado::de_json(de_antes),
-            Err(RecusaDoEstado::ChaveFaltando {
-                chave: "situacao"
-            })
+            Err(RecusaDoEstado::ChaveFaltando { chave: "situacao" })
         );
     }
 

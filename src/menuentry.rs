@@ -306,7 +306,10 @@ mod testes {
     /// com nome, e diferente de afrouxar a comparacao — qualquer outra
     /// divergencia continua reprovando.
     fn sem_o_espaco_duplo(texto: &str) -> String {
-        texto.replace("en_US.UTF-8  keyboard-layouts", "en_US.UTF-8 keyboard-layouts")
+        texto.replace(
+            "en_US.UTF-8  keyboard-layouts",
+            "en_US.UTF-8 keyboard-layouts",
+        )
     }
 
     #[test]
@@ -424,7 +427,10 @@ mod testes {
         let armado = grub::armar(INERTE, &bloco).expect("arma");
 
         assert!(armado.contains(&format!("set default=\"{ID_DO_ARCA}\"")));
-        assert_eq!(grub::bloco_do_arca(&armado).as_deref(), Some(bloco.as_str()));
+        assert_eq!(
+            grub::bloco_do_arca(&armado).as_deref(),
+            Some(bloco.as_str())
+        );
 
         let desarmado = grub::desarmar(&armado).expect("desarma");
         assert_eq!(desarmado.texto, INERTE);
@@ -494,7 +500,10 @@ mod testes {
         .expect("substitui");
 
         assert!(saida.contains("vga=788"), "o vga foi corrompido: {saida}");
-        assert!(saida.contains("ga=9 ocs_live_run"), "o novo nao entrou na ancora: {saida}");
+        assert!(
+            saida.contains("ga=9 ocs_live_run"),
+            "o novo nao entrou na ancora: {saida}"
+        );
     }
 
     #[test]
@@ -523,6 +532,9 @@ mod testes {
         let bloco = derivar(&em_crlf, &parametros_da_teste_02()).expect("deriva");
 
         assert!(bloco.ends_with("}\r\n"));
-        assert!(!bloco.contains("\n\r"), "quebra de linha misturada: {bloco:?}");
+        assert!(
+            !bloco.contains("\n\r"),
+            "quebra de linha misturada: {bloco:?}"
+        );
     }
 }

@@ -52,7 +52,9 @@ pub enum EstadoDoJob {
     /// encerra e o `arca resultado`, ao colher; o arquivo continua no
     /// dispositivo porque ele e o unico registro que liga um selo a um nome
     /// (ver [`crate::estado::Situacao`]).
-    Colhido { estado: Estado },
+    Colhido {
+        estado: Estado,
+    },
 
     /// O `estado.json` esta la e nao da para entender. **Nao e "nao ha job"**:
     /// o dispositivo pode estar armado, e o que dizia qual job era este se
@@ -61,7 +63,9 @@ pub enum EstadoDoJob {
     /// Carrega o motivo em texto porque ha duas origens diferentes com o mesmo
     /// significado para quem lê — o arquivo nao se deixou abrir, ou abriu e
     /// nao se deixou entender — e nenhuma das duas pode virar ausencia.
-    Ilegivel { motivo: String },
+    Ilegivel {
+        motivo: String,
+    },
 
     /// Nao ha caminho para o `estado.json`, e isso nao e o mesmo que nao haver
     /// job: e o ARCA nao ter conseguido perguntar.
@@ -71,7 +75,9 @@ pub enum EstadoDoJob {
     /// (`Erro::VolumeSemLetra`). No segundo o dispositivo esta na mesa e pode
     /// ter job armado — dizer "sem ARCABOOT" ali mandaria alguem procurar um
     /// dispositivo que ja esta conectado.
-    SemOndeOlhar { motivo: String },
+    SemOndeOlhar {
+        motivo: String,
+    },
 }
 
 /// Tudo que o `status` colheu, antes de virar texto.
@@ -98,7 +104,11 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
             Some(achado) => format!("{} ({:?})", achado.descricao, achado.procedencia),
             None => "nenhuma".to_string(),
         },
-        if firmware.tem_boot_unico() { "armado" } else { "nao armado" },
+        if firmware.tem_boot_unico() {
+            "armado"
+        } else {
+            "nao armado"
+        },
         match &estado_do_job {
             EstadoDoJob::Nenhum => "nenhum".to_string(),
             EstadoDoJob::Pendente { estado, desfecho } => format!(
@@ -744,9 +754,7 @@ fn secao_do_job(leitura: &Leitura, estado: &EstadoDoJob) -> String {
 #[cfg(test)]
 mod testes {
     use super::*;
-    use crate::duplos::{
-        ArquivosEmMemoria, ArquivosQueRecusam, RelogioParado, momento, volume,
-    };
+    use crate::duplos::{ArquivosEmMemoria, ArquivosQueRecusam, RelogioParado, momento, volume};
     use crate::estado::{MomentoDoArmar, Situacao};
     use crate::imagens::{Especie, Veredito};
     use crate::nome::Nome;
@@ -1424,10 +1432,7 @@ mod testes {
             !saida.contains("`sondagem` lê a imagem"),
             "a tela diz que a sondagem lê a imagem, e ela nao lê:\n{saida}"
         );
-        assert!(
-            saida.contains("a sondagem lê TODOS os discos"),
-            "{saida}"
-        );
+        assert!(saida.contains("a sondagem lê TODOS os discos"), "{saida}");
 
         // E o job aparece sem par de crases vazio no lugar do nome.
         assert!(saida.contains("sondagem · POR COLHER"), "{saida}");
@@ -1495,7 +1500,10 @@ mod testes {
         // `estado.json` (C-1). As duas linhas aparecem, e cada uma diz o que e.
         let saida = com_estado(job_pendente(Encontrado::SemArquivo));
 
-        assert!(saida.contains(&linha("Boot unico", "nao armado")), "{saida}");
+        assert!(
+            saida.contains(&linha("Boot unico", "nao armado")),
+            "{saida}"
+        );
         assert!(saida.contains("backup `2026-08-22_Apps`"), "{saida}");
     }
 

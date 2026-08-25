@@ -117,7 +117,10 @@ fn o_desfecho_do_marco_e_julgado_como_operacao_concluida() {
         lido.linhas_de_selo, 1,
         "o desfecho do marco tem de ter exatamente uma linha de selo: {DO_MARCO:?}"
     );
-    assert!(lido.fim, "o desfecho do marco perdeu o ARCA_FIM: {DO_MARCO:?}");
+    assert!(
+        lido.fim,
+        "o desfecho do marco perdeu o ARCA_FIM: {DO_MARCO:?}"
+    );
     assert!(
         lido.deu_certo,
         "o desfecho do marco perdeu o ARCA_BACKUP=OK: {DO_MARCO:?}"

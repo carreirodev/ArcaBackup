@@ -177,9 +177,9 @@ fn montar_ensaio(dispositivo: &Dispositivo, caminho: &str) -> String {
 mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
-    use crate::duplos::{ParticionadorDeMentira, 
-        ArquivosEmMemoria, DiscosDeMentira, ConsoleDeMentira, EntropiaDeMentira, FirmwareDeMentira, RelogioParado,
-        SistemaDeMentira,
+    use crate::duplos::{
+        ArquivosEmMemoria, ConsoleDeMentira, DiscosDeMentira, EntropiaDeMentira, FirmwareDeMentira,
+        ParticionadorDeMentira, RelogioParado, SistemaDeMentira,
     };
     use crate::erro::Erro;
     use crate::registro::Registro;

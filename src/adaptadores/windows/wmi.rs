@@ -141,7 +141,9 @@ pub fn consultar() -> Resultado<String> {
             // Aqui sim o stderr interessa: e onde a recusa aparece. Com o
             // progresso silenciado, um stderr nao vazio quer dizer alguma
             // coisa.
-            saida: de_pagina_de_codigo(&saida.stderr, pagina).trim().to_string(),
+            saida: de_pagina_de_codigo(&saida.stderr, pagina)
+                .trim()
+                .to_string(),
         });
     }
 
@@ -153,8 +155,7 @@ pub fn consultar() -> Resultado<String> {
 /// Escrito a mao pelo mesmo motivo do `estado.json` (ADR-0006): sao dezoito
 /// linhas e nenhuma arvore de dependencias.
 pub(super) fn base64_de_utf16(texto: &str) -> String {
-    const ALFABETO: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALFABETO: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     let bytes: Vec<u8> = texto
         .encode_utf16()
@@ -503,7 +504,10 @@ mod testes {
         // §5.2. Os quatro campos sao exigidos — a revisao da E6 pegou dois
         // que adivinhavam.
         let completo = r#"{"Index":0,"Model":"X","Size":1000,"MediaType":"Fixed hard disk media","Letras":["C:"],"Livre":100}"#;
-        assert!(ler(&format!("[{completo}]")).is_ok(), "o completo tem de passar");
+        assert!(
+            ler(&format!("[{completo}]")).is_ok(),
+            "o completo tem de passar"
+        );
 
         for faltando in [
             r#""Index":0,"#,

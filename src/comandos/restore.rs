@@ -155,10 +155,7 @@ pub enum RecusaDaRestauracao {
     SemMedidaDoDestino { modelo: String },
 
     /// O setor logico do destino nao e o da origem.
-    SetorDivergente {
-        origem: u64,
-        destino: u64,
-    },
+    SetorDivergente { origem: u64, destino: u64 },
 
     /// R-7: o disco na mesa **nao e** o disco de que a imagem veio.
     ///
@@ -1348,10 +1345,10 @@ Sector size (logical/physical): 512/512 bytes
 
     /// O `blkdev.list` da mesma imagem, com as larguras de coluna do arquivo.
     const BLKDEV: &str = concat!(
-"KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
-"sda       sda         238.5G disk                                               KGSSE100256\n",
-"nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G\n",
-);
+        "KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
+        "sda       sda         238.5G disk                                               KGSSE100256\n",
+        "nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G\n",
+    );
 
     const COMANDO: &str = "/usr/sbin/ocs-sr -q2 -j2 -z9p -i 4096 -gm -sfsck -senc -batch -p true savedisk 2026-08-22_Apps nvme0n1";
 
@@ -1807,11 +1804,8 @@ Sector size (logical/physical): 512/512 bytes
 
     #[test]
     fn a_imagem_desta_mesa_passa_pela_conferencia() {
-        let conferido = conferir_a_imagem(
-            &arquivos_da_imagem(),
-            Path::new(r"E:\2026-08-22_Apps"),
-        )
-        .expect("a imagem do dispositivo tem de passar");
+        let conferido = conferir_a_imagem(&arquivos_da_imagem(), Path::new(r"E:\2026-08-22_Apps"))
+            .expect("a imagem do dispositivo tem de passar");
 
         assert_eq!(conferido.disco, "nvme0n1");
         assert_eq!(conferido.origem.setores, 976_773_168);
@@ -1824,8 +1818,8 @@ Sector size (logical/physical): 512/512 bytes
 
     #[test]
     fn sem_o_arquivo_disk_a_restauracao_para() {
-        let arquivos = crate::duplos::ArquivosEmMemoria::novo()
-            .com(r"E:\imagem\nvme0n1-gpt.sgdisk", SGDISK);
+        let arquivos =
+            crate::duplos::ArquivosEmMemoria::novo().com(r"E:\imagem\nvme0n1-gpt.sgdisk", SGDISK);
 
         assert!(matches!(
             conferir_a_imagem(&arquivos, Path::new(r"E:\imagem")),
@@ -2034,7 +2028,17 @@ Sector size (logical/physical): 512/512 bytes
 
         // O `0` e o erro mais provavel de quem conta de zero, e o `3` e o
         // indice que o residuo teria se ele contasse. Nenhum dos dois escolhe.
-        for fora in ["0", "3", "-1", "", " ", "um", "1.0", "1 2", "9999999999999999999999"] {
+        for fora in [
+            "0",
+            "3",
+            "-1",
+            "",
+            " ",
+            "um",
+            "1.0",
+            "1 2",
+            "9999999999999999999999",
+        ] {
             assert!(
                 escolher_pelo_indice(&oferta, fora).is_none(),
                 "`{fora}` nao pode escolher um disco para apagar"
@@ -2134,7 +2138,10 @@ Sector size (logical/physical): 512/512 bytes
 
         let aprovada = imagem("x", Some(Veredito::Aprovada));
         let saida = montar(&plano_com(&aprovada, &destino, &retrato));
-        assert!(!saida.contains("REPROVADA") && !saida.contains("SEM VEREDITO"), "{saida}");
+        assert!(
+            !saida.contains("REPROVADA") && !saida.contains("SEM VEREDITO"),
+            "{saida}"
+        );
     }
 
     #[test]
@@ -2182,7 +2189,10 @@ Sector size (logical/physical): 512/512 bytes
         let desarme = desarme_que_achou_receita();
         let saida = cabecalho_com(Some(&desarme));
 
-        assert!(saida.contains("Dispositivo ARCA: ARCAVAULT (E:)"), "{saida}");
+        assert!(
+            saida.contains("Dispositivo ARCA: ARCAVAULT (E:)"),
+            "{saida}"
+        );
         assert!(saida.contains("ok · havia receita armada"), "{saida}");
     }
 
@@ -2212,7 +2222,10 @@ Sector size (logical/physical): 512/512 bytes
     fn com_o_dispositivo_a_frente_o_aviso_diz_que_religar_restaura_de_novo() {
         let saida = montar_o_armado(&armado_de_teste(), OrdemDeBoot::DispositivoEmPrimeiro);
 
-        assert!(saida.contains("AO TERMINAR: remova o SSD antes de religar."), "{saida}");
+        assert!(
+            saida.contains("AO TERMINAR: remova o SSD antes de religar."),
+            "{saida}"
+        );
         assert!(saida.contains("RESTAURA DE NOVO"), "{saida}");
         assert!(saida.contains("PRIMEIRO na ordem permanente"), "{saida}");
     }
@@ -2224,7 +2237,10 @@ Sector size (logical/physical): 512/512 bytes
         // operacao, que e justamente quando a janela abre.
         let saida = montar_o_armado(&armado_de_teste(), OrdemDeBoot::OutraCoisaAntes);
 
-        assert!(saida.contains("AO TERMINAR: remova o SSD antes de religar."), "{saida}");
+        assert!(
+            saida.contains("AO TERMINAR: remova o SSD antes de religar."),
+            "{saida}"
+        );
         assert!(saida.contains("muda\n  sozinha"), "{saida}");
         assert!(saida.contains("RESTAURARIA DE\n  NOVO"), "{saida}");
     }
@@ -2236,7 +2252,10 @@ Sector size (logical/physical): 512/512 bytes
         // `viu_o_gerenciador` existe para nao cometer no `arca status`.
         let saida = montar_o_armado(&armado_de_teste(), OrdemDeBoot::NaoDeuParaLer);
 
-        assert!(saida.contains("NAO FOI POSSIVEL LÊ A ORDEM PERMANENTE"), "{saida}");
+        assert!(
+            saida.contains("NAO FOI POSSIVEL LÊ A ORDEM PERMANENTE"),
+            "{saida}"
+        );
         assert!(saida.contains("Trate como se"), "{saida}");
 
         // A frase que **afirma** o estado da ordem e a do ramo brando, e ela
@@ -2290,7 +2309,10 @@ Sector size (logical/physical): 512/512 bytes
 
             let aviso = saida.find("remova o SSD").expect("o aviso de C-9");
             let reinicio = saida.find("Reiniciando...").expect("a ultima linha");
-            assert!(aviso < reinicio, "C-9 e a ultima coisa que alguem lê: {ordem:?}");
+            assert!(
+                aviso < reinicio,
+                "C-9 e a ultima coisa que alguem lê: {ordem:?}"
+            );
 
             // Nenhum dos tres pode deixar a pessoa sem saber do perigo. O que
             // muda entre eles e a dureza da frase — e ela e o que a leitura

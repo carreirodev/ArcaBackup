@@ -36,15 +36,14 @@ fn main() {
 
     let arquivos = ArquivosDoSistema;
 
-    let dispositivo = match dispositivo::encontrar(
-        &arca::adaptadores::windows::volumes::VolumesDoWindows,
-    ) {
-        Ok(dispositivo) => dispositivo,
-        Err(erro) => {
-            println!("sem dispositivo conectado: {erro}");
-            return;
-        }
-    };
+    let dispositivo =
+        match dispositivo::encontrar(&arca::adaptadores::windows::volumes::VolumesDoWindows) {
+            Ok(dispositivo) => dispositivo,
+            Err(erro) => {
+                println!("sem dispositivo conectado: {erro}");
+                return;
+            }
+        };
 
     let raiz = match dispositivo.raiz_do_boot() {
         Ok(raiz) => raiz,

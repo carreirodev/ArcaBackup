@@ -66,7 +66,9 @@ mod testes {
         // coincidencia crivel: a chance de 256 bytes sairem zerados de um
         // gerador que funciona nao existe na pratica.
         let mut bytes = [0u8; 256];
-        EntropiaDoWindows.preencher(&mut bytes).expect("o Windows responde");
+        EntropiaDoWindows
+            .preencher(&mut bytes)
+            .expect("o Windows responde");
 
         assert!(
             bytes.iter().any(|byte| *byte != 0),

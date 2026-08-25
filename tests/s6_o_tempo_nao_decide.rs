@@ -94,7 +94,12 @@ fn nada_no_estado_devolve_um_tempo_comparavel() {
     // mudasse — e e assim que uma protecao morre: por conveniencia.
     let fonte = sem_os_testes(&fonte("src/estado.rs"));
 
-    for assinatura in ["-> DateTime", "-> chrono::", "-> SystemTime", "-> Option<DateTime"] {
+    for assinatura in [
+        "-> DateTime",
+        "-> chrono::",
+        "-> SystemTime",
+        "-> Option<DateTime",
+    ] {
         assert!(
             !fonte.contains(assinatura),
             "`src/estado.rs` tem uma funcao `{assinatura}`: o momento do armar voltou a ser \

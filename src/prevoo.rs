@@ -97,10 +97,7 @@ pub enum RecusaDoPreVoo {
 
     /// Os dois rotulos nao estao no mesmo disco fisico (C-10, e a pendencia
     /// que a E4 deixou para esta etapa).
-    DispositivoPartido {
-        vault: char,
-        boot: char,
-    },
+    DispositivoPartido { vault: char, boot: char },
 
     /// O `ARCABOOT` esta em midia que o `bcdedit` recusa em silencio (C-6).
     MidiaRemovivel,
@@ -109,11 +106,17 @@ pub enum RecusaDoPreVoo {
 impl fmt::Display for RecusaDoPreVoo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RecusaDoPreVoo::NomeJaUsado { nome, e_residuo: false } => write!(
+            RecusaDoPreVoo::NomeJaUsado {
+                nome,
+                e_residuo: false,
+            } => write!(
                 f,
                 "ja ha uma imagem chamada `{nome}` no dispositivo, e o ARCA nunca escreve por cima de uma (B-3). Escolha outro nome"
             ),
-            RecusaDoPreVoo::NomeJaUsado { nome, e_residuo: true } => write!(
+            RecusaDoPreVoo::NomeJaUsado {
+                nome,
+                e_residuo: true,
+            } => write!(
                 f,
                 "ja ha uma pasta chamada `{nome}` no dispositivo, sem `MD5SUMS`: e residuo de um backup interrompido (B-3). Gravar por cima destruiria o que sobrou dele sem que ninguem tivesse olhado. Escolha outro nome, ou apague a pasta a mao — o ARCA nunca apaga nada (B-10)"
             ),
@@ -514,15 +517,15 @@ mod testes {
 
     fn dispositivo() -> Dispositivo {
         Dispositivo {
-            vault: volume(
-                crate::dispositivo::ARCAVAULT,
-                'E',
-                254_379_290_624,
-                LIVRE,
-            ),
+            vault: volume(crate::dispositivo::ARCAVAULT, 'E', 254_379_290_624, LIVRE),
             boot: Some(Volume {
                 sistema_de_arquivos: "FAT32".to_string(),
-                ..volume(crate::dispositivo::ARCABOOT, 'R', 1_673_527_296, 1_101_361_152)
+                ..volume(
+                    crate::dispositivo::ARCABOOT,
+                    'R',
+                    1_673_527_296,
+                    1_101_361_152,
+                )
             }),
         }
     }
@@ -757,7 +760,12 @@ mod testes {
         chkdsk: Chkdsk,
         disco: DiscoDeOrigem,
     ) -> String {
-        montar_com_desarme(inicializacao_rapida, chkdsk, disco, Some(ja_estava_inerte()))
+        montar_com_desarme(
+            inicializacao_rapida,
+            chkdsk,
+            disco,
+            Some(ja_estava_inerte()),
+        )
     }
 
     /// O dialogo inteiro, as duas metades emendadas — que e o que o comando
@@ -793,11 +801,7 @@ mod testes {
     }
 
     fn saida_normal() -> String {
-        montar_com(
-            InicializacaoRapida::Desativada,
-            Chkdsk::Limpo,
-            descoberto(),
-        )
+        montar_com(InicializacaoRapida::Desativada, Chkdsk::Limpo, descoberto())
     }
 
     /// O mesmo dialogo no `--dry-run`, em que nada foi desarmado e nada vai
@@ -815,7 +819,10 @@ mod testes {
     fn o_dialogo_traz_as_linhas_do_paragrafo_5_2() {
         let saida = saida_normal();
 
-        assert!(saida.contains("Dispositivo ARCA: ARCAVAULT (E:)"), "{saida}");
+        assert!(
+            saida.contains("Dispositivo ARCA: ARCAVAULT (E:)"),
+            "{saida}"
+        );
         assert!(saida.contains("Origem: KINGSTON SNV3S500G"), "{saida}");
         assert!(saida.contains("Imagem estimada:"), "{saida}");
         assert!(
@@ -912,7 +919,10 @@ mod testes {
         // caminho normal seria mentira — o ponto sem volta e a proxima linha
         // da tela, e nao uma etapa futura.
         let normal = saida_normal();
-        assert!(normal.contains("o ponto sem volta e a confirmacao abaixo"), "{normal}");
+        assert!(
+            normal.contains("o ponto sem volta e a confirmacao abaixo"),
+            "{normal}"
+        );
         assert!(
             !normal.contains("etapa E7"),
             "o caminho normal ainda adia o armar para uma etapa futura:\n{normal}"

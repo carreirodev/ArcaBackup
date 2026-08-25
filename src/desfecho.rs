@@ -337,7 +337,10 @@ mod testes {
         let mensagem = Encontrado::Arquivo(julgamento).to_string();
         assert!(mensagem.contains("job fantasma"), "{mensagem}");
         assert!(mensagem.contains(DE_OUTRO), "{mensagem}");
-        assert!(!mensagem.contains(DO_JOB), "o selo do job vazou: {mensagem}");
+        assert!(
+            !mensagem.contains(DO_JOB),
+            "o selo do job vazou: {mensagem}"
+        );
     }
 
     #[test]
@@ -404,8 +407,7 @@ mod testes {
 
     #[test]
     fn duas_linhas_de_selo_sao_recusa_e_nao_escolha() {
-        let texto =
-            format!("ARCA_SELO={DO_JOB}\nARCA_BACKUP=OK\nARCA_SELO={DE_OUTRO}\nARCA_FIM\n");
+        let texto = format!("ARCA_SELO={DO_JOB}\nARCA_BACKUP=OK\nARCA_SELO={DE_OUTRO}\nARCA_FIM\n");
         assert_eq!(
             julgar_texto(&texto),
             Julgamento::NaoPertenceAoArca(NaoEDesfecho::SeloRepetido)

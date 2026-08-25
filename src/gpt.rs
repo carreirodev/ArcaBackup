@@ -310,7 +310,8 @@ mod testes {
 
     #[test]
     fn zero_setor_nao_vira_medida() {
-        let texto = "Disk /dev/sda: 0 sectors, 0 GiB\nSector size (logical/physical): 512/512 bytes\n";
+        let texto =
+            "Disk /dev/sda: 0 sectors, 0 GiB\nSector size (logical/physical): 512/512 bytes\n";
         assert_eq!(
             ler("sda-gpt.sgdisk", texto),
             Err(SemMedida::MedidaZerada {

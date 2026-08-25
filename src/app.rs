@@ -145,8 +145,7 @@ mod testes {
                 console: ConsoleDeMentira::mudo(),
                 particionador: crate::duplos::ParticionadorDeMentira::com_discos(Vec::new()),
                 registro: Registro::em(
-                    std::env::temp_dir()
-                        .join(format!("arca-{etiqueta}-{}", std::process::id())),
+                    std::env::temp_dir().join(format!("arca-{etiqueta}-{}", std::process::id())),
                     Box::new(RelogioDoSistema),
                 ),
             }

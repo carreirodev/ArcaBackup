@@ -175,7 +175,10 @@ pub fn executar(contexto: &Contexto, nome_bruto: &str) -> Resultado<()> {
     );
 
     if contexto.dry_run {
-        print!("{}", ensaio_das_receitas(contexto, &dispositivo, &nome, &disco)?);
+        print!(
+            "{}",
+            ensaio_das_receitas(contexto, &dispositivo, &nome, &disco)?
+        );
         return Ok(());
     }
 
@@ -543,9 +546,9 @@ fn secao(titulo: &str, receita: &Receita) -> String {
 mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
-    use crate::duplos::{ParticionadorDeMentira, 
-        ArquivosEmMemoria, DiscosDeMentira, ConsoleDeMentira, EntropiaDeMentira, FirmwareDeMentira, RelogioParado,
-        SistemaDeMentira,
+    use crate::duplos::{
+        ArquivosEmMemoria, ConsoleDeMentira, DiscosDeMentira, EntropiaDeMentira, FirmwareDeMentira,
+        ParticionadorDeMentira, RelogioParado, SistemaDeMentira,
     };
     use crate::portas::Volume;
     use crate::registro::Registro;
@@ -751,10 +754,7 @@ mod testes {
         // escolhe.
         let saida = ensaio_montado();
 
-        assert!(
-            saida.contains("o comando sem --dry-run armaria"),
-            "{saida}"
-        );
+        assert!(saida.contains("o comando sem --dry-run armaria"), "{saida}");
         assert!(
             !saida.contains("etapa E9"),
             "a E9 existe; nenhuma frase pode continuar prometendo-a:\n{saida}"
@@ -857,9 +857,9 @@ mod testes {
 
     /// O `blkdev.list` do dispositivo, com as colunas reais do `lsblk`.
     const BLKDEV: &str = concat!(
-"KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
-"sda       sda         238.5G disk                                               KGSSE100256\n",
-"nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G\n",
+        "KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
+        "sda       sda         238.5G disk                                               KGSSE100256\n",
+        "nvme0n1   nvme0n1     465.8G disk                                               KINGSTON SNV3S500G\n",
     );
 
     /// Um `{fwbootmgr}` sem boot unico, como o `bcdedit` o enumera.
@@ -875,8 +875,7 @@ mod testes {
 
     /// O `bcdedit` desta maquina: entrada `ARCA`, sem boot unico antes do
     /// armar e com ele depois.
-    const FIRMWARE_PT: &str =
-        include_str!("../../recursos/capturas/bcdedit-enum-firmware-pt.txt");
+    const FIRMWARE_PT: &str = include_str!("../../recursos/capturas/bcdedit-enum-firmware-pt.txt");
 
     /// O `bcdedit` desta maquina, **modelado**: o comando desarma e depois
     /// arma, e as duas escritas caem no mesmo `{fwbootmgr}`.
@@ -914,11 +913,17 @@ mod testes {
         }
 
         assert!(
-            bancada.arquivos.conteudo_de(r"R:\arca\estado.json").is_none(),
+            bancada
+                .arquivos
+                .conteudo_de(r"R:\arca\estado.json")
+                .is_none(),
             "gravou estado de job sem confirmacao"
         );
         assert_eq!(
-            bancada.arquivos.conteudo_de(r"R:\boot\grub\grub.cfg").as_deref(),
+            bancada
+                .arquivos
+                .conteudo_de(r"R:\boot\grub\grub.cfg")
+                .as_deref(),
             Some(GRUB_INERTE),
             "armou o grub.cfg sem confirmacao"
         );
@@ -1040,7 +1045,12 @@ mod testes {
             0,
             "pediu a confirmacao antes de saber que ia recusar"
         );
-        assert!(bancada.arquivos.conteudo_de(r"R:\arca\estado.json").is_none());
+        assert!(
+            bancada
+                .arquivos
+                .conteudo_de(r"R:\arca\estado.json")
+                .is_none()
+        );
     }
 
     #[test]
@@ -1063,7 +1073,10 @@ mod testes {
         ));
 
         assert_eq!(
-            bancada.arquivos.conteudo_de(r"R:\boot\grub\grub.cfg").as_deref(),
+            bancada
+                .arquivos
+                .conteudo_de(r"R:\boot\grub\grub.cfg")
+                .as_deref(),
             Some(GRUB_INERTE),
             "o pre-voo disse que desarmou e nao desarmou"
         );
@@ -1091,7 +1104,10 @@ mod testes {
 
         // O desarmar aconteceu — C-1 e incondicional...
         assert_eq!(
-            bancada.arquivos.conteudo_de(r"R:\boot\grub\grub.cfg").as_deref(),
+            bancada
+                .arquivos
+                .conteudo_de(r"R:\boot\grub\grub.cfg")
+                .as_deref(),
             Some(GRUB_INERTE),
             "a recusa pulou o desarmar, e C-1 diz incondicionalmente"
         );
@@ -1134,7 +1150,10 @@ mod testes {
         executar(&bancada.contexto(true), "2026-08-22_Apps").expect("o ensaio roda");
 
         assert_eq!(
-            bancada.arquivos.conteudo_de(r"R:\boot\grub\grub.cfg").as_deref(),
+            bancada
+                .arquivos
+                .conteudo_de(r"R:\boot\grub\grub.cfg")
+                .as_deref(),
             Some(armado),
             "o ensaio desarmou o dispositivo"
         );
@@ -1158,10 +1177,7 @@ mod testes {
     #[test]
     fn o_ensaio_nao_escreve_nada_em_lugar_nenhum() {
         // "Nao toca em nada" e criterio de aceite, e nao promessa.
-        let bancada = Bancada::com(
-            DiscosDeMentira::com_dispositivo(),
-            vault_com_as_imagens(),
-        );
+        let bancada = Bancada::com(DiscosDeMentira::com_dispositivo(), vault_com_as_imagens());
         executar(&bancada.contexto(true), "2026-08-22_Apps").expect("o ensaio roda");
 
         for caminho in [
