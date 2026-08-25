@@ -975,3 +975,56 @@ ao subir. Ver
 > `bcdedit` elevado, para produzir o estado a medir — o mesmo método do
 > ADR-0013. O que as capturas guardam é o que as ferramentas responderam
 > **depois** dele, e o desfecho de 18:47 é do firmware, não de ninguém.
+
+## A medição do dispositivo em GPT, e ela está pela metade (25/08/2026)
+
+O roteiro de `PRD/marco-em-hardware-gpt-2026-08-25.md` tem nove etapas, e este
+arquivo é o que as **três primeiras** escreveram. Elas não decidem nada — quem
+decide é a Etapa 7, o boot. O que elas produzem é a preparação medida, e uma
+delas já respondeu a uma das três perguntas que o ADR novo precisa responder.
+
+| Arquivo | O que é | SHA256 |
+|---|---|---|
+| `medicao-gpt-2026-08-25.txt` | As etapas 1 a 3 num Kingston DataTraveler Max de 238,5 GB, 4634 bytes | `335e0d0b…a928c7f5` |
+
+**O SHA256 vale para o arquivo parado na Etapa 3.** Ele muda quando as etapas
+seguintes escreverem nele, e é para isso que serve estar anotado aqui: a
+medição continua no mesmo arquivo, e não numa cópia.
+
+### O que já está respondido
+
+**Houve MSR, e é o achado.** O `Initialize-Disk -PartitionStyle GPT` criou
+sozinho uma partição `Reserved` de 16 759 808 bytes no offset 17 408, com
+`GptType {e3c9e316-0b5c-4db8-817d-f92df00215ae}` — coisa que em MBR o
+`Initialize-Disk` não faz, e que o `arca prepare` não espera. Deixada em pé,
+ela empurraria a ARCAVAULT para partição 2 e a ARCABOOT para 3, o device path
+da entrada de firmware viraria `HD(3,GPT,…)`, e a releitura que confere a ordem
+das duas partições no disco passaria a ver três. Foi removida, e o disco voltou
+a zero partições — que é como o MBR sai do `Initialize-Disk`.
+
+**A GPT cobra 1 400 832 bytes, e o `LargestFreeExtent` já os desconta.** Num
+disco de 256 060 514 304 bytes, o extent livre depois de remover a MSR é
+256 059 113 472. A diferença é a tabela primária no começo e a cópia secundária
+no fim — a razão pela qual a Etapa 4 tira as contas do `LargestFreeExtent` lido
+na hora, e não de constante.
+
+**A NVRAM desta máquina tem uma entrada só.** `{fwbootmgr}` com `displayorder`
+apontando para `{bootmgr}`, e mais nada. Não há entrada `ARCA` nenhuma: o
+Windows foi reinstalado, e o que as capturas de 22 a 24/08 mediram nesta NVRAM
+não está mais lá. É o número de referência da Etapa 6 — ao final dela devem ser
+duas, e a Etapa 9 volta a uma.
+
+### O que ainda não está
+
+O `GptType` sai do `New-Partition` ou do `Format-Volume` — o análogo do achado
+do `MbrType 6` — é Etapa 4, e não foi medido. O boot é Etapa 7, e é ele que
+decide se o ADR-0014 muda ou se confirma.
+
+> **A primeira tentativa da Etapa 3 rodou e o registro dela se perdeu.** O
+> script foi executado por `powershell.exe` 5.1, que leu o arquivo UTF-8 como
+> ANSI: o `—` dos títulos virou `â€"`, e a aspa tipográfica que aparece no meio
+> fechou as strings cedo. O `Clear-Disk` chegou a rodar e deixou o disco RAW; o
+> `Initialize-Disk` não. A segunda tentativa rodou sob `pwsh` 7.6.5, encontrou
+> o disco RAW, e é ela que está no arquivo — com o parágrafo dizendo que o
+> `Clear-Disk` do registro é o efeito da primeira. Entre uma e outra nada foi
+> escrito no disco.

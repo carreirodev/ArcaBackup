@@ -1,0 +1,145 @@
+# O particionamento do dispositivo em GPT, medido a mao
+# Marco em hardware, 2026-08-25 14:04:41
+
+### ETAPA 1 — NVRAM antes de tudo (bcdedit /enum firmware, elevado)
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+timeout                 1
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {bootmgr}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             Windows Boot Manager
+locale                  pt-BR
+inherit                 {globalsettings}
+flightsigning           Yes
+default                 {current}
+resumeobject            {f4057bca-65a4-11f1-b0f1-aa4ed9bd2b34}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+ANOTACAO: 1 entrada de firmware hoje — {bootmgr} (Windows Boot Manager). Nenhuma entrada ARCA.
+
+### ETAPA 1 — Os discos desta mesa, antes
+
+Number         : 2
+FriendlyName   : Kingston DataTraveler Max
+BusType        : USB
+PartitionStyle : MBR
+Size           : 256060514304
+IsSystem       : False
+IsBoot         : False
+
+Number         : 0
+FriendlyName   : KINGSTON SNV3S500G
+BusType        : NVMe
+PartitionStyle : GPT
+Size           : 500107862016
+IsSystem       : True
+IsBoot         : True
+
+
+
+Index Model                                      MediaType                        Size
+----- -----                                      ---------                        ----
+    0 KINGSTON SNV3S500G                         Fixed hard disk media    500105249280
+    2 Kingston DataTraveler Max SCSI Disk Device External hard disk media 256052966400
+
+
+
+### ETAPA 2 — O alvo, conferido antes de tocar
+
+indice           : 2
+modelo           : Kingston DataTraveler Max SCSI Disk Device
+tamanho          : 256060514304
+BusType          : USB
+MediaType_WMI    : External hard disk media
+IsSystem         : False
+IsBoot           : False
+PartitionStyle   : MBR
+disco_do_sistema : 0
+
+
+as quatro conferencias passaram
+
+### ETAPA 2 — O QUE EXISTIA: particoes e volumes
+
+PartitionNumber : 1
+DriveLetter     : E
+Type            : IFS
+MbrType         : 7
+GptType         : 
+Offset          : 1048576
+Size            : 256057016320
+IsActive        : False
+
+
+
+DriveLetter     : E
+FileSystemLabel : AMD Backups
+FileSystem      : NTFS
+Size            : 256057012224
+SizeRemaining   : 255900651520
+
+
+
+
+### ETAPA 3 — As quatro defesas, reconferidas antes de escrever
+O indice do Windows nao e identidade: por isso a reconferencia se repete em toda etapa que escreve.
+
+indice           : 2
+modelo           : Kingston DataTraveler Max SCSI Disk Device
+tamanho          : 256060514304
+IsSystem         : False
+IsBoot           : False
+MediaType_WMI    : External hard disk media
+PartitionStyle   : RAW
+disco_do_sistema : 0
+as quatro conferencias passaram, e o modelo bate com o alvo confirmado na Etapa 2
+
+### ETAPA 3 — Clear-Disk
+O Clear-Disk -RemoveData -RemoveOEM ja havia rodado numa primeira tentativa desta etapa, cujo
+registro se perdeu por corrupcao de encoding (o script foi lido como ANSI em vez de UTF-8).
+O efeito no disco, porem, foi o esperado e esta medido abaixo: o disco ficou RAW e sem particoes.
+A tentativa nao chegou a aplicar o Initialize-Disk. Nada mais foi escrito no disco entre uma e outra.
+
+PartitionStyle         Size LargestFreeExtent
+--------------         ---- -----------------
+RAW            256060514304                 0
+
+particoes_apos_Clear_Disk
+-------------------------
+                        0
+
+### ETAPA 3 — Initialize-Disk -PartitionStyle GPT
+
+PartitionStyle         Size LargestFreeExtent
+--------------         ---- -----------------
+GPT            256060514304      256043384832
+
+### ETAPA 3 — Houve MSR? (o Windows cria uma Microsoft Reserved sozinho em GPT)
+particoes logo apos o Initialize-Disk: 1
+
+PartitionNumber : 1
+Type            : Reserved
+GptType         : {e3c9e316-0b5c-4db8-817d-f92df00215ae}
+Offset          : 17408
+Size            : 16759808
+
+ACHADO: o Initialize-Disk -PartitionStyle GPT criou 1 particao(oes) Reserved (MSR).
+Removendo — ela nao serve para nada num dispositivo de dados, e deslocaria a ARCAVAULT para 2 e a ARCABOOT para 3.
+
+### ETAPA 3 — Depois de remover a MSR
+particoes restantes: 0
+
+PartitionStyle LargestFreeExtent
+-------------- -----------------
+GPT                 256059113472
+
+FIM DA ETAPA 3
