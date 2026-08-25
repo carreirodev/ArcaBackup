@@ -1,0 +1,50 @@
+# A suíte inteira, uma vez por semana, num Windows que não é esta mesa.
+#
+# Por que semanal, e não a cada push: o guarda-corpo do dia a dia é o hook de
+# `.githooks/pre-commit`, que roda os mesmos três antes de deixar commitar.
+# Este workflow existe para as coisas que o hook não alcança — um commit feito
+# de outra máquina, um `--no-verify`, uma dependência que mudou debaixo do
+# `Cargo.lock`, ou um lint novo que veio com o Rust da semana.
+#
+# `workflow_dispatch` fica ligado para dar para rodar à mão sem esperar segunda.
+
+name: semanal
+
+on:
+  schedule:
+    # Segunda-feira, 06:00 UTC — 03:00 em Brasília.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  suite:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versões, para o log dizer contra o que rodou
+        run: |
+          rustc --version
+          cargo --version
+          cargo clippy --version
+          cargo fmt --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formatação
+        run: cargo fmt --all --check
+
+      - name: Clippy, com aviso valendo erro
+        run: cargo clippy --all-targets -- -D warnings
+
+      # Os testes que leem o hardware desta mesa — o `grub.cfg` do dispositivo,
+      # o `bcdedit` da máquina — sabem pular quando o oráculo não está lá, e
+      # aqui ele nunca está: não há dispositivo ARCA conectado num runner, e o
+      # `bcdedit` recusa o `/enum` sem privilégio. O que sobra é a suíte que
+      # não depende de hardware, e ela é a maior parte.
+      #
+      # `--no-fail-fast` para o relatório mostrar todos os alvos que falharam, e
+      # não só o primeiro.
+      - name: Suíte
+        run: cargo test --no-fail-fast

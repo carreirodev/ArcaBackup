@@ -1,0 +1,52 @@
+#!/bin/sh
+#
+# Formatação, clippy e a suíte, antes de deixar commitar.
+#
+# Fica em `.githooks/` e não em `.git/hooks/` de propósito: assim ele é
+# versionado, e uma máquina nova o ganha com o `git clone`. O que falta é uma
+# linha, uma vez por cópia do repositório:
+#
+#     git config core.hooksPath .githooks
+#
+# Para pular numa emergência: `git commit --no-verify`. Pular é legítimo — o
+# workflow semanal existe para pegar o que se pulou.
+
+set -e
+
+echo "pre-commit: formatação, clippy e a suíte"
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "pre-commit: sem cargo no PATH — pulando. O workflow semanal ainda pega." >&2
+  exit 0
+fi
+
+saida=$(mktemp)
+trap 'rm -f "$saida"' EXIT
+
+# Cada passo roda calado e só abre a boca se reprovar. Um hook que despeja a
+# suíte inteira a cada commit é um hook que se aprende a ignorar.
+passo() {
+  rotulo=$1
+  shift
+  if ! "$@" >"$saida" 2>&1; then
+    echo >&2
+    cat "$saida" >&2
+    echo >&2
+    echo "pre-commit: $rotulo reprovou — o commit NAO foi feito." >&2
+    echo "pre-commit: corrija, ou use \`git commit --no-verify\` se souber por que." >&2
+    exit 1
+  fi
+}
+
+passo "\`cargo fmt --all --check\` (rode \`cargo fmt --all\`)" \
+  cargo fmt --all --check
+
+passo "\`cargo clippy\`" \
+  cargo clippy --all-targets --quiet -- -D warnings
+
+# `--no-fail-fast` para quem lê a saída ver todos os alvos que falharam, e não
+# só o primeiro — um commit reprovado por dois motivos deve mostrar os dois.
+passo "a suíte" \
+  cargo test --quiet --no-fail-fast
+
+echo "pre-commit: ok"
