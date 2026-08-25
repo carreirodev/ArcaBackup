@@ -7,6 +7,12 @@
 # dele a partir do byte 0; o descritor da receita, com o offset intacto, retoma
 # la em cima — e o intervalo vira zeros.
 #
+# A previsao 5 mudou depois da medicao de 24/08, e a mudanca esta explicada no
+# ADR-0022: ela julgava o buraco inteiro, e o inicio dele NAO carrega informacao
+# nenhuma. O inicio e o tamanho da tela do partclone, que e constante porque a
+# tela e constante; foi 4.085 nas duas restauracoes, byte a byte. Quem responde
+# "o corte cai sempre no mesmo lugar?" e o FIM, que e onde o `ocs-sr` chegou.
+#
 # Uso:  ./medir-arca-restore-log.sh /d/ARCA-LOGS/restauracao-<nome>/arca-restore.log
 
 set -u
@@ -51,8 +57,8 @@ julgar "$([ "$ending_ocs" -ge 1 ] && [ "$starting_ocs" -eq 0 ] && echo 0 || echo
 if [ "$nuls" -eq 0 ]; then
   echo "  [n/a]      5. sem buraco, a previsao 5 nao se aplica"
 else
-  julgar "$([ "${primeiro_nul}" != "4085" ] || [ "${ultimo_nul}" != "12890" ] && echo 0 || echo 1)" \
-    "5. o buraco NAO cai nos mesmos offsets de 22/08 (4.085–12.890) — ele cai onde o ocs-sr chegou"
+  julgar "$([ "${ultimo_nul}" != "12890" ] && echo 0 || echo 1)" \
+    "5. o buraco NAO TERMINA onde terminou em 22/08 (12.890) — ele termina onde o ocs-sr chegou"
 fi
 
 echo
@@ -63,8 +69,24 @@ else
   echo "  → NAO feche P-23. O que nao bate e o achado, e ele vale mais do que a previsao."
 fi
 
+# O inicio do buraco nao e previsao: e consequencia. Ele mede a tela do
+# partclone, que a hipotese diz ser o que reabre o arquivo. Sai como reforco,
+# fora da contagem, porque um valor constante aqui CONFIRMA a hipotese em vez de
+# a contrariar — e foi por ler isso ao contrario que a previsao 5 nasceu errada.
+echo
+if [ "$nuls" -gt 0 ]; then
+  if [ "${primeiro_nul}" = "4085" ]; then
+    echo "  reforco: o buraco comeca em 4.085, o mesmo de 22/08 — a tela do partclone"
+    echo "           tem tamanho constante, e e ela que reabre o arquivo."
+  else
+    echo "  atencao: o buraco comeca em ${primeiro_nul}, e nao em 4.085. A tela do partclone"
+    echo "           mudou de tamanho — outra particao, outro layout de terminal, outra versao."
+  fi
+fi
+
 echo
 echo "Contexto para o registro:"
 echo "  22/08 ... 16.600 bytes · 8.806 NULs (4.085–12.890, 53% do arquivo) · 1 tela · p4 de 4"
+echo "  24/08 ... 16.641 bytes · 8.840 NULs (4.085–12.924, 53% do arquivo) · 1 tela · p4 de 4"
 echo -n "  agora ... $tam bytes · $nuls NULs (${primeiro_nul:-—}–${ultimo_nul:-—}) · $telas tela(s) · "
 echo "$alvo"

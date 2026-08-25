@@ -2,7 +2,9 @@
 
 23/08/2026, depois da etapa E10 — revisado no mesmo dia, quando a E12 foi
 planejada, e **revisado outra vez em 24/08/2026, quando ela rodou e P-26, P-25,
-P-22 e P-28 fecharam** — esta última nascida e fechada no mesmo dia. Complementa
+P-22, P-28 e P-23 fecharam** — P-28 nascida e fechada no mesmo dia, P-23 fechada
+no ciclo de backup e restauração da noite, que **também refutou a hipótese de
+P-19**. Complementa
 o [PRD v5.1](PRD-ARCA-v5_1.md) e o [plano de etapas](implementation_stages.md);
 onde este documento divergir deles, são eles que valem.
 
@@ -14,9 +16,11 @@ onde este documento divergir deles, são eles que valem.
 lista de *"chega na etapa X"* esvaziou na E10, todo requisito do §9 tem código, e
 a suíte tem 838 testes. O ciclo inteiro rodou em hardware: backup armado e
 colhido (22/08), restauração completa com o Windows voltando de dentro da imagem
-(23/08), verificação armada (23/08), um dispositivo criado do zero (23/08) e —
-**em 24/08 — esse dispositivo bootando sozinho pela entrada de firmware que o
-próprio ARCA criou nele**.
+(23/08), verificação armada (23/08), um dispositivo criado do zero (23/08), **em
+24/08 esse dispositivo bootando sozinho pela entrada de firmware que o próprio
+ARCA criou nele** — e, na noite do mesmo dia, **backup e restauração seguidos,
+sem uma única tela do Clonezilla**, com a imagem `2026-08-24_Ciclo` aprovada e o
+Windows voltando de dentro dela pela segunda vez.
 
 Isso responde *"foi construído?"*. Não responde *"está provado?"* — e é essa a
 diferença que este documento existe para não deixar dissolver.
@@ -49,10 +53,12 @@ lista de pendências parecer maior ou menor do que é.
 ## 1. O que não foi medido
 
 
-**Três pendências abertas**, e eram cinco de manhã. Em 24/08/2026 fecharam
-P-26, P-25 e **P-22** — e a última abriu **P-28**, que **fechou no mesmo dia**,
-sete horas depois. Estão listadas por **quanto custa a alguém se elas estiverem
-erradas**, e não pela ordem em que nasceram.
+**Duas pendências abertas**, e eram cinco de manhã. Em 24/08/2026 fecharam
+P-26, P-25, **P-22** e **P-23** — e a terceira abriu **P-28**, que **fechou no
+mesmo dia**, sete horas depois. **P-19 continua aberta e mudou de enunciado**: o
+mesmo ciclo que fechou P-23 refutou a hipótese que ela carregava. Estão listadas
+por **quanto custa a alguém se elas estiverem erradas**, e não pela ordem em que
+nasceram.
 
 > ### ~~P-26~~ — fechada em 24/08/2026, e o que ela custou foi um reinício
 >
@@ -318,34 +324,85 @@ cara desta lista, e a única cujo fechamento não acontece nesta mesa.
 > alvo declarado), e **o `arca restore` nunca silenciou** — o ramo brando já
 > mandava remover o SSD.
 
-### P-23 — o log da restauração não cobre a operação inteira
+> ### ~~P-23~~ — fechada em 24/08/2026, e o log não começa no meio: ele é cortado por baixo
+>
+> **Aberta no marco da E9**, e a pergunta era se o corte cai sempre no mesmo
+> lugar. **Não cai: ele cai onde o `ocs-sr` tinha chegado.** A restauração de
+> `2026-08-24_Ciclo` mediu, e o corte não é do ARCA, não é do `>` da receita e
+> não é do redirecionamento — é o Clonezilla reabrindo o próprio log na última
+> passagem. Ver
+> [ADR-0022](../docs/adr/0022-o-arca-restore-log-e-truncado-por-baixo.md).
+>
+> ```text
+> 22/08 ... 16.600 bytes · buraco de NULs 4.085–12.890 · 1 tela · p4 de 4
+> 24/08 ... 16.641 bytes · buraco de NULs 4.085–12.924 · 1 tela · p4 de 4
+> ```
+>
+> **O mecanismo, em três tempos.** O `>` da receita abre o log e o `ocs-sr`
+> escreve por ele até 12.891 bytes (12.925 em 24/08); na última passagem o
+> Clonezilla **reabre o mesmo arquivo com truncamento** e o partclone escreve a
+> tela dele nos bytes 0–4.084; o descritor da receita, com o offset intacto,
+> retoma lá em cima — e o intervalo vira zeros. **53% de cada arquivo é NUL.**
+> É a mesma família de P-25, com o segundo escritor à frente em vez de atrás.
+>
+> **A previsão entrou no repositório antes da medição** — `0e83b3f`, 19:48, e a
+> restauração foi às 20:51. Quatro das cinco consequências bateram inteiras.
+>
+> **A quinta cobrava demais, e vale registrado.** Ela pedia que o buraco "não
+> comece em 4.085 **nem** termine em 12.890", e foi implementada com um `||`,
+> que se satisfaz com uma ponta só. **O fim mudou; o início não.** E não devia
+> mudar: o início do buraco *é* o tamanho da tela do partclone, e os primeiros
+> 4.085 bytes dos dois logs são **byte a byte idênticos** — mesma partição de
+> recuperação, mesma tela de 24 linhas. Prever que mudaria era prever contra o
+> próprio mecanismo. O medidor foi corrigido para julgar só o fim.
+>
+> **O que sobra não é pendência, é o que o §6.3 não diz.** Aquela tela aponta o
+> `arca-restore.log` a quem quer saber o que aconteceu, e o arquivo está lá —
+> mas **traz uma passagem só**, e a que sobrevive é a última. Numa falha isso
+> joga a favor: a partição que sobra é justamente aquela em que a operação
+> parou. Trocar o `>` por `>>` faria o buraco sumir sem recuperar nada do que o
+> Clonezilla trunca — **é decisão, não pendência**, pela mesma razão que
+> sobreviveu em P-25.
 
-**Aberta no marco da E9.** O `arca-restore.log` do marco tem 16.600 bytes e
-começa no meio: uma passagem só do Partclone — a da última das quatro partições
-—, nenhuma das outras três, e um `Ending /usr/sbin/ocs-sr` **sem** o `Starting`
-correspondente.
+### P-19 — em que condição o firmware cria uma `UEFI OS` no lugar da entrada
 
-**Por que importa:** o §6.3 aponta esse arquivo a quem colheu uma restauração e
-quer saber o que aconteceu, e o que está lá **pode não cobrir a parte que
-falhou**.
+**Aberta na E8, estreitada na E9, e com o enunciado corrigido em 24/08/2026.**
+A primeira metade fechou pela negativa na E9: o firmware **não** reescreve a
+entrada em todo boot pelo dispositivo. O que sobrava era um candidato — *"só
+quando ela foi consumida por `bootsequence`?"* —, e **o experimento de 24/08 o
+eliminou**. Ver
+[ADR-0023](../docs/adr/0023-o-bootsequence-nao-e-o-gatilho-da-reescrita.md).
 
-**Como fecha:** medir de novo na próxima restauração, e perguntar se o corte cai
-sempre no mesmo lugar.
-**Custa:** uma restauração, que é destrutiva. Não vale disparar só por isso.
+**O par que refutou** — duas leituras do `efibootmgr` feitas **durante** o boot,
+mesmo dispositivo, mesmo device path byte a byte, mesma operação, mesmo gatilho:
 
-### P-19 — quando o firmware reescreve a entrada
+| | 22/08 · backup | 24/08 · backup |
+|---|---|---|
+| `BootOrder` / `BootCurrent` | `0000,0001` / `0001` | **os mesmos dois** |
+| entrada `0001` | `UEFI OS` · `\EFI\BOOT\BOOTX64.EFI` · `0000424f` | `ARCA` · `\EFI\boot\bootx64.efi` · `BCDOBJECT` |
 
-**Aberta na E8, estreitada na E9.** A primeira metade fechou pela negativa: o
-firmware **não** reescreve a entrada em todo boot pelo dispositivo. O que não
-fecha é datar a reescrita.
+O gatilho é o mesmo, e quem o prova é o argumento de P-18: bootar pela `0001`
+com a `0000` à frente não se explica por F12 nem por ordem permanente. **Mesmo
+gatilho, resultados opostos.**
 
-**Por que importa pouco:** a consequência operacional que interessa — a entrada
-volta para a ordem permanente depois de um boot pelo dispositivo — está medida, e
-C-13 a conserta desde 23/08.
+**E o verbo do enunciado estava errado.** Em 22/08, do lado do Windows, a
+entrada do ARCA `{f4057bd0}` **sobreviveu intacta** — o que nasceu foi uma
+`{687478f2}` `UEFI OS` ao lado dela. Não é reescrita: é uma segunda entrada. As
+duas leituras discordam porque são de momentos diferentes do mesmo arquivo, e é
+a armadilha do §11 no seu caso mais claro.
 
-**Como fecha:** um backup disparado por F12, com o `bcdedit` lido imediatamente
-antes.
-**Custa:** um backup. É a pendência menos urgente da lista.
+**Por que importa pouco:** a consequência operacional está medida **três vezes
+de dentro do boot em 24/08**, com os dois gatilhos, e a entrada continua na forma
+que o `bcdedit` escreve. C-13 devolve o `{bootmgr}` ao topo ao colher e C-9 fecha
+a janela até lá — nenhuma tela do ARCA afirma nada que dependa da resposta.
+
+**Como fecha:** não por reinício. As variáveis que o roteiro sabia controlar
+estão controladas e o resultado mudou assim mesmo; o que separa os dois casos
+dos quatro é a **data**, e data não entra em roteiro. Fecharia saber o que mudou
+nesta placa entre 22 e 24 de agosto — e isso não é medição, é um registro que
+não existe.
+**Custa:** nada que valha a pena gastar. Passou a ser a pendência que **não** se
+persegue.
 
 ---
 
@@ -485,9 +542,27 @@ passaram a **sair cedo dizendo por quê**; os do `grub.cfg` passaram a aceitar o
 **dois** inertes conhecidos — o do ISO e o do zip —, com o teste da E10 provando
 que são equivalentes. Nenhum foi afrouxado.
 
-**A E10 e a E12 estão commitadas.** O conserto de P-28
+**A E10, a E12 e o conserto de P-28
 ([ADR-0021](../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md))
-está na árvore de trabalho, verde, e ainda não.
+estão commitados**, e o ciclo de 24/08 à noite também.
+
+> ### O commit que a restauração apagou, e que voltou do `origin`
+>
+> Um efeito colateral do ciclo de 24/08 vale mais do que a curiosidade que
+> parece. O backup capturou o `C:` às ~20:05; o commit `a4bbdc4` foi feito às
+> 20:28; a restauração das 21:01 devolveu o disco ao estado de 20:05. **O commit
+> sumiu do `C:`** — o `git status` da manhã seguinte dizia `behind 1`, e ele só
+> existia porque tinha sido empurrado antes.
+>
+> Os arquivos que o `git` rastreava naquele commit voltaram como **untracked**,
+> de dentro da imagem, byte a byte iguais aos do `origin`. Foi preciso movê-los
+> para o `git` aceitar o fast-forward.
+>
+> **É a demonstração mais direta que este repositório tem de que a restauração
+> restaura**, e ela não foi planejada: um artefato datado de meia hora depois do
+> backup deixou de existir no disco, e o Windows que subiu é o de antes dele.
+> Registrado aqui porque é também a regra de operação que a sessão descobriu —
+> **empurrar antes de restaurar não é higiene, é a única cópia**.
 
 ### O dispositivo está sem oráculo agora, e isso é do teste de falha
 
@@ -513,19 +588,27 @@ manter.
 
 ### O firmware, depois de tudo
 
-`arca status` de 24/08, no fim da sessão:
+`arca status` de 24/08, depois do ciclo de backup e restauração da noite:
 
 ```text
 Entrada de firmware
   Descricao ....... ARCA
   Identificador ... {f4057bd3-65a4-11f1-b0f1-aa4ed9bd2b34}
-  Aponta para ..... partition=F: · o ARCABOOT deste dispositivo
+  Aponta para ..... partition=R: · o ARCABOOT deste dispositivo
+  Carrega ......... \EFI\boot\bootx64.efi
   Ordem de boot ... dispositivo em 2o de 2 · `Windows Boot Manager` vem antes
 
 Ultimo job, ja colhido
   Boot unico ...... nao armado
-  Estado .......... sondagem · ja colhido, nada esperando
+  Estado .......... restauracao `2026-08-24_Ciclo` · ja colhido, nada esperando
+  Selo ............ d28a71b815f67cfb
+  Disco alvo ...... nvme0n1
 ```
+
+A linha `Carrega` é a evidência de P-19 pelo lado do Windows: caminho em
+minúsculas, que é a forma que o `bcdedit` escreve — e não a `\EFI\BOOT\BOOTX64.EFI`
+que o firmware escreveria. Depois de dois boots pelo dispositivo naquela noite,
+um com `bootsequence` e um pela ordem, a entrada continua como estava.
 
 A entrada **entrou na ordem permanente** em algum ponto dos dois boots pelo
 dispositivo — ela estava fora quando o `arca prepare` terminou —, e C-13 a
@@ -570,11 +653,26 @@ Do mais barato para o mais caro, e cada linha diz o que se ganha.
 | ~~—~~ | ~~Uma sondagem com flag inventada no `lsblk`~~ | ~~1 reinício~~ | **Feito em 24/08/2026: o primeiro `FALHOU`** |
 | ~~—~~ | ~~Religar com o SSD conectado, sem job armado~~ | ~~1 reinício, risco zero~~ | **Feito em 24/08/2026: P-22**, e conferiu a promessa da tela do `arca prepare`. Abriu **P-28** |
 | ~~—~~ | ~~`UEFI:Removable Device` no topo da ordem, e religar~~ | ~~1 reinício, risco zero~~ | **Feito em 24/08/2026: P-28**, e o firmware apagou as três no POST |
+| ~~—~~ | ~~Próxima restauração, com o log medido~~ | ~~uma restauração~~ | **Feito em 24/08/2026: P-23**, e o corte cai onde o `ocs-sr` chegou ([ADR-0022](../docs/adr/0022-o-arca-restore-log-e-truncado-por-baixo.md)) |
+| ~~—~~ | ~~Backup por F12, com o `bcdedit` antes~~ | ~~um backup~~ | **Substituído em 24/08/2026**, e o que rodou no lugar **refutou** a hipótese de P-19 ([ADR-0023](../docs/adr/0023-o-bootsequence-nao-e-o-gatilho-da-reescrita.md)) |
 | 1 | `arca sondar` com o binário normal | 1 reinício | *não é pendência* — devolve o oráculo que a falha forçada apagou (§5) |
 | 2 | Produzir as outras quatro linhas do §5.5 à mão | tempo, sem risco | quatro casos do §5.5 |
 | 3 | Falha forçada em VM | montar uma VM | **P-6** no `ocs-sr`, que é a pergunta original |
-| 4 | Próxima restauração, com o log medido | uma restauração | **P-23** |
-| 5 | Backup por F12, com o `bcdedit` antes | um backup | **P-19** |
+
+> **O passo de P-19 não era o F12, pela mesma razão que o de P-28 não era.** O
+> F12 mede a **classe** que o menu do firmware oferece, e a pergunta é sobre a
+> **entrada** — o objeto que o `bcdedit` escreve e que o firmware pode trocar. O
+> que rodou foi um boot pela `displayorder`, com a entrada promovida à mão, e a
+> NVRAM lida **de dentro do Clonezilla live**.
+>
+> **E o braço que decidiu veio de graça.** O `efi-nvram.dat` que o Clonezilla
+> grava em toda imagem é a mesma leitura, no mesmo dispositivo, no mesmo dia, mas
+> **com** `bootsequence` — o segundo braço do experimento, entregue pelo backup
+> da fase 2 sem custo nenhum. Foi ele que matou a hipótese; o braço caro
+> confirmou o esperado e sozinho não teria decidido nada.
+>
+> **P-19 sai desta tabela porque não há passo que a feche.** Não é que ela seja
+> cara: é que o que a fecharia não é um experimento.
 
 > **O passo que saiu era novo, e nasceu da E12.** Até 24/08, produzir um `FALHOU`
 > exigia fazer o `ocs-sr` falhar — uma VM, um disco de teste, uma operação
@@ -631,10 +729,19 @@ fechou e a outra não: a sondagem falha de graça — uma flag errada, nada escr
 fora do `ARCAVAULT` —, e o `ocs-sr` só falha destruindo alguma coisa.
 
 As outras são perguntas honestas sobre o mundo — como o firmware se comporta,
-onde o log da restauração começa. **E uma delas deixou de ser em 24/08**: *de
-onde o `bcdedit` lê* era a mais barata de todas, custou um reinício, e a
-resposta é a NVRAM. O app não afirma nada sobre as que sobram que dependa da
-resposta, e é por isso que ele pode conviver com elas abertas.
+onde o log da restauração começa. **E duas delas deixaram de ser em 24/08**:
+*de onde o `bcdedit` lê* era a mais barata de todas, custou um reinício, e a
+resposta é a NVRAM; *onde o log da restauração começa* custou o ciclo inteiro, e
+a resposta é que ele não começa no meio — é cortado por baixo, no ponto em que o
+`ocs-sr` tinha chegado. O app não afirma nada sobre a que sobra que dependa da
+resposta, e é por isso que ele pode conviver com ela aberta.
+
+**E uma das que sobram mudou de natureza.** P-19 não é mais uma medição
+pendente: é uma hipótese **refutada** cujo substituto não se conhece. O
+experimento rodou, controlou tudo o que sabia controlar, e o resultado veio
+contra. Ela fica registrada porque o que se aprendeu ao errar vale mais do que o
+fechamento teria valido — e porque um documento que só registrasse as previsões
+que deram certo seria a sexta vez do padrão do §3.5, com outro nome.
 
 **P-28 era o caso limítrofe, e não é mais — pelas duas pontas, no mesmo dia.**
 A leitura em duplo achou um ramo em que a tela não engolia um aviso e sim
