@@ -979,15 +979,14 @@ ao subir. Ver
 ## A medição do dispositivo em GPT, e ela está pela metade (25/08/2026)
 
 O roteiro de `PRD/marco-em-hardware-gpt-2026-08-25.md` tem nove etapas, e este
-arquivo é o que as **seis primeiras** escreveram. Elas não decidem nada — quem
-decide é a Etapa 7, o boot. O que elas produzem é a preparação medida, e duas
-das três perguntas que o ADR novo precisa responder já estão respondidas.
+arquivo é o que as **sete primeiras** escreveram. **A sétima é a que decide, e
+ela passou:** o dispositivo GPT bootou, e o menu do Clonezilla subiu.
 
 | Arquivo | O que é | SHA256 |
 |---|---|---|
-| `medicao-gpt-2026-08-25.txt` | As etapas 1 a 6 em **dois** dispositivos de 238,5 GB, 40 650 bytes | `faad0a3a…6f52849a` |
+| `medicao-gpt-2026-08-25.txt` | As etapas 1 a 7 em **dois** dispositivos de 238,5 GB, 45 532 bytes | `6a89ab7e…98c98930` |
 
-**O SHA256 vale para o arquivo parado na Etapa 6.** Ele muda quando as etapas
+**O SHA256 vale para o arquivo parado na Etapa 7.** Ele muda quando as etapas
 seguintes escreverem nele, e é para isso que serve estar anotado aqui: a
 medição continua no mesmo arquivo, e não numa cópia.
 
@@ -1056,12 +1055,38 @@ device por `\Device\HarddiskVolumeN` é relido como `partition=X:` quando aquele
 volume tem letra. É **normalização**, e não recusa — o que confirma o
 `Alvo::ParticaoSemLetra` de `firmware.rs:79` como forma de escrita válida.
 
+**O dispositivo GPT bootou, e é isso que o roteiro existia para decidir.** Em
+25/08/2026 o boot único levou o firmware ao KGSSE100 e o menu do Clonezilla
+subiu — sem tela preta, sem erro de firmware, sem volta direta para o Windows.
+Um dispositivo GPT com ARCABOOT FAT32 *Basic Data*, apontado por `partition=E:`
+e `\EFI\boot\bootx64.efi`, boota nesta máquina. O ADR-0014 sustentava que a
+falha "só se descobre depois de o Windows já ter sido apagado": não só se
+descobre antes como não houve falha.
+
+**E o ciclo de boot mexeu na ordem permanente, com o antes e o depois medidos na
+mesma noite.** O `bootsequence` foi consumido, como boot único deve ser, mas o
+`displayorder` do `{fwbootmgr}` voltou com três entradas a mais —
+`{31cc955f-…}` `UEFI:CD/DVD Drive`, `{31cc9560-…}` `UEFI:Removable Device` e
+`{31cc9561-…}` `UEFI:Network Device`. As três são `Aplicativo de Firmware
+(101fffff)`, têm `description` e **não têm `device`**: são as entradas sem alvo
+do [ADR-0021](../../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md),
+postas na ordem pelo ciclo de boot e não por ninguém — que é o
+[ADR-0009](../../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md). A
+entrada de teste **não** voltou para o `displayorder`. Nada disso foi desfeito,
+nem para rearmar o segundo boot: C-5 vale para o ARCA, que lê e não mexe.
+
 ### O que ainda não está
 
-O boot é a Etapa 7, e é ele que decide se o ADR-0014 muda ou se confirma. O
-dispositivo está armado para ele desde 25/08/2026: `{fwbootmgr}` com
-`bootsequence` apontando para `{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}`, e
-`displayorder` inalterado, trazendo só o `{bootmgr}` — que é C-5.
+**O device path lido de dentro do boot.** Quem operava desligou antes de entrar
+no shell do Clonezilla, e a Etapa 8 ficou para a segunda passada. O boot foi
+rearmado no mesmo dia — `bootsequence` apontando para
+`{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}`, com o `displayorder` conferido igual
+antes e depois do rearme —, e o roteiro da etapa foi escrito no próprio
+dispositivo, em `D:\etapa8.sh`, para não depender de digitação no live.
+
+É o que falta para a mudança ter a mesma qualidade de evidência que as seis
+leituras de NVRAM do ADR-0023: confirmar que a linha que hoje, em MBR, lê
+`HD(2,MBR,0x4049dea9,0x1d9d2000,0x320000)` passa a ler `HD(2,GPT,<guid>,…)`.
 
 > **A primeira tentativa da Etapa 3 rodou e o registro dela se perdeu.** O
 > script foi executado por `powershell.exe` 5.1, que leu o arquivo UTF-8 como

@@ -21,12 +21,26 @@ código vem depois, na Etapa 9.
 | 4 | Criar as duas partições | ✅ | 2026-08-25 · o `GptType` **não** muda ao formatar, e **não** distingue as duas |
 | 5 | Instalar o Clonezilla na ARCABOOT | ✅ | 2026-08-25 · `bootx64.efi` no lugar; o `grub.cfg` tinha aspas |
 | 6 | Criar a entrada de firmware de teste | ✅ | 2026-08-25 · `partition=E:` pegou no SSD, `bootsequence` armado |
-| 7 | **O boot, que é o que decide** | ⏳ | **pronta — é reiniciar** |
-| 8 | Capturar a NVRAM de dentro do boot | — | |
+| 7 | **O boot, que é o que decide** | ✅ | 2026-08-25 · **o menu do Clonezilla subiu** |
+| 8 | Capturar a NVRAM de dentro do boot | ⏳ | rearmada; o script está em `D:\etapa8.sh` |
 | 9 | Voltar ao normal | — | o id a remover é `{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}` |
 
-**O dispositivo está armado e o próximo boot vai para ele.** O alvo é o **disco
-1, KGSSE100 256** — SSD externo USB, GPT, ARCAVAULT em `D:` (NTFS 4096,
+> # O dispositivo GPT bootou.
+>
+> Em 25/08/2026 o boot único levou o firmware ao dispositivo e **o menu do
+> Clonezilla subiu**. Sem tela preta, sem erro de firmware, sem volta direta
+> para o Windows. É o que este roteiro existia para decidir, e está decidido: um
+> dispositivo GPT com ARCABOOT FAT32 *Basic Data*, apontado por `partition=E:` e
+> `\EFI\boot\bootx64.efi`, boota nesta máquina.
+>
+> **O ADR-0014 não tinha razão, e agora isso está medido em vez de suposto.** Ele
+> dizia que a falha "só se descobre depois de o Windows já ter sido apagado" —
+> não só se descobre antes como não houve falha.
+>
+> Falta a Etapa 8: o device path lido *de dentro* do boot. O boot foi rearmado
+> para ela.
+
+**O alvo é o disco 1, KGSSE100 256** — SSD externo USB, GPT, ARCAVAULT em `D:` (NTFS 4096,
 254 381 391 872) e ARCABOOT em `E:` (FAT32 4096, 1 677 721 600), com o Clonezilla
 extraído, o `E:\EFI\boot\bootx64.efi` no lugar e o `grub.cfg` em
 `set timeout="-1"`. A NVRAM tem o `{fwbootmgr}` com `displayorder` inalterado —
@@ -549,13 +563,31 @@ assim que ele saiu em 25/08/2026.
 
 ## Etapa 7 — O boot, que é o que decide
 
-> **Está armada, desde 25/08/2026.** O `{fwbootmgr}` tem `bootsequence`
-> apontando para `{f4057bd6-65a4-11f1-b0f1-aa4ed9bd2b34}`, que aponta para
-> `partition=E:` — a ARCABOOT do KGSSE100 — e para `\EFI\boot\bootx64.efi`. O
-> `displayorder` continua trazendo só o `{bootmgr}`, que é C-5. **É reiniciar.**
+> **Feita em 25/08/2026, e passou.** O menu do Clonezilla subiu. A Etapa 8 não
+> foi feita nessa passada — quem operava desligou antes de entrar no shell —, e
+> por isso o boot foi rearmado.
 >
-> É um boot único: falhando, o firmware volta para o Windows sozinho, e a marca
-> se gasta. Falhar aqui não deixa a máquina em estado ruim.
+> **O ciclo de boot mexeu na ordem permanente, e isso é o ADR-0009 medido com o
+> antes e o depois na mesma noite.** O `bootsequence` foi consumido, como boot
+> único deve ser. Mas o `displayorder` do `{fwbootmgr}` voltou com **três
+> entradas a mais**, que não estavam lá antes de reiniciar:
+>
+> | Identificador | `description` | `device` |
+> |---|---|---|
+> | `{31cc955f-…}` | `UEFI:CD/DVD Drive` | *nenhum* |
+> | `{31cc9560-…}` | `UEFI:Removable Device` | *nenhum* |
+> | `{31cc9561-…}` | `UEFI:Network Device` | *nenhum* |
+>
+> As três são `Aplicativo de Firmware (101fffff)`, têm `description` e **não têm
+> `device`** — são exatamente as entradas sem alvo do
+> [ADR-0021](../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md),
+> que o firmware resolve no POST pelo que estiver conectado. Quem as pôs na ordem
+> foi o ciclo de boot, e não uma pessoa. **Nada disso foi desfeito**, nem para
+> rearmar: C-5 vale para o ARCA, que lê a ordem permanente e não mexe nela.
+>
+> A entrada de teste **não** voltou para o `displayorder` — some da ordem e fica
+> só no store, intacta. Rearmar foi só o `bootsequence`, com a ordem permanente
+> conferida igual antes e depois.
 
 > Confira que `$CAP` está salvo antes de reiniciar — o arquivo está no
 > repositório e sobrevive, mas as variáveis da sessão não.
@@ -586,8 +618,28 @@ botão e vá para a Etapa 9 — o teste principal já passou.
 É o que dá à mudança a mesma qualidade de evidência que as seis leituras do
 ADR-0023. Vale o esforço: é a diferença entre "bootou uma vez" e "está medido".
 
-No menu do Clonezilla, escolha a entrada padrão, e no modo escolha
-**`Enter_shell`** (ou pressione `Ctrl+Alt+F2` para um terminal). Então:
+> **O roteiro dela está no próprio dispositivo, em `D:\etapa8.sh`**, escrito em
+> 25/08/2026 depois do primeiro boot. É para a etapa não depender de digitar
+> comando nenhum no live: uma linha monta a ARCAVAULT pelo rótulo, roda o
+> script, e ele salva a saída ao lado, em `etapa8-saida.txt`.
+
+No menu do Clonezilla, escolha a entrada padrão, aceite idioma e teclado, e no
+menu de modo escolha **`Enter_shell`** — *Enter command line prompt*. Serve
+também `Ctrl+Alt+F2` a qualquer momento depois do boot. Então, **uma linha só**:
+
+```bash
+sudo mkdir -p /mnt/vault && sudo mount -L ARCAVAULT /mnt/vault && sudo bash /mnt/vault/etapa8.sh
+```
+
+Ele imprime na tela o `BootCurrent`, o `BootOrder` e a linha da entrada de
+teste, e grava `efibootmgr -v`, `parted -l`, `blkid`, `lsblk` e `sgdisk -p` em
+`/mnt/vault/etapa8-saida.txt`. Ao terminar:
+
+```bash
+sudo umount /mnt/vault
+```
+
+Não havendo o script — outro dispositivo, outra passada —, os comandos crus são:
 
 ```bash
 sudo efibootmgr -v
@@ -700,7 +752,8 @@ positiva, e é mais barata de guardar do que de refazer.
 O ADR novo precisa responder **três coisas** que só este roteiro mede:
 
 1. o dispositivo GPT bootou, e o device path lido de dentro do boot é *qual* —
-   **em aberto**, é a Etapa 7;
+   **metade respondida**: bootou, em 25/08/2026, e o menu do Clonezilla subiu. O
+   device path é a Etapa 8, e o boot está rearmado para ela;
 2. houve MSR, e o que foi feito com ela — **respondida duas vezes**: houve nos
    dois dispositivos, `{e3c9e316-…}`, offset 17 408, 16 759 808 bytes, e foi
    removida nos dois. O código a remove sempre, não "se houver";
