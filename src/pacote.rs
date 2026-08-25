@@ -190,7 +190,7 @@ pub fn o_que_falta<'a>(presentes: impl Iterator<Item = &'a str>) -> Vec<String> 
         .iter()
         .filter(|obrigatorio| {
             let procurado = obrigatorio.to_lowercase();
-            !presentes.iter().any(|presente| *presente == procurado)
+            !presentes.contains(&procurado)
         })
         .map(|obrigatorio| obrigatorio.to_string())
         .collect()

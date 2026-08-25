@@ -74,11 +74,11 @@ pub struct Medida {
 
 impl Medida {
     pub fn setores(&self) -> u64 {
-        if self.bytes_por_setor == 0 {
-            0
-        } else {
-            self.bytes / self.bytes_por_setor
-        }
+        // Zero bytes por setor e um disco que nao se deixou medir, e nao um
+        // disco de zero setores. O `unwrap_or(0)` diz "nao sei" com o mesmo
+        // numero que a leitura vazia ja usava — quem decide alguma coisa com
+        // isto compara contra o disco do outro lado, e zero nunca casa.
+        self.bytes.checked_div(self.bytes_por_setor).unwrap_or(0)
     }
 }
 

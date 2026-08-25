@@ -56,43 +56,39 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
     ));
 
     match &cli.comando {
-        Comando::List => return comandos::list::executar(contexto),
-        Comando::Status => return comandos::status::executar(contexto),
+        Comando::List => comandos::list::executar(contexto),
+        Comando::Status => comandos::status::executar(contexto),
 
         // C-1: desarmar acontece incondicionalmente e sem consultar estado
         // nenhum. Continua sendo o primeiro passo dos comandos que armam — a
         // E7 e a E8 o chamam de dentro; aqui ele tambem e alcancavel sozinho,
         // que e o que responde ao caso "o boot nao aconteceu" do §5.5.
-        Comando::Desarmar => return comandos::desarmar::executar(contexto),
+        Comando::Desarmar => comandos::desarmar::executar(contexto),
 
         // Com `--dry-run` o backup ja monta e imprime as receitas (E3); sem
         // ele, quem arma e a E7 — e e o proprio comando que diz isso, porque
         // o nome ainda precisa ser julgado por B-2 antes de qualquer resposta.
-        Comando::Backup { nome } => return comandos::backup::executar(contexto, nome),
+        Comando::Backup { nome } => comandos::backup::executar(contexto, nome),
 
-        Comando::Resultado => return comandos::resultado::executar(contexto),
+        Comando::Resultado => comandos::resultado::executar(contexto),
 
         // A operacao do ARCA que destroi o disco de sistema, e a etapa E9 e
         // quem a entrega. Ela desarma (C-1), lista sem oferecer residuo (L-2,
         // R-1), confere o destino contra a propria imagem (R-2, R-7), pede o
         // nome por extenso (R-3, S-2) e so entao arma. Nao ha destino a
         // escolher desde o ADR-0015 — o unico valido e o disco de origem.
-        Comando::Restore { nome } => {
-            return comandos::restore::executar(contexto, nome.as_deref());
-        }
+        Comando::Restore { nome } => comandos::restore::executar(contexto, nome.as_deref()),
 
         // V-1 lê os `MD5SUMS` aqui mesmo; `--completo` arma o boot unico que
         // so roda o `ocs-chkimg` (V-2). Os dois recusam residuo antes de
         // qualquer coisa (L-2), e o segundo desarma primeiro (C-1).
-        Comando::Verify { nome, completo } => {
-            return comandos::verify::executar(contexto, nome, *completo);
-        }
+        Comando::Verify { nome, completo } => comandos::verify::executar(contexto, nome, *completo),
 
         // A quarta operacao, e a unica que nao chama programa nenhum do
         // Clonezilla: ela arma um boot unico que roda `lsblk`, grava a saida
         // no `ARCAVAULT` e desliga. E o que da ao §4.5 um oraculo num
         // dispositivo que nunca teve imagem (E12, P-26).
-        Comando::Sondar => return comandos::sondar::executar(contexto),
+        Comando::Sondar => comandos::sondar::executar(contexto),
 
         // O comando que transforma um disco qualquer num dispositivo ARCA, e
         // o unico que roda antes de existirem os rotulos de que todos os
@@ -104,7 +100,7 @@ pub fn executar(cli: &Cli, contexto: &Contexto) -> Resultado<()> {
         // `restore` sem nome (ADR-0024). O numero resolve para indice e cai
         // neste mesmo caminho — nada abaixo dele muda.
         Comando::Prepare { dispositivo, iso } => {
-            return comandos::prepare::executar(contexto, *dispositivo, iso.as_deref());
+            comandos::prepare::executar(contexto, *dispositivo, iso.as_deref())
         }
     }
 }

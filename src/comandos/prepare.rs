@@ -1036,11 +1036,11 @@ pub fn montar_o_plano(preparacao: &Preparacao, iso: Option<&Path>) -> String {
          ligar a maquina continue subindo o Windows (C-5)\n",
         firmware::ARCA
     ));
-    saida.push_str(&format!(
+    saida.push_str(
         "  O proprio `arca.exe` e instalado no ARCABOOT, porque o que julga uma\n     \
          restauracao nao pode morar no disco que ela substitui (§4.1)\n\n  \
-         O `grub.cfg` fica INERTE: nada roda sozinho ate um `arca backup` (§4.4)\n"
-    ));
+         O `grub.cfg` fica INERTE: nada roda sozinho ate um `arca backup` (§4.4)\n",
+    );
 
     saida
 }
@@ -1132,14 +1132,14 @@ pub fn montar_a_entrada(entrada: &EntradaCriada) -> String {
     // que alguém armar com ele conectado. Mas quem tem dois na gaveta merece
     // saber o que mudou — a alternativa seria descobrir isso por um F12.
     if entrada.ja_existia {
-        saida.push_str(&format!(
+        saida.push_str(
             "\n  A entrada de firmware ja existia e passou a apontar para ESTE dispositivo.\n\
              \x20 O ARCA mantem UMA entrada, e nao uma por dispositivo (C-4): duas seriam\n\
              \x20 duas formas de bootar no Clonezilla, uma delas sem ninguem olhando.\n\
              \x20 Se voce voltar a usar outro dispositivo ARCA, o `arca backup` reaponta a\n\
              \x20 entrada para ele ao armar, e confere que reapontou (C-6). Nao ha nada a\n\
-             \x20 fazer a mao.\n"
-        ));
+             \x20 fazer a mao.\n",
+        );
     }
 
     saida.push_str(&linha(
