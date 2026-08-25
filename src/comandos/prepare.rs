@@ -999,16 +999,22 @@ pub fn montar_o_plano(preparacao: &Preparacao, iso: Option<&Path>) -> String {
         tamanho(preparacao.plano.boot_bytes)
     ));
 
-    saida.push_str(
-        "\n  A estrutura e GPT, e as duas particoes sao de dados basicos — a ARCABOOT\n\
-         \x20 nao e uma ESP. E o que foi medido em 25/08/2026: um dispositivo assim\n\
-         \x20 BOOTOU nesta maquina, e o caminho que o firmware carregou foi lido de\n\
-         \x20 dentro do boot pelo efibootmgr (ADR-0025).\n\n\
-         \x20 O Windows cria sozinho uma particao Microsoft Reserved ao inicializar em\n\
-         \x20 GPT, e o ARCA a remove: deixada em pe, ela empurraria estas duas para 2 e\n\
-         \x20 3, e o dispositivo seria outro.\n",
-    );
-
+    // **Não há parágrafo explicando o esquema aqui, e a ausência é decisão.**
+    //
+    // Até o ADR-0025 havia um, e ele existia por uma razão que o próprio
+    // ADR-0014 escreveu: *"quem lê `MBR` num dispositivo novo em 2026 vai achar
+    // que e engano"*. Era texto para desfazer uma estranheza — e a estranheza
+    // era do MBR.
+    //
+    // Com GPT ela some. Ninguém para diante de `GPT` numa tela de 2026 achando
+    // que houve erro, e o que sobrava do parágrafo era a data de uma medição, o
+    // número de um ADR e a menção a uma partição que o comando remove sozinho.
+    // Nada disso é o que quem está prestes a apagar um disco precisa ler: essa
+    // pessoa quer saber **o que vai acontecer com o disco dela**, e as duas
+    // linhas acima já dizem.
+    //
+    // O porquê do esquema é registro de projeto, e o lugar dele é o
+    // [ADR-0025](../../docs/adr/0025-o-arca-particiona-em-gpt.md).
     saida.push_str("\nE O QUE MAIS VAI ACONTECER:\n");
     saida.push_str(&format!(
         "  Clonezilla {} · {}\n",
@@ -1547,20 +1553,38 @@ mod testes {
     }
 
     #[test]
-    fn o_plano_diz_que_a_arcaboot_nao_e_uma_esp_e_que_a_msr_sai() {
-        // Duas coisas que quem lê a tela nao adivinha, e as duas mudariam o
-        // dispositivo se fossem outras. A ARCABOOT ser dados basicos em vez de
-        // ESP e a Variante B do marco — a que bootou —, e a MSR e a particao
-        // que o Windows cria sozinho e que ninguem pediu.
+    fn o_plano_nao_explica_o_esquema_nem_cita_adr() {
+        // **A tela do plano diz o que vai acontecer com o disco, e mais nada.**
+        //
+        // Até o ADR-0025 ela trazia um parágrafo justificando o esquema, e ele
+        // existia por uma razão que o ADR-0014 escreveu: quem lesse `MBR` num
+        // dispositivo novo em 2026 acharia que era engano. Com GPT a estranheza
+        // some, e o que sobrava era a data de uma medição, o número de um ADR e
+        // a menção a uma partição que o comando remove sozinho — nota de
+        // desenvolvimento na tela de quem só quer preparar um disco.
+        //
+        // O porquê do esquema é registro de projeto, e mora no ADR.
         let saida = montar_o_plano(&preparacao_da_mesa(), None);
 
-        assert!(saida.contains("nao e uma ESP"), "{saida}");
-        assert!(saida.contains("Microsoft Reserved"), "{saida}");
-        assert!(saida.contains("BOOTOU"), "{saida}");
-        assert!(
-            !saida.contains("nao GPT"),
-            "a tela ainda diz que o esquema nao e GPT: {saida}"
-        );
+        for vazamento in [
+            "ADR-",
+            "BOOTOU",
+            "Microsoft Reserved",
+            "nao e uma ESP",
+            "25/08/2026",
+            "efibootmgr",
+        ] {
+            assert!(
+                !saida.contains(vazamento),
+                "a tela do plano vazou `{vazamento}`, que e coisa de registro de projeto:\n{saida}"
+            );
+        }
+
+        // O que ela **tem** de dizer continua lá: o esquema e as duas
+        // partições, com tamanho e para que serve cada uma.
+        assert!(saida.contains("GPT  1  NTFS"), "{saida}");
+        assert!(saida.contains(ARCAVAULT), "{saida}");
+        assert!(saida.contains(ARCABOOT), "{saida}");
     }
 
     #[test]

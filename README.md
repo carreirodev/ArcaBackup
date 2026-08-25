@@ -576,15 +576,6 @@ O QUE VAI FICAR NO LUGAR:
   GPT  1  NTFS   445,6 GB  ARCAVAULT   as imagens moram aqui
        2  FAT32    1,6 GB  ARCABOOT    o Clonezilla e o ARCA moram aqui
 
-  A estrutura e GPT, e as duas particoes sao de dados basicos — a ARCABOOT
-  nao e uma ESP. E o que foi medido em 25/08/2026: um dispositivo assim
-  BOOTOU nesta maquina, e o caminho que o firmware carregou foi lido de
-  dentro do boot pelo efibootmgr (ADR-0025).
-
-  O Windows cria sozinho uma particao Microsoft Reserved ao inicializar em
-  GPT, e o ARCA a remove: deixada em pe, ela empurraria estas duas para 2 e
-  3, e o dispositivo seria outro.
-
 E O QUE MAIS VAI ACONTECER:
   Clonezilla 3.3.3-15 · baixado (535,5 MB), com o SHA256 conferido contra
      o valor compilado neste ARCA — e nao contra um baixado junto (PR-1)

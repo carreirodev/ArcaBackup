@@ -212,6 +212,50 @@ mesmo assim a máquina bootou no Windows com o dispositivo conectado. O
 | `comandos/prepare.rs` | o parágrafo *"A estrutura e MBR, e nao GPT"* sai da tela |
 | `duplos.rs`, `tests/e10_*` | os fixtures e os asserts passam a citar a captura nova |
 
+## O workflow não muda depois do `prepare`, e isso é verificável
+
+A pergunta é legítima e qualquer um a faz: *trocar o esquema do dispositivo
+quebra o resto?* Não, e a razão não é confiança — é que dá para procurar.
+
+**O `estilo_de_particao` do dispositivo é lido em um único lugar do código:** a
+linha da tela do `prepare` que diz `Tabela de particao hoje ... vai ser reescrita
+como GPT`. A própria porta o documenta como *"informativo — o `arca prepare`
+reescreve a tabela de qualquer jeito"*. Nenhum outro comando o lê.
+
+Depois do `prepare`, nada no ARCA sabe nem precisa saber se o dispositivo é MBR
+ou GPT. Todos o acham por **rótulo** — `ARCAVAULT` e `ARCABOOT` —, que é B-1 e
+S-3, e a receita nomeia o vault pelo ponto de montagem. A geometria não
+atravessa.
+
+> **Um detalhe que confunde:** existe um `src/gpt.rs`, e ele **não** é sobre
+> isto. Ele lê o `<disco>-gpt.sgdisk` de dentro da imagem para o R-7 do
+> `restore` — é sobre o disco de **origem**, o NVMe, que sempre foi GPT.
+
+**E o `arca sondar` continua sendo o Passo 4 do workflow, como já era.** Ele não
+existe por causa do esquema: existe porque a receita nomeia o disco pelo nome que
+o **Linux** lhe dá (`nvme0n1`), e o Windows não conhece esse nome — o ARCA o
+descobre lendo um `blkdev.list` que só um boot no Clonezilla produz. Um `arca
+backup` sem ele recusa, e diz por quê. Isso é de 24/08, um dia antes deste ADR.
+
+A coincidência é feliz: o passo que o workflow já exigia é exatamente o que fecha
+a única medição que faltava — o boot pela entrada que o **código** criou. Não há
+trabalho extra por causa do GPT.
+
+## A tela do `prepare` deixou de explicar o esquema
+
+O ADR-0014 pôs um parágrafo na tela justificando MBR, e ele tinha razão de ser,
+escrita lá: *"quem lê `MBR` num dispositivo novo em 2026 vai achar que é
+engano"*. Era texto para desfazer uma estranheza.
+
+Com GPT a estranheza some — ninguém para diante de `GPT` numa tela de 2026
+achando que houve erro. O que sobrava do parágrafo era a data de uma medição, o
+número de um ADR e a menção a uma partição que o comando remove sozinho: nota de
+desenvolvimento na tela de quem só quer preparar um disco. **Saiu**, e o teste
+`o_plano_nao_explica_o_esquema_nem_cita_adr` impede que volte.
+
+Quem está prestes a apagar um disco precisa saber o que vai acontecer com o
+disco. O porquê do esquema é registro de projeto, e o lugar dele é este arquivo.
+
 ## O que **não** muda, e vale dizer
 
 - **As sete defesas de PR-5.** O ADR-0014 as estabeleceu e elas não dependem do
