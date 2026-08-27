@@ -699,17 +699,27 @@ fn conselho(colheita: &Colheita) -> String {
 
 /// O que dizer depois de uma restauracao que o Clonezilla deu por concluida.
 ///
-/// Tres coisas, e nenhuma delas e "deu tudo certo".
+/// Quatro linhas, e nenhuma delas e "deu tudo certo".
 ///
-/// **P-6 dói mais deste lado.** No backup ha dois sinais independentes sobre o
-/// codigo de saida: a conferencia nativa que o Clonezilla faz por padrao — e
-/// que `-scs` desligaria, razao de ele ficar de fora (ADR-0004) — e o
-/// `ocs-chkimg` explicito de B-9. Na restauracao ha uma conferencia parecida,
-/// e ela e sobre **outra pergunta**: `-scr` desligaria a checagem de que a
-/// imagem e restauravel, e ela roda **antes** de gravar. Nenhuma delas olha o
-/// resultado da gravacao. Se o `ocs-sr` devolver zero ao falhar, o
-/// `if/then/else` de R-5 escreve `OK` sobre uma restauracao quebrada, e o
-/// unico juiz que sobra e o Windows subir.
+/// **A tela mandava religar, e quem a lê ja religou.** Ate 27/08/2026 o texto
+/// fechava com "o juiz que falta e o Windows subir: religue e confira" — um
+/// pedido impossivel de atender, porque atende-lo e a condicao para ver a
+/// tela. [`crate::comandos::restore::montar_o_armado`] manda remover o SSD,
+/// religar, e **so entao** reconectar para colher; o `arca.log` destruido do
+/// paragrafo abaixo e a prova disso dentro do proprio texto. Quem lê esta
+/// tela esta dentro do Windows que voltou da imagem, e o que falta a ele nao
+/// e religar: e abrir o que restaurou.
+///
+/// **P-6 dói mais deste lado**, e por isso a linha do exito e morna. No backup
+/// ha dois sinais independentes sobre o codigo de saida: a conferencia nativa
+/// que o Clonezilla faz por padrao — e que `-scs` desligaria, razao de ele
+/// ficar de fora (ADR-0004) — e o `ocs-chkimg` explicito de B-9. Na
+/// restauracao ha uma conferencia parecida, e ela e sobre **outra pergunta**:
+/// `-scr` desligaria a checagem de que a imagem e restauravel, e ela roda
+/// **antes** de gravar. Nenhuma delas olha o resultado da gravacao. Se o
+/// `ocs-sr` devolver zero ao falhar, o `if/then/else` de R-5 escreve `OK`
+/// sobre uma restauracao quebrada, e o unico juiz que sobra e o Windows subir
+/// — que e o que ja aconteceu, e e o que a tela diz.
 ///
 /// **O `arca.log` deste lado foi destruido pela propria operacao.** Ele mora em
 /// `%LOCALAPPDATA%\ARCA`, no `C:`, que e o que a restauracao substitui. E uma
@@ -721,32 +731,35 @@ fn conselho(colheita: &Colheita) -> String {
 ///
 /// **A janela do [ADR-0009] fechou aqui, e ela era destrutiva.** O desarmar ja
 /// aconteceu — a linha acima diz isso —, e a partir de agora um reinicio com o
-/// SSD conectado para no menu do Clonezilla em vez de restaurar de novo.
+/// SSD conectado para no menu do Clonezilla em vez de restaurar de novo. Esta
+/// e a unica das tres razoes que sobreviveu **como frase** na tela, e o motivo
+/// e a hora: o SSD esta conectado neste instante porque o `arca restore`
+/// mandou reconecta-lo para colher, depois de avisar em caixa alta que religar
+/// com ele plugado RESTAURARIA DE NOVO. Fechar esse medo e o unico dos tres
+/// porques que muda o que a pessoa faz nos proximos minutos.
+///
+/// **E so isso.** O resto — a comparacao com os dois sinais do backup, o
+/// caminho do `%LOCALAPPDATA%`, o `estado.json` que sobreviveu, o numero do
+/// ADR — e registro de projeto: mora aqui e nos ADRs, e quem colhe uma
+/// restauracao nao o pediu. Mesmo corte de [`conselho_da_sondagem`] e
+/// [`linha_da_ordem`], e pelo mesmo motivo.
 ///
 /// [ADR-0009]: ../../docs/adr/0009-a-ordem-permanente-muda-no-ciclo-de-boot.md
 fn conselho_da_restauracao(colheita: &Colheita) -> String {
     let mut saida = String::from(
-        "\n  A RESTAURACAO TERMINOU, e o `OK` acima vem de UM sinal so. Num backup o\n\
-         \x20 ARCA tem dois — a conferencia nativa do Clonezilla e o `ocs-chkimg` de\n\
-         \x20 B-9 —, e aqui nao ha nada depois do `ocs-sr` para desmenti-lo (P-6). O\n\
-         \x20 juiz que falta e o Windows subir: religue e confira.\n",
+        "\n  A RESTAURACAO TERMINOU, e este Windows ja e o que voltou da imagem. Confira\n\
+         \x20 seus programas e arquivos.\n",
     );
 
     saida.push_str(&format!(
-        "\x20 O log do Clonezilla desta operacao esta em\n\
-         \x20 ARCA-LOGS\\{}\\arca-restore.log, no ARCAVAULT, que a restauracao nao\n\
-         \x20 tocou.\n",
+        "\x20 O log do Clonezilla esta em\n\
+         \x20 ARCA-LOGS\\{}\\arca-restore.log, no ARCAVAULT.\n",
         crate::desfecho::pasta_do_job(colheita.estado.comando, colheita.estado.nome.as_ref())
     ));
 
     saida.push_str(concat!(
-        "\x20 O `arca.log` do lado Windows foi DESTRUIDO por esta operacao: ele mora\n",
-        "  em %LOCALAPPDATA%\\ARCA, no C:, que e o que a imagem substituiu. O que\n",
-        "  estiver la agora veio de dentro da imagem, e e de outro tempo. Quem\n",
-        "  sobreviveu foi o `estado.json` do ARCABOOT, e e para isto que §4.1\n",
-        "  existe.\n",
-        "\n  O dispositivo ja foi desarmado acima, e com isso fechou a janela em que\n",
-        "  um reinicio com o SSD conectado restauraria de novo (ADR-0009).\n",
+        "\x20 O `arca.log` do C: veio de dentro da imagem, e nao registra esta operacao.\n",
+        "  O SSD ja foi desarmado: religar com ele conectado nao restaura mais nada.\n",
     ));
 
     saida
@@ -1182,18 +1195,20 @@ mod testes {
 
     #[test]
     fn uma_verificacao_nao_ganha_o_conselho_da_restauracao() {
-        // Os tres conselhos do §6.3 falam de coisas que so acontecem numa
-        // restauracao: o `arca.log` destruido, o juiz que falta, a janela do
-        // ADR-0009 sobre um disco recem-escrito. Numa verificacao nenhum deles
-        // e verdade, e um conselho que sai onde nao vale e ruido que ensina
-        // quem lê a pular o texto.
+        // As linhas do §6.3 falam de coisas que so acontecem numa restauracao:
+        // o `arca.log` que veio de dentro da imagem, o Windows que acabou de
+        // voltar, o SSD que ainda esta conectado. Numa verificacao nenhuma
+        // delas e verdade, e um conselho que sai onde nao vale e ruido que
+        // ensina quem lê a pular o texto.
         let saida = colher_verificacao(
             Encontrado::Arquivo(Julgamento::Concluida),
             Some(Veredito::Aprovada),
         );
 
         assert!(!saida.contains("A RESTAURACAO TERMINOU"), "{saida}");
-        assert!(!saida.contains("DESTRUIDO"), "{saida}");
+        // A sentinela da ausencia mudou junto com o texto: ate 27/08/2026 era
+        // `DESTRUIDO`, do paragrafo do `%LOCALAPPDATA%` que saiu da tela.
+        assert!(!saida.contains("veio de dentro da imagem"), "{saida}");
     }
 
     #[test]
@@ -1208,27 +1223,78 @@ mod testes {
     }
 
     #[test]
-    fn a_restauracao_concluida_diz_que_ha_um_sinal_so_e_que_o_arca_log_se_foi() {
+    fn a_restauracao_concluida_diz_o_que_conferir_e_onde_o_log_ficou() {
         let saida = colher_restauracao(
             Encontrado::Arquivo(Julgamento::Concluida),
             Some(Veredito::Aprovada),
         );
 
-        // P-6 deste lado: nao ha segundo juiz do resultado.
-        assert!(saida.contains("vem de UM sinal so"), "{saida}");
-        assert!(saida.contains("(P-6)"), "{saida}");
-        // §4.1 com dente: o registro do lado Windows foi destruido.
+        // **Quem lê esta tela ja religou**, e a versao anterior mandava
+        // religar. Ver [`super::conselho_da_restauracao`]: o `arca restore`
+        // manda reconectar o SSD so para colher, entao o Windows subir e
+        // pre-requisito para o comando rodar, e nao tarefa pendente.
         assert!(
-            saida.contains("`arca.log` do lado Windows foi DESTRUIDO"),
+            saida.contains("este Windows ja e o que voltou da imagem"),
             "{saida}"
         );
+        assert!(saida.contains("Confira\n  seus programas"), "{saida}");
         // O log do Clonezilla desta operacao, que sobreviveu no ARCAVAULT.
         assert!(
             saida.contains(r"ARCA-LOGS\restauracao-2026-08-22_Apps\arca-restore.log"),
             "{saida}"
         );
-        // E a janela do ADR-0009, que o desarmar acima fechou.
-        assert!(saida.contains("restauraria de novo"), "{saida}");
+        // §4.1 com dente, agora numa linha: o `arca.log` de la e de outro tempo.
+        assert!(
+            saida.contains("`arca.log` do C: veio de dentro da imagem"),
+            "{saida}"
+        );
+        // E a janela do ADR-0009, que o desarmar acima fechou — a resposta ao
+        // aviso em caixa alta que o `arca restore` deu antes de reiniciar.
+        assert!(
+            saida.contains("religar com ele conectado nao restaura mais"),
+            "{saida}"
+        );
+    }
+
+    #[test]
+    fn o_conselho_da_restauracao_nao_explica_o_projeto() {
+        // Irmao de `o_conselho_nao_explica_o_projeto`, e a quarta tela deste
+        // projeto a perder a explicacao. Aqui eram tres paragrafos: a
+        // comparacao com os dois sinais do backup (`ocs-chkimg`, B-9, P-6), o
+        // caminho do `%LOCALAPPDATA%` com o `estado.json` de §4.1, e o
+        // mecanismo da janela do ADR-0009.
+        //
+        // Quem acabou de restaurar quer saber **o que conferir**, **onde o log
+        // ficou** e **se pode religar com o SSD plugado**. Por que nao ha
+        // segundo juiz do resultado e registro de projeto: mora no `///` de
+        // [`super::conselho_da_restauracao`] e nos ADRs.
+        let saida = colher_restauracao(
+            Encontrado::Arquivo(Julgamento::Concluida),
+            Some(Veredito::Aprovada),
+        );
+
+        for vazamento in [
+            "(P-6)",
+            "§4.1",
+            "%LOCALAPPDATA%",
+            "ocs-chkimg",
+            "ocs-sr",
+            "B-9",
+            "ADR-",
+            "estado.json",
+            "UM sinal so",
+        ] {
+            assert!(
+                !saida.contains(vazamento),
+                "o conselho vazou `{vazamento}`, que e registro de projeto:\n{saida}"
+            );
+        }
+
+        // E o pedido impossivel que saiu em 27/08/2026: quem lê ja religou.
+        assert!(
+            !saida.contains("religue e confira"),
+            "a tela voltou a mandar religar quem ja religou:\n{saida}"
+        );
     }
 
     #[test]
