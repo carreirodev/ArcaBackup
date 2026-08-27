@@ -75,6 +75,7 @@
 
 use crate::resumo::{Algoritmo, RecusaDoResumo, Resumo};
 use std::fmt;
+use std::path::PathBuf;
 
 /// A versão do Clonezilla que o ARCA instala.
 ///
@@ -122,6 +123,30 @@ pub const CAMINHOS_OBRIGATORIOS: [&str; 4] = [
 /// Por que o pacote não serve.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecusaDoPacote {
+    /// PR-2: o `--iso` nomeia um arquivo que não está lá.
+    ///
+    /// # Por que este caso tem nome próprio, e o que a falta dele custava
+    ///
+    /// Até 27/08/2026 um caminho errado seguia até o `certutil`, que responde
+    /// `0x80070002 (WIN32: 2 ERROR_FILE_NOT_FOUND)`. O que chegava a quem
+    /// digitou o caminho era o código de erro de uma ferramenta do Windows
+    /// dentro de duas camadas de recusa do ARCA — uma frase sobre conferência
+    /// de resumo para um problema que é de caminho. Ninguém lê `0x80070002` e
+    /// pensa *"errei a pasta"*.
+    ///
+    /// E ilegível era o menor dos dois defeitos: a recusa só nascia no passo
+    /// 7, **depois** do ponto sem volta. Cada tentativa com o caminho errado
+    /// custava o disco inteiro, e a tentativa seguinte custava outro.
+    ///
+    /// # Por que a mensagem pode prometer que nada foi apagado
+    ///
+    /// Porque esta variante nasce em **um lugar só** —
+    /// [`crate::comandos::prepare::conferir_o_pacote_local`], que roda antes
+    /// do passo 0 —, e é isso que autoriza a promessa. A conferência que
+    /// acontece de novo no passo 7 não a levanta: lá o disco já foi apagado, e
+    /// a frase seria mentira.
+    NaoEstaLa { caminho: PathBuf },
+
     /// O `certutil` não resumiu o arquivo.
     NaoDeuParaResumir(RecusaDoResumo),
 
@@ -136,6 +161,11 @@ pub enum RecusaDoPacote {
 impl fmt::Display for RecusaDoPacote {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            RecusaDoPacote::NaoEstaLa { caminho } => write!(
+                f,
+                "o arquivo `{}` nao esta la, e e o caminho que o `--iso` deu. O `--iso` nomeia o arquivo, e nao a pasta onde ele esta: ele termina em `{ARQUIVO}`. Um caminho relativo vale a partir da pasta de onde o comando foi digitado — passe o caminho completo, entre aspas se ele tiver espaco. Nada foi apagado (PR-2)",
+                caminho.display()
+            ),
             RecusaDoPacote::NaoDeuParaResumir(porque) => write!(
                 f,
                 "nao deu para conferir o SHA256 do pacote do Clonezilla: {porque}. Sem essa conferencia o ARCA nao instala nada — um pacote que nao se conferiu e um pacote que nao se sabe o que e (PR-1)"
@@ -282,6 +312,24 @@ mod testes {
             recusa.to_string().contains("nao veio junto do download"),
             "{recusa}"
         );
+    }
+
+    #[test]
+    fn o_caminho_que_nao_existe_e_recusa_de_caminho_e_nao_de_certutil() {
+        // A mensagem tem de falar do que quem digitou pode consertar. O
+        // `0x80070002` do `certutil` diz a verdade e nao ajuda ninguem: o
+        // problema e o caminho, e a frase e sobre o caminho.
+        let recusa = RecusaDoPacote::NaoEstaLa {
+            caminho: PathBuf::from(r"C:\Users\Ana Paula\Downloads\clonezilla.zip"),
+        };
+        let dito = recusa.to_string();
+
+        assert!(
+            dito.contains(r"C:\Users\Ana Paula\Downloads\clonezilla.zip"),
+            "{dito}"
+        );
+        assert!(dito.contains(ARQUIVO), "o nome do arquivo esperado: {dito}");
+        assert!(dito.contains("Nada foi apagado"), "{dito}");
     }
 
     #[test]

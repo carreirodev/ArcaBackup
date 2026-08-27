@@ -509,6 +509,7 @@ Com `--dispositivo` na linha, o menu **não aparece** — é o atalho de quem j�
 
 | # | Passo | Parando aqui, o que fica |
 |---|---|---|
+| pré-voo | Conferir o pacote do `--iso`, quando ele veio | nada tocado |
 | 0 | Listar os discos e perguntar o número — **só sem `--dispositivo`** | nada tocado |
 | 1 | Descrever o disco e julgar as sete defesas | nada tocado |
 | 2 | Imprimir o plano inteiro | nada tocado |
@@ -523,6 +524,8 @@ Com `--dispositivo` na linha, o menu **não aparece** — é o atalho de quem j�
 | 11 | Criar a entrada, apontá-la e **tirá-la da ordem permanente** | pronto |
 
 Nenhum desses estados é pior do que o anterior, e todos são reversíveis rodando o comando de novo — ele começa apagando. Do passo 8 em diante o dispositivo **já boota**: um `prepare` interrompido ali deixa um Clonezilla utilizável pelo menu.
+
+O **pré-voo não tem número** porque não é um estado em que se possa parar: ele é a recusa que acontece antes de o comando começar. O `--iso` é a única entrada deste comando que dá para julgar inteira sem tocar em disco nenhum — o arquivo está lá, o SHA256 é o do pacote fixado, e dentro dele estão os quatro caminhos que fazem um dispositivo bootar —, e as três perguntas são feitas ali. O passo 7 continua conferindo a mesma coisa: entre um e outro há uma pessoa lendo o plano e digitando o modelo do disco, que é o mesmo intervalo que o passo 3 cobre relendo o disco.
 
 #### O pacote do Clonezilla
 
@@ -542,6 +545,14 @@ arca prepare --dispositivo 1 --iso D:\clonezilla-live-3.3.3-15-amd64.zip
 ```
 
 O SHA256 é conferido do mesmo jeito; só o `curl` é pulado. É o que salva quando a máquina que precisa preparar o dispositivo é justamente a que está sem Windows e sem rede.
+
+**O `--iso` nomeia o arquivo, e não a pasta onde ele está** — e um caminho relativo vale a partir da pasta de onde o comando foi digitado. Com o pacote na pasta de downloads, o caminho inteiro entre aspas é a forma que não erra:
+
+```powershell
+arca prepare --dispositivo 1 --iso "C:\Users\<voce>\Downloads\clonezilla-live-3.3.3-15-amd64.zip"
+```
+
+Um caminho que não existe, um pacote de outra versão e um zip sem o `bootx64.efi` são recusados no pré-voo, **antes do passo 5** — o disco fica intacto.
 
 #### Ver o plano sem executá-lo
 
@@ -1821,7 +1832,19 @@ O ARCA para aqui e nao extrai nada. O numero esperado esta compilado neste
 binario e nao veio junto do download.
 ```
 
-Ou o download veio corrompido — rode de novo —, ou o arquivo do outro lado não é o que este ARCA conhece. **Neste ponto o disco já foi apagado**: o dispositivo fica vazio, com as duas partições prontas e sem Clonezilla. Rodar o `prepare` de novo resolve.
+Ou o download veio corrompido — rode de novo —, ou o arquivo do outro lado não é o que este ARCA conhece. A causa mais comum com `--iso` é baixar **o Clonezilla de hoje** em vez da versão que este ARCA fixa: o SourceForge publica versões novas, e `3.3.3-15` é a que este binário conhece.
+
+**Com `--iso`, nada foi apagado** — a recusa vem do pré-voo. Sem `--iso` o disco já foi apagado quando ela chega: o dispositivo fica vazio, com as duas partições prontas e sem Clonezilla, e rodar o `prepare` de novo resolve.
+
+### `o arquivo ... nao esta la, e e o caminho que o --iso deu`
+
+```
+O `--iso` nomeia o arquivo, e nao a pasta onde ele esta: ele termina em
+`clonezilla-live-3.3.3-15-amd64.zip`. Um caminho relativo vale a partir da pasta
+de onde o comando foi digitado. Nada foi apagado (PR-2)
+```
+
+O ARCA procurou exatamente o caminho que recebeu e não achou nada. Confira a pasta, o nome do arquivo e as aspas — um caminho com espaço precisa delas. **Nada foi apagado**: esta recusa acontece no pré-voo, antes do passo 0.
 
 ### `o disco N NAO e mais o que estava no plano`
 

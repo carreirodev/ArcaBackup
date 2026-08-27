@@ -59,6 +59,7 @@
 //!
 //! | # | Passo | Parando aqui, o que fica |
 //! |---|---|---|
+//! | pré-voo | Conferir o pacote do `--iso`, quando ele veio (PR-1, PR-2) | nada tocado |
 //! | 0 | Listar os discos e perguntar o número — só sem `--dispositivo` (ADR-0024) | nada tocado |
 //! | 1 | Descrever o disco e julgar (PR-5) | nada tocado |
 //! | 2 | Imprimir o plano (PR-4) | nada tocado |
@@ -78,6 +79,29 @@
 //!
 //! Do passo 8 em diante o dispositivo **já boota**: um `prepare` interrompido
 //! ali deixa um Clonezilla utilizável pelo menu (§6.4), sem o ARCA dentro.
+//!
+//! # O pré-voo do pacote, e por que ele não é um passo
+//!
+//! O `--iso` é a única entrada deste comando que dá para julgar inteira sem
+//! tocar em disco nenhum: o arquivo está lá, o SHA256 é o do pacote fixado, e
+//! dentro dele estão os quatro caminhos que fazem um dispositivo bootar. As
+//! três perguntas custam segundos e não escrevem nada.
+//!
+//! Até 27/08/2026 elas eram feitas **no passo 7**, e a única diferença é que
+//! ali o disco já não existe mais. Um caminho digitado errado, um download de
+//! outra versão, um zip truncado — os três custavam o disco antes de serem
+//! ditos, e a tentativa seguinte custava o disco de novo, porque a mensagem
+//! chegava depois de o comando ter feito a parte irreversível do trabalho.
+//!
+//! Por isso o pré-voo não recebeu número: ele não é um passo do `prepare`, é a
+//! recusa que acontece **antes** de o comando começar — o mesmo lugar de
+//! [`crate::prevoo`] nos outros comandos. Numerá-lo diria que há doze estados
+//! em que se pode parar, e continuam sendo onze.
+//!
+//! O passo 7 continua conferindo, e conferindo a mesma coisa. Não é
+//! desperdício: entre o pré-voo e ele há uma pessoa lendo o plano e digitando
+//! o modelo do disco, e é exatamente o intervalo em que o terceiro tempo de
+//! PR-4 relê o disco. O que vale para o disco vale para o arquivo.
 
 use crate::app::Contexto;
 use crate::confirmacao;
@@ -115,6 +139,25 @@ pub fn executar(
     dispositivo: Option<u32>,
     iso: Option<&Path>,
 ) -> Resultado<()> {
+    // ─────────── pré-voo: o pacote do `--iso`, com o disco ainda intacto ───────────
+
+    // Antes do passo 0, e não junto do passo 6: ver a seção sobre o pré-voo no
+    // cabeçalho deste módulo para o que essa ordem custou.
+    if let Some(caminho) = iso {
+        let resumo = conferir_o_pacote_local(contexto, caminho)?;
+        print!(
+            "{}",
+            linha(
+                "Pacote conferido",
+                &format!(
+                    "ok · {} · {} · nada tocado ainda (PR-2)",
+                    resumo.abreviado(),
+                    caminho.display()
+                ),
+            )
+        );
+    }
+
     // ─────────── 0. de onde sai o índice, quando ele não veio na linha ───────────
 
     let discos = contexto.particionador.enumerar()?;
@@ -473,6 +516,61 @@ fn resumir_o_conteudo(disco: &DiscoParaPreparar) -> String {
     }
 }
 
+/// O pré-voo de PR-2: o pacote do `--iso` julgado inteiro com o disco intacto.
+///
+/// # Por que a pergunta "o arquivo está lá?" mora aqui, e não em
+/// [`conferir_o_pacote`]
+///
+/// Porque [`pacote::RecusaDoPacote::NaoEstaLa`] promete que *nada foi
+/// apagado*, e só esta função pode fazer essa promessa — ela roda antes do
+/// passo 0. A conferência do passo 7 chama a mesma [`conferir_o_pacote`] com o
+/// disco já particionado, e levantar a mesma recusa de lá faria o ARCA
+/// prometer o que não é verdade.
+///
+/// Um arquivo que existe no pré-voo e some antes do passo 7 continua caindo
+/// onde caía: no `certutil`, que responde `ERROR_FILE_NOT_FOUND`. É o desfecho
+/// certo para esse caso — ele **é** uma surpresa, e a mensagem crua diz isso
+/// melhor do que uma frase escrita para quem digitou um caminho errado.
+fn conferir_o_pacote_local(
+    contexto: &Contexto,
+    caminho: &Path,
+) -> Resultado<crate::resumo::Resumo> {
+    if !contexto.arquivos.existe(caminho) {
+        return Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoEstaLa {
+            caminho: caminho.to_path_buf(),
+        }));
+    }
+
+    conferir_o_pacote(contexto, caminho)
+}
+
+/// As duas perguntas de PR-1 sobre um arquivo que está lá: o SHA256 bate, e
+/// dentro dele está o que faz um dispositivo bootar.
+///
+/// Não imprime nada. Quem chama diz de onde veio o pacote e em que momento — e
+/// os dois momentos em que ela roda dizem coisas diferentes na tela.
+fn conferir_o_pacote(contexto: &Contexto, local: &Path) -> Resultado<crate::resumo::Resumo> {
+    let medido = crate::resumo::do_certutil(
+        &contexto
+            .sistema
+            .resumir(local, crate::resumo::Algoritmo::Sha256)?,
+        crate::resumo::Algoritmo::Sha256,
+    );
+    let resumo = pacote::conferir_o_resumo(medido).map_err(Erro::PacoteRecusado)?;
+
+    // O conteúdo, e não só o resumo: o `bsdtar` sair com zero não é prova de
+    // que o pacote tem o que faz um dispositivo bootar.
+    let listagem = contexto.sistema.listar_pacote(local)?;
+    let faltando = pacote::o_que_falta(listagem.texto.lines().map(str::trim));
+    if !faltando.is_empty() {
+        return Err(Erro::PacoteRecusado(
+            pacote::RecusaDoPacote::PacoteIncompleto { faltando },
+        ));
+    }
+
+    Ok(resumo)
+}
+
 /// Baixa (ou usa o `--iso`), confere o SHA256 e guarda a cópia de PR-3.
 ///
 /// # A ordem é baixar, conferir, e só então usar
@@ -519,14 +617,12 @@ fn obter_o_pacote(
         }
     };
 
-    // PR-1, e a conferência acontece antes de qualquer uso do arquivo.
-    let medido = crate::resumo::do_certutil(
-        &contexto
-            .sistema
-            .resumir(&local, crate::resumo::Algoritmo::Sha256)?,
-        crate::resumo::Algoritmo::Sha256,
-    );
-    let resumo = pacote::conferir_o_resumo(medido).map_err(Erro::PacoteRecusado)?;
+    // PR-1, e a conferência acontece antes de qualquer uso do arquivo. Quando
+    // o pacote veio de `--iso`, esta é a **segunda** vez: a primeira foi o
+    // pré-voo, e o que separa as duas é uma pessoa lendo o plano e digitando o
+    // modelo do disco. É o mesmo intervalo que o terceiro tempo de PR-4 cobre
+    // relendo o disco.
+    let resumo = conferir_o_pacote(contexto, &local)?;
 
     print!(
         "{}",
@@ -535,16 +631,6 @@ fn obter_o_pacote(
             &format!("ok · {} · de {de_onde}", resumo.abreviado()),
         )
     );
-
-    // E o conteúdo, antes de escrever no dispositivo: o `bsdtar` sair com zero
-    // não é prova de que o pacote tem o que faz um dispositivo bootar.
-    let listagem = contexto.sistema.listar_pacote(&local)?;
-    let faltando = pacote::o_que_falta(listagem.texto.lines().map(str::trim));
-    if !faltando.is_empty() {
-        return Err(Erro::PacoteRecusado(
-            pacote::RecusaDoPacote::PacoteIncompleto { faltando },
-        ));
-    }
 
     // PR-3: a cópia no `ARCAVAULT`, para que o dispositivo se reconstrua
     // sozinho. Quando o pacote veio de `--iso`, ele ainda não está lá.
@@ -1307,6 +1393,204 @@ mod testes {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(self.registro.caminho().parent().unwrap());
         }
+    }
+
+    // ─────────── o pré-voo do `--iso`, e o disco que ele salva ───────────
+
+    /// Onde um pacote baixado costuma estar de verdade — e o caminho tem
+    /// espaço, que é metade das formas de digitá-lo errado.
+    const NA_PASTA_DE_DOWNLOADS: &str =
+        r"C:\Users\Ana Paula\Downloads\clonezilla-live-3.3.3-15-amd64.zip";
+
+    /// Uma bancada onde o arquivo do `--iso` **está lá**, e o `certutil`
+    /// responde o resumo que se pedir sobre ele.
+    ///
+    /// O resumo entra por parâmetro porque é o que separa os três casos: o
+    /// pacote certo, o de outra versão e o que nem chega a ser medido.
+    fn com_o_pacote_em(
+        etiqueta: &str,
+        caminho: &str,
+        sha256: &str,
+        console: ConsoleDeMentira,
+    ) -> Bancada {
+        let mut bancada = Bancada::nova(etiqueta, console);
+        bancada.arquivos = ArquivosEmMemoria::novo().com(caminho, "o zip, de mentira");
+        bancada.sistema = SistemaDeMentira::novo().com_resumo(caminho, sha256);
+        bancada
+    }
+
+    #[test]
+    fn um_iso_que_nao_esta_la_recusa_com_o_disco_intacto() {
+        // **O teste que motivou o pré-voo.** Um caminho digitado errado é o
+        // erro mais barato de cometer neste comando e era o mais caro de
+        // pagar: até 27/08/2026 a recusa nascia no passo 7, com o disco já
+        // apagado, e quem tentasse de novo pagava outro disco.
+        //
+        // O duplo não precisa ser ensinado a falhar: o `resumo_padrao` do
+        // `SistemaDeMentira` **é** a resposta medida do `certutil` para um
+        // arquivo ausente. Se o pré-voo sumisse, este teste passaria a falhar
+        // pelo `certutil`, e não pelo caminho — e a asserção do
+        // particionamento pegaria isso.
+        let bancada = Bancada::nova("iso-ausente", ConsoleDeMentira::mudo());
+
+        let erro = executar(
+            &bancada.contexto(false),
+            Some(1),
+            Some(Path::new(NA_PASTA_DE_DOWNLOADS)),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoEstaLa { .. })
+            ),
+            "{erro}"
+        );
+        assert!(
+            !bancada.particionador.particionou(),
+            "o caminho errado do `--iso` apagou o disco"
+        );
+        assert_eq!(
+            bancada.console.lidas.get(),
+            0,
+            "chegou a perguntar antes de olhar o pacote"
+        );
+
+        // E a mensagem fala do caminho, que é o problema — e não do
+        // `0x80070002`, que é o sintoma.
+        let dito = erro.to_string();
+        assert!(dito.contains(NA_PASTA_DE_DOWNLOADS), "{dito}");
+        assert!(dito.contains("Nada foi apagado"), "{dito}");
+    }
+
+    #[test]
+    fn um_iso_com_o_sha256_errado_recusa_com_o_disco_intacto() {
+        // O caso de PR-1, e o mais provável depois de um caminho errado: o
+        // SourceForge publica versões novas, e quem baixa "o Clonezilla" baixa
+        // a de hoje. O ARCA fixa a `3.3.3-15`, então o pacote certo do site
+        // errado é o pacote errado — e descobrir isso não pode custar o disco.
+        let outra_versao = "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10";
+        let bancada = com_o_pacote_em(
+            "iso-divergente",
+            NA_PASTA_DE_DOWNLOADS,
+            outra_versao,
+            ConsoleDeMentira::mudo(),
+        );
+
+        let erro = executar(
+            &bancada.contexto(false),
+            Some(1),
+            Some(Path::new(NA_PASTA_DE_DOWNLOADS)),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente { .. })
+            ),
+            "{erro}"
+        );
+        assert!(
+            !bancada.particionador.particionou(),
+            "o pacote de outra versao apagou o disco"
+        );
+    }
+
+    #[test]
+    fn um_iso_sem_o_que_boota_recusa_com_o_disco_intacto() {
+        // A terceira pergunta do pré-voo, e a que o `bsdtar` sair com zero não
+        // responde. Um zip sem o `bootx64.efi` produz um dispositivo que não
+        // boota — e isso só se descobriria quando alguém precisasse dele.
+        let mut bancada = Bancada::nova("iso-incompleto", ConsoleDeMentira::mudo());
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com(NA_PASTA_DE_DOWNLOADS, "o zip, de mentira");
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+            .listando(0, "boot/grub/grub.cfg\nlive/vmlinuz\nlive/initrd.img\n");
+
+        let erro = executar(
+            &bancada.contexto(false),
+            Some(1),
+            Some(Path::new(NA_PASTA_DE_DOWNLOADS)),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::PacoteIncompleto { .. })
+            ),
+            "{erro}"
+        );
+        assert!(
+            !bancada.particionador.particionou(),
+            "o pacote sem o `.efi` apagou o disco"
+        );
+    }
+
+    #[test]
+    fn o_pacote_local_bom_e_conferido_de_novo_depois_do_ponto_sem_volta() {
+        // O pré-voo não substitui o passo 7, e a razão é a mesma do terceiro
+        // tempo de PR-4: entre os dois há uma pessoa lendo o plano e digitando
+        // o modelo do disco, e nesse intervalo cabe trocar o arquivo. O que
+        // vale para o disco vale para o pacote.
+        let bancada = com_o_pacote_em(
+            "iso-bom",
+            NA_PASTA_DE_DOWNLOADS,
+            pacote::SHA256,
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        );
+
+        // O comando segue além do passo 8 e morre no `grub.cfg` que nenhum
+        // duplo escreveu — o `bsdtar` de mentira não extrai nada. Não importa:
+        // o que se cobra aqui acontece antes disso, e a extração registrada é
+        // a prova de que o passo 7 foi atravessado.
+        let _ = executar(
+            &bancada.contexto(false),
+            Some(1),
+            Some(Path::new(NA_PASTA_DE_DOWNLOADS)),
+        );
+
+        assert!(
+            !bancada.sistema.extraidos.borrow().is_empty(),
+            "o pacote certo nao chegou a ser extraido"
+        );
+        assert_eq!(
+            bancada.sistema.resumidos(),
+            vec![
+                PathBuf::from(NA_PASTA_DE_DOWNLOADS),
+                PathBuf::from(NA_PASTA_DE_DOWNLOADS)
+            ],
+            "o pacote tem de ser conferido duas vezes: antes e depois do ponto sem volta"
+        );
+        assert!(
+            bancada.particionador.particionou(),
+            "o caminho feliz do `--iso` nao chegou a particionar"
+        );
+        assert!(
+            bancada.sistema.baixados.borrow().is_empty(),
+            "o `--iso` baixou o Clonezilla"
+        );
+    }
+
+    #[test]
+    fn sem_iso_o_pre_voo_nao_tem_o_que_conferir() {
+        // O pré-voo é sobre o arquivo que já está no disco de quem chamou. Sem
+        // `--iso` não há arquivo ainda, e antecipar o download significaria
+        // baixar meio giga para um destino que só existe depois do passo 5.
+        //
+        // O que se cobra aqui é que a ausência de `--iso` não invente uma
+        // conferência: o menu tem de aparecer como sempre apareceu.
+        let bancada = Bancada::nova("sem-iso", ConsoleDeMentira::mudo());
+
+        let _ = executar(&bancada.contexto(true), Some(1), None);
+
+        assert!(
+            bancada.sistema.resumidos().is_empty(),
+            "conferiu um pacote que ninguem apontou"
+        );
     }
 
     // ─────────── o que NÃO acontece, que é o que mais importa aqui ───────────
