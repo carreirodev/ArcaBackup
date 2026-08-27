@@ -173,7 +173,7 @@ pub fn executar(
     // nao deveriam mexer na ordem de boot, e "nao deveria" e exatamente o que
     // C-3 manda desconfiar: a comparacao do fim pega qualquer uma das tres que
     // tenha mexido.
-    let gerenciador_antes = firmware::ler(&ferramenta.enumerar(FWBOOTMGR)?);
+    let gerenciador_antes = firmware::enumerar(ferramenta, FWBOOTMGR)?;
     if !gerenciador_antes.viu_o_gerenciador {
         return Err(Erro::FirmwareIlegivel { alvo: FWBOOTMGR });
     }
@@ -353,7 +353,7 @@ pub fn montar_as_linhas(armado: &Armado) -> String {
 /// o `arca prepare` da E10, que prepara dispositivo. Armar nao e a hora de
 /// estrear a criacao de entrada de firmware.
 fn migrar_a_entrada(ferramenta: &dyn Firmware) -> Resultado<(String, Entrada)> {
-    let leitura = firmware::ler(&ferramenta.enumerar(FIRMWARE)?);
+    let leitura = firmware::enumerar(ferramenta, FIRMWARE)?;
     let achado = leitura
         .entrada_do_arca()
         .ok_or(Erro::SemEntradaDeFirmware)?;
@@ -459,7 +459,7 @@ fn marcar_o_boot_unico(
 ) -> Resultado<()> {
     let _ = ferramenta.executar(&["/set", FWBOOTMGR, BOOTSEQUENCE, identificador]);
 
-    let depois = firmware::ler(&ferramenta.enumerar(FWBOOTMGR)?);
+    let depois = firmware::enumerar(ferramenta, FWBOOTMGR)?;
 
     // O parser nunca falha por desenho: texto irreconhecivel vira leitura
     // vazia, e leitura vazia tem `boot_unico` vazio. Aqui isso seria pior do
@@ -537,7 +537,7 @@ fn marcar_o_boot_unico(
 
 /// Relê uma entrada especifica depois de escrever nela (C-3).
 fn releitura(ferramenta: &dyn Firmware, identificador: &str) -> Resultado<EntradaDeFirmware> {
-    firmware::ler(&ferramenta.enumerar(FIRMWARE)?)
+    firmware::enumerar(ferramenta, FIRMWARE)?
         .entradas
         .into_iter()
         .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador))
@@ -1053,6 +1053,35 @@ mod testes {
         assert_eq!(arquivos.conteudo_de(GRUB).as_deref(), Some(INERTE));
         assert!(arquivos.conteudo_de(ESTADO).is_none());
         assert!(ferramenta.executados.borrow().is_empty());
+    }
+
+    #[test]
+    fn o_bcdedit_que_lista_e_recusa_no_fim_ainda_arma() {
+        // **C-15, medido em 27/08/2026.** O `arca sondar` morreu em 27 ms na
+        // primeira leitura do `{fwbootmgr}`: o `bcdedit` listava tudo e saia
+        // com codigo 1, porque a entrada `ARCA` apontava para uma particao que
+        // o `arca prepare` tinha apagado. As quatro leituras do armar — o
+        // gerenciador antes, a busca da entrada, a releitura do `device` e o
+        // gerenciador depois — vieram inteiras nesse estado, e o `/set device`
+        // que este mesmo comando faz e o que conserta a NVRAM.
+        //
+        // O "Acesso negado" do teste acima continua sendo recusa: la nao ha
+        // listagem nenhuma. Aqui ha, e ela responde.
+        let arquivos = arquivos();
+        let ferramenta = firmware_desta_maquina()
+            .listando_e_recusando_no_fim(1, "Foi especificado um dispositivo inexistente.");
+
+        let armado = armar_com(&arquivos, &ferramenta).expect("a listagem veio inteira");
+
+        assert_eq!(armado.identificador, GUID);
+        assert!(arquivos.conteudo_de(ESTADO).is_some(), "nao gravou estado");
+        assert!(
+            ferramenta.executados().iter().any(|argumentos| {
+                argumentos.len() == 4 && argumentos[2] == "device" && argumentos[1] == GUID
+            }),
+            "o `/set device` nao aconteceu: {:?}",
+            ferramenta.executados()
+        );
     }
 
     #[test]

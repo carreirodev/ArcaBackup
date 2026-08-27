@@ -93,7 +93,7 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
     let raiz_do_vault = dispositivo.raiz_do_vault()?;
     let pastas = imagens::enumerar(contexto.arquivos, &raiz_do_vault)?;
 
-    let firmware = firmware::ler(&contexto.firmware.enumerar(ALVO)?);
+    let firmware = firmware::enumerar(contexto.firmware, ALVO)?;
 
     let estado_do_job = ler_o_job(contexto.arquivos, &dispositivo, &raiz_do_vault);
 

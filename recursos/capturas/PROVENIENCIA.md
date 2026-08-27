@@ -1209,3 +1209,46 @@ dispositivo só foi testado.
 > casos e voltando às duas entradas da Etapa 1. Deixar entrada morta na ordem é
 > o que o [ADR-0021](../../docs/adr/0021-uma-entrada-sem-alvo-na-ordem-nao-e-seguranca.md)
 > diz não ser segurança, e vale para entrada de medição também.
+
+## O `bcdedit` que listou tudo e recusou no fim (27/08/2026)
+
+| Arquivo | O que é |
+|---|---|
+| `bcdedit-enum-fwbootmgr-2026-08-27-dispositivo-inexistente.txt` | `bcdedit /enum {fwbootmgr}` desta máquina, 27/08/2026 por volta das 19:45, **código 1** |
+| `bcdedit-enum-firmware-2026-08-27-dispositivo-inexistente.txt` | `bcdedit /enum firmware` da mesma sessão elevada, **código 1** |
+
+São o estado que o [ADR-0026](../../docs/adr/0026-a-recusa-do-bcdedit-nao-apaga-o-que-ele-listou.md)
+descreve: a entrada `ARCA` (`{8a1c6901-…}`) com `device unknown`, porque a
+`ARCABOOT` para onde ela apontava tinha sido apagada pelo `arca prepare` das
+19:03; a listagem **inteira**; e, depois da última linha, *"Foi especificado um
+dispositivo inexistente."*. Todo `/enum` da máquina saía assim — `{bootmgr}`,
+`all /v`, cada `UEFI:*` — e a mensagem vinha sempre no fim. O código de saída
+não está no arquivo; está no `arca.log` daquela noite e na sessão que gravou
+estes dois.
+
+**Por onde os bytes passaram, e é diferente das capturas da E2.** O `bcdedit`
+foi chamado de um `pwsh` 7 elevado, com `2>&1 | Out-File -Encoding utf8`. A
+pipeline do PowerShell decodificou a página de código do console — a mesma
+conversão CP850→UTF-8 das capturas de 22/08 — e reescreveu as quebras de linha;
+os arquivos aqui as têm de volta em CRLF, que é como o `bcdedit` escreve. Se a
+mensagem final saiu por `stdout` ou por `stderr`, a captura não distingue: as
+duas foram fundidas pela pipeline, na ordem em que chegaram. O adaptador do
+ARCA funde os dois do mesmo jeito, então é isso que o parser recebe em
+produção.
+
+### O que estas duas mostram
+
+- **`device unknown` é a forma de uma entrada pendurada.** Não é uma etiqueta
+  nova: é o que o `bcdedit` escreve quando o elemento `device` aponta para uma
+  partição que não resolve. O parser a lê como `Alvo::Outro("unknown")`.
+- **A recusa não é sobre o alvo do `/enum`.** O `/enum {fwbootmgr}` não tem
+  `device` e recusou do mesmo jeito. É sobre o repositório.
+- **A entrada continua achável pela descrição**, que é como C-4 sempre a
+  achou — e é o que permite reusá-la em vez de criar outra.
+- **A NVRAM, lida sem `bcdedit`** (variáveis `Boot####`, com
+  `SeSystemEnvironmentPrivilege`), tinha `Boot0000 "ARCA"` →
+  `HD(part=2, sig=a022ea07-307a-415f-813a-9c47192360ec)`, o GUID do layout
+  apagado; depois do `/set device partition=E:`, `sig=a75737e3-240e-451d-8c95-85a0bd2f714d`,
+  a `ARCABOOT` atual. A leitura da NVRAM não está aqui como captura porque o
+  script que a fez não é ferramenta que outra pessoa tenha — está transcrita
+  no ADR.

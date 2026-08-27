@@ -127,7 +127,7 @@ impl OrdemDevolvida {
 /// 23/08/2026 respondem *"A operação foi concluída com êxito"* e saem com
 /// codigo 0 — inclusive o que nao muda nada. Quem responde e a releitura.
 pub fn devolver_o_windows(ferramenta: &dyn Firmware) -> Resultado<OrdemDevolvida> {
-    let antes = firmware::ler(&ferramenta.enumerar(FIRMWARE)?);
+    let antes = firmware::enumerar(ferramenta, FIRMWARE)?;
 
     // "Nao entendi a resposta" nao pode virar "estava tudo bem". O parser
     // nunca falha por desenho, e texto irreconhecivel vira leitura vazia —
@@ -143,7 +143,7 @@ pub fn devolver_o_windows(ferramenta: &dyn Firmware) -> Resultado<OrdemDevolvida
 
     let _ = ferramenta.executar(&["/set", FWBOOTMGR, DISPLAYORDER, BOOTMGR, ADDFIRST]);
 
-    let depois = firmware::ler(&ferramenta.enumerar(FIRMWARE)?);
+    let depois = firmware::enumerar(ferramenta, FIRMWARE)?;
     if !depois.viu_o_gerenciador {
         return Err(Erro::FirmwareIlegivel { alvo: FWBOOTMGR });
     }

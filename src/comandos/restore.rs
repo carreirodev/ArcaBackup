@@ -1172,10 +1172,11 @@ pub enum OrdemDeBoot {
 /// o `arca status` lê desde a E2. Duas chamadas dariam duas leituras de
 /// momentos diferentes coladas numa so, que e exatamente a armadilha do §11.
 fn ordem_de_boot(contexto: &Contexto, dispositivo: &Dispositivo) -> OrdemDeBoot {
-    let Ok(texto) = contexto.firmware.enumerar(FIRMWARE) else {
+    // Pela leitura tolerante de C-15: um `bcdedit` que listou e recusou no fim
+    // listou, e o que decide aqui e a listagem.
+    let Ok(leitura) = crate::firmware::enumerar(contexto.firmware, FIRMWARE) else {
         return OrdemDeBoot::NaoDeuParaLer;
     };
-    let leitura = crate::firmware::ler(&texto);
     if !leitura.viu_o_gerenciador {
         return OrdemDeBoot::NaoDeuParaLer;
     }

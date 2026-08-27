@@ -45,6 +45,9 @@
 //! `src/adaptadores/windows/volumes.rs` sobre por que a classificacao para por
 //! ai.
 
+use crate::erro::{Erro, Resultado};
+use crate::portas::Firmware;
+
 /// O nome da entrada de firmware do ARCA (C-4).
 pub const ARCA: &str = "ARCA";
 
@@ -220,6 +223,21 @@ pub struct Leitura {
     /// se ela sumiu (C-3), nao dá: "nao entendi a resposta" viraria "desarmou"
     /// e o boot unico continuaria armado. Ver [`crate::desarme`].
     pub viu_o_gerenciador: bool,
+
+    /// O codigo com que o `bcdedit` saiu, quando saiu **diferente de zero e
+    /// ainda assim listou** (C-15). `None` e o caso normal: codigo 0.
+    ///
+    /// Medido em 27/08/2026: com a entrada `ARCA` apontando para uma particao
+    /// que o `arca prepare` tinha acabado de apagar, **todo** `/enum` desta
+    /// maquina imprimia a listagem inteira e terminava com *"Foi especificado
+    /// um dispositivo inexistente."*, codigo 1 — inclusive o `/enum {bootmgr}`
+    /// e o de uma `UEFI:*` sem `device` nenhum. A recusa e sobre o estado da
+    /// NVRAM, e nao sobre o que foi pedido; a listagem, essa, veio completa.
+    ///
+    /// Fica na leitura para quem escreve poder decidir com ele: o `arca
+    /// prepare` nao **cria** entrada a partir de uma leitura assim (C-4), so
+    /// reusa — e registra o codigo. Ver [`enumerar`].
+    pub codigo_da_recusa: Option<i32>,
 }
 
 impl Leitura {
@@ -378,6 +396,65 @@ pub fn ler(texto: &str) -> Leitura {
     leitura
 }
 
+/// Enumera pelo `bcdedit` e le — e a recusa dele **nao apaga o que ele
+/// listou** (C-15).
+///
+/// # O que foi medido em 27/08/2026, e por que isto existe
+///
+/// O `arca prepare` apagou um dispositivo ARCA existente (passo 5) e morreu
+/// no passo 11, no primeiro `/enum`. Nao era o passo: **todo** `bcdedit
+/// /enum` desta maquina — `{fwbootmgr}`, `firmware`, `{bootmgr}`, `all`, o de
+/// uma `UEFI:*` sem `device` — passou a imprimir a listagem inteira e sair
+/// com codigo 1, *"Foi especificado um dispositivo inexistente."*. A causa,
+/// confirmada por releitura da NVRAM: a entrada `ARCA` apontava para o GUID
+/// da `ARCABOOT` que o proprio comando tinha acabado de apagar. O `bcdedit
+/// /set device` para a particao nova devolveu o codigo 0 a todos os `/enum`.
+///
+/// Ate ali, codigo diferente de zero era recusa, ponto — e a razao continua
+/// valendo: sem privilegio o `bcdedit` escreve "Acesso negado" **na saida
+/// padrao** e sai com 1, e quem lesse so o texto concluiria que nao ha
+/// entrada `ARCA` onde nao houve permissao para olhar. As duas coisas cabem
+/// juntas, e o discriminante ja existia: `viu_o_gerenciador`. Uma resposta
+/// que traz o gerenciador (ou, num `/enum {guid}`, a entrada pedida) e uma
+/// leitura, e o codigo vira informacao **a mais**, guardada em
+/// [`Leitura::codigo_da_recusa`]; uma resposta que nao traz nada continua
+/// sendo a recusa que era, com o texto do `bcdedit` inteiro.
+///
+/// # O que isto nao faz
+///
+/// Nao decide por ninguem se a leitura basta para **escrever**. E o
+/// `arca prepare` que recusa criar entrada (`/copy`) sobre uma leitura com
+/// codigo — C-4, uma entrada so — e ele decide isso **antes** do ponto sem
+/// volta. Os outros so reusam o que leram, e reusar o que se leu e o que C-3
+/// sempre mandou.
+///
+/// A forma medida da recusa e a mensagem **depois** da listagem completa, em
+/// todos os alvos; a leitura nao tem como saber se um `bcdedit` futuro parar
+/// no meio. E por isso que a guarda e o gerenciador, que sai primeiro, e nao
+/// a contagem de entradas.
+pub fn enumerar(ferramenta: &dyn Firmware, alvo: &str) -> Resultado<Leitura> {
+    match ferramenta.enumerar(alvo) {
+        Ok(texto) => Ok(ler(&texto)),
+        Err(Erro::FerramentaRecusou {
+            ferramenta: "bcdedit",
+            codigo,
+            saida,
+        }) => {
+            let mut leitura = ler(&saida);
+            if !leitura.viu_o_gerenciador && leitura.entradas.is_empty() {
+                return Err(Erro::FerramentaRecusou {
+                    ferramenta: "bcdedit",
+                    codigo,
+                    saida,
+                });
+            }
+            leitura.codigo_da_recusa = Some(codigo);
+            Ok(leitura)
+        }
+        Err(outro) => Err(outro),
+    }
+}
+
 /// Um bloco e a lista de pares campo/valores de uma entrada; o titulo
 /// traduzido fica de fora, porque nao decide nada.
 type Bloco = Vec<(String, Vec<String>)>;
@@ -470,6 +547,209 @@ mod testes {
 
     /// O identificador da entrada desta maquina, o mesmo nas tres capturas.
     const GUID: &str = "{f4057bd0-65a4-11f1-b0f1-aa4ed9bd2b34}";
+
+    /// 27/08/2026: o `bcdedit /enum firmware` que listou tudo e saiu com
+    /// codigo 1, com a entrada `ARCA` apontando para uma particao que o
+    /// `arca prepare` tinha acabado de apagar (`device unknown`).
+    const COM_RECUSA_NO_FIM: &str = include_str!(
+        "../recursos/capturas/bcdedit-enum-firmware-2026-08-27-dispositivo-inexistente.txt"
+    );
+
+    /// O `/enum {fwbootmgr}` do mesmo instante — so o gerenciador, e a mesma
+    /// recusa no fim.
+    const FWBOOTMGR_COM_RECUSA_NO_FIM: &str = include_str!(
+        "../recursos/capturas/bcdedit-enum-fwbootmgr-2026-08-27-dispositivo-inexistente.txt"
+    );
+
+    /// A entrada `ARCA` desta maquina em 27/08 — outra maquina de BCD, outro
+    /// GUID.
+    const GUID_DE_27_08: &str = "{8a1c6901-a179-11f1-be2c-cbfb5c43df57}";
+
+    /// Um `bcdedit` que responde a **todo** `/enum` com a mesma saida e o
+    /// mesmo codigo — a forma medida em 27/08/2026.
+    struct BcdeditQueSaiCom {
+        codigo: i32,
+        saida: &'static str,
+    }
+
+    impl Firmware for BcdeditQueSaiCom {
+        fn enumerar(&self, _alvo: &str) -> Resultado<String> {
+            if self.codigo == 0 {
+                return Ok(self.saida.to_string());
+            }
+            Err(Erro::FerramentaRecusou {
+                ferramenta: "bcdedit",
+                codigo: self.codigo,
+                saida: self.saida.to_string(),
+            })
+        }
+
+        fn executar(&self, _argumentos: &[&str]) -> Resultado<String> {
+            Ok(String::new())
+        }
+    }
+
+    // ─────────── C-15: a recusa do bcdedit nao apaga o que ele listou ───────────
+
+    #[test]
+    fn a_recusa_no_fim_nao_apaga_o_que_o_bcdedit_listou() {
+        // **Medido em 27/08/2026.** A listagem e a de sempre — gerenciador,
+        // cinco na ordem, seis entradas — e a ultima linha e a recusa. Ate
+        // este dia o codigo 1 virava `FerramentaRecusou` e o ARCA inteiro
+        // ficava sem ler o firmware, inclusive o comando que consertaria o
+        // estado tres linhas depois.
+        let leitura = enumerar(
+            &BcdeditQueSaiCom {
+                codigo: 1,
+                saida: COM_RECUSA_NO_FIM,
+            },
+            "firmware",
+        )
+        .expect("listou, logo e leitura");
+
+        assert_eq!(leitura.codigo_da_recusa, Some(1));
+        assert!(leitura.viu_o_gerenciador);
+        assert_eq!(
+            leitura.ordem_permanente.len(),
+            5,
+            "{:?}",
+            leitura.ordem_permanente
+        );
+        assert!(leitura.boot_unico.is_empty());
+        assert_eq!(leitura.entradas.len(), 6, "{:#?}", leitura.entradas);
+
+        // A entrada do ARCA esta la, e e assim que ela aparece pendurada: o
+        // `bcdedit` escreve `device unknown` para uma particao que nao existe.
+        let achada = leitura
+            .entrada_do_arca()
+            .expect("a entrada ARCA esta na listagem");
+        assert_eq!(achada.entrada.identificador, GUID_DE_27_08);
+        assert_eq!(
+            achada.entrada.alvo,
+            Some(Alvo::Outro("unknown".to_string())),
+            "e a forma medida de uma entrada que aponta para o nada"
+        );
+        assert_eq!(
+            achada.entrada.caminho.as_deref(),
+            Some(r"\EFI\boot\bootx64.efi")
+        );
+
+        // A linha da recusa vem depois da ultima entrada, sem linha em branco
+        // antes, e o parser a engole como um campo sem dono — ela nao vira
+        // entrada nem estraga a que a precede.
+        let ultima = leitura.entradas.last().unwrap();
+        assert_eq!(ultima.descricao.as_deref(), Some("UEFI:Network Device"));
+        assert!(ultima.alvo.is_none());
+    }
+
+    #[test]
+    fn o_gerenciador_sozinho_com_a_recusa_no_fim_tambem_e_leitura() {
+        // E o `/enum {fwbootmgr}` que o `prepare`, o `armar` e o `desarme` leem
+        // primeiro — o alvo em que o ARCA morria.
+        let leitura = enumerar(
+            &BcdeditQueSaiCom {
+                codigo: 1,
+                saida: FWBOOTMGR_COM_RECUSA_NO_FIM,
+            },
+            "{fwbootmgr}",
+        )
+        .expect("o gerenciador veio inteiro");
+
+        assert!(leitura.viu_o_gerenciador);
+        assert_eq!(leitura.codigo_da_recusa, Some(1));
+        assert_eq!(leitura.ordem_permanente.len(), 5);
+        assert_eq!(leitura.ordem_permanente[0], "{bootmgr}");
+        assert!(leitura.boot_unico.is_empty());
+        assert!(leitura.entradas.is_empty());
+    }
+
+    #[test]
+    fn acesso_negado_continua_sendo_recusa_e_com_o_texto_inteiro() {
+        // A razao de o codigo ter sido recusa ate aqui nao foi embora: sem
+        // privilegio o `bcdedit` escreve isto **na saida padrao** e sai com 1.
+        // Ler isso como "nao ha entrada ARCA" criaria uma duplicata (C-4).
+        const ACESSO_NEGADO: &str = "Não foi possível abrir o repositório de dados de configuração da inicialização.\r\nAcesso negado.\r\n";
+
+        let erro = enumerar(
+            &BcdeditQueSaiCom {
+                codigo: 1,
+                saida: ACESSO_NEGADO,
+            },
+            "firmware",
+        )
+        .expect_err("nao trouxe gerenciador nem entrada: e recusa");
+
+        match erro {
+            Erro::FerramentaRecusou {
+                ferramenta,
+                codigo,
+                saida,
+            } => {
+                assert_eq!(ferramenta, "bcdedit");
+                assert_eq!(codigo, 1);
+                assert_eq!(saida, ACESSO_NEGADO, "o texto do bcdedit chega inteiro");
+            }
+            outro => panic!("esperava a recusa do bcdedit, veio {outro}"),
+        }
+    }
+
+    #[test]
+    fn a_saida_vazia_com_codigo_um_tambem_e_recusa() {
+        // Um `bcdedit` que nao disse nada e saiu com 1 nao listou coisa
+        // nenhuma — e o mesmo caso do acesso negado, sem o texto.
+        let erro = enumerar(
+            &BcdeditQueSaiCom {
+                codigo: 1,
+                saida: "",
+            },
+            "firmware",
+        )
+        .expect_err("nada listado e recusa");
+        assert!(matches!(erro, Erro::FerramentaRecusou { codigo: 1, .. }));
+    }
+
+    #[test]
+    fn a_releitura_de_uma_entrada_so_com_a_recusa_no_fim_e_leitura() {
+        // O `/enum {guid}` da releitura de C-3 nao traz o gerenciador: traz a
+        // entrada pedida. E a entrada, com a recusa colada no fim, continua
+        // sendo a entrada — e o que o `prepare` relê depois dos tres `/set`.
+        const SO_A_ENTRADA: &str = "\r\nGerenciador de Inicialização do Windows\r\n\
+             ---------------------------------------\r\n\
+             identificador           {8a1c6901-a179-11f1-be2c-cbfb5c43df57}\r\n\
+             device                  partition=E:\r\n\
+             path                    \\EFI\\boot\\bootx64.efi\r\n\
+             description             ARCA\r\n\
+             Foi especificado um dispositivo inexistente.\r\n";
+
+        let leitura = enumerar(
+            &BcdeditQueSaiCom {
+                codigo: 1,
+                saida: SO_A_ENTRADA,
+            },
+            GUID_DE_27_08,
+        )
+        .expect("a entrada veio");
+
+        assert!(!leitura.viu_o_gerenciador);
+        assert_eq!(leitura.codigo_da_recusa, Some(1));
+        assert_eq!(leitura.entradas.len(), 1);
+        assert_eq!(leitura.entradas[0].alvo, Some(Alvo::ParticaoComLetra('E')));
+    }
+
+    #[test]
+    fn o_codigo_zero_nao_deixa_recusa_na_leitura() {
+        let leitura = enumerar(
+            &BcdeditQueSaiCom {
+                codigo: 0,
+                saida: PT,
+            },
+            "firmware",
+        )
+        .unwrap();
+
+        assert_eq!(leitura.codigo_da_recusa, None);
+        assert_eq!(leitura, ler(PT), "o caminho normal e o `ler` de sempre");
+    }
 
     #[test]
     fn o_idioma_nao_muda_nada_do_que_o_parser_extrai() {

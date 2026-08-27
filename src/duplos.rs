@@ -116,6 +116,13 @@ pub struct FirmwareDeMentira {
     /// negado" na saida padrao e sai com codigo 1.
     recusa_do_enumerar: Option<Erro>,
 
+    /// A outra forma de recusa, medida em 27/08/2026: o `bcdedit` **lista
+    /// tudo** e sai com codigo 1, com a mensagem colada depois da listagem —
+    /// em todo alvo, enquanto a entrada `ARCA` apontar para uma particao que
+    /// nao existe mais (C-15). O duplo responde o que responderia, e embrulha
+    /// em `FerramentaRecusou` com esse codigo.
+    recusa_no_fim: Option<(i32, String)>,
+
     /// Como o `bcdedit` recusa uma escrita. Medido: apagar um `bootsequence`
     /// que nao existe sai com codigo 1 **sem mudar nada**.
     recusa_do_executar: Option<Erro>,
@@ -194,6 +201,13 @@ impl FirmwareDeMentira {
 
     pub fn recusando_o_enumerar(mut self, recusa: Erro) -> FirmwareDeMentira {
         self.recusa_do_enumerar = Some(recusa);
+        self
+    }
+
+    /// O `bcdedit` de 27/08/2026: lista tudo e sai com `codigo`, com a
+    /// `mensagem` colada depois da listagem, em **todo** `/enum`.
+    pub fn listando_e_recusando_no_fim(mut self, codigo: i32, mensagem: &str) -> FirmwareDeMentira {
+        self.recusa_no_fim = Some((codigo, mensagem.to_string()));
         self
     }
 
@@ -304,31 +318,18 @@ impl Firmware for FirmwareDeMentira {
             return Err(clonar_a_recusa(recusa));
         }
 
-        // **Os dois alvos nao respondem a mesma coisa, e o duplo os tratava
-        // como se respondessem.** Medido em 23/08/2026, rodando o comando de
-        // verdade: `/enum {fwbootmgr}` devolve o bloco do gerenciador
-        // **sozinho**, e `/enum firmware` devolve o gerenciador **e** as
-        // entradas. Com os dois iguais aqui, `crate::ordem` passava nos testes
-        // lendo o alvo errado e saia com um GUID onde a tela promete um nome.
-        if let Some(modelo) = &self.fwbootmgr {
-            if alvo == "{fwbootmgr}" {
-                return Ok(modelo.borrow().como_o_bcdedit_escreve());
-            }
-            if alvo == "firmware" {
-                let mut saida = modelo.borrow().como_o_bcdedit_escreve();
-                if let Some(entradas) = self.respostas.get(alvo) {
-                    saida.push_str(entradas);
-                }
-                return Ok(saida);
-            }
-        }
+        let texto = self.o_que_o_enum_responde(alvo);
 
-        if self.ja_escreveu() {
-            if let Some(saida) = self.respostas_depois.get(alvo) {
-                return Ok(saida.clone());
-            }
+        // A forma de 27/08/2026: a listagem inteira, a mensagem, e o codigo
+        // — e o adaptador de verdade embrulha os tres em `FerramentaRecusou`.
+        match &self.recusa_no_fim {
+            Some((codigo, mensagem)) => Err(Erro::FerramentaRecusou {
+                ferramenta: "bcdedit",
+                codigo: *codigo,
+                saida: format!("{texto}{mensagem}\r\n"),
+            }),
+            None => Ok(texto),
         }
-        Ok(self.respostas.get(alvo).cloned().unwrap_or_default())
     }
 
     fn executar(&self, argumentos: &[&str]) -> Resultado<String> {
@@ -357,6 +358,37 @@ impl Firmware for FirmwareDeMentira {
         }
 
         Ok(String::new())
+    }
+}
+
+impl FirmwareDeMentira {
+    /// O texto que o `/enum <alvo>` responde, antes de qualquer recusa.
+    fn o_que_o_enum_responde(&self, alvo: &str) -> String {
+        // **Os dois alvos nao respondem a mesma coisa, e o duplo os tratava
+        // como se respondessem.** Medido em 23/08/2026, rodando o comando de
+        // verdade: `/enum {fwbootmgr}` devolve o bloco do gerenciador
+        // **sozinho**, e `/enum firmware` devolve o gerenciador **e** as
+        // entradas. Com os dois iguais aqui, `crate::ordem` passava nos testes
+        // lendo o alvo errado e saia com um GUID onde a tela promete um nome.
+        if let Some(modelo) = &self.fwbootmgr {
+            if alvo == "{fwbootmgr}" {
+                return modelo.borrow().como_o_bcdedit_escreve();
+            }
+            if alvo == "firmware" {
+                let mut saida = modelo.borrow().como_o_bcdedit_escreve();
+                if let Some(entradas) = self.respostas.get(alvo) {
+                    saida.push_str(entradas);
+                }
+                return saida;
+            }
+        }
+
+        if self.ja_escreveu() {
+            if let Some(saida) = self.respostas_depois.get(alvo) {
+                return saida.clone();
+            }
+        }
+        self.respostas.get(alvo).cloned().unwrap_or_default()
     }
 }
 

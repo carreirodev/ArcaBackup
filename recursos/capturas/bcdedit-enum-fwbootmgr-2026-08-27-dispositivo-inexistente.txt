@@ -1,0 +1,11 @@
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+                        {d13126af-a1f1-11f1-bb13-806e6f6e6963}
+                        {ffe63caa-a25d-11f1-bb16-806e6f6e6963}
+                        {ffe63cab-a25d-11f1-bb16-806e6f6e6963}
+                        {ffe63cac-a25d-11f1-bb16-806e6f6e6963}
+timeout                 1
+Foi especificado um dispositivo inexistente.

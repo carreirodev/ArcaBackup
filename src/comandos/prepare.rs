@@ -61,16 +61,17 @@
 //! |---|---|---|
 //! | 0 | Listar os discos e perguntar o número — só sem `--dispositivo` (ADR-0024) | nada tocado |
 //! | 1 | Descrever o disco e julgar (PR-5) | nada tocado |
+//! | 1b | **Ler o firmware** — a ordem permanente e a entrada a reusar (PR-6, C-15) | nada tocado |
 //! | 2 | Imprimir o plano (PR-4) | nada tocado |
 //! | 3 | Perguntar, e **reler o disco** (PR-4, 3º tempo) | nada tocado |
 //! | 4 | Confirmação digitada (S-2) | nada tocado |
-//! | 5 | **Particionar e formatar** | disco apagado, duas partições vazias |
+//! | 5 | **Particionar e formatar** | disco apagado, duas partições vazias — e a entrada de firmware, se apontava para ele, **pendurada** |
 //! | 6 | Baixar o pacote (ou `--iso`) | dispositivo vazio, sem Clonezilla |
 //! | 7 | Conferir o SHA256 (PR-1) | idem — e **nada foi extraído** |
 //! | 8 | Extrair | `ARCABOOT` com o Clonezilla e `set default="0"` |
 //! | 9 | Devolver o `grub.cfg` ao estado inerte | dispositivo bootável e inerte |
 //! | 10 | Instalar o ARCA e a cópia do pacote (PR-3) | dispositivo completo, sem entrada de firmware |
-//! | 11 | Criar a entrada, apontá-la e tirá-la da ordem | pronto |
+//! | 11 | Reapontar a entrada (ou criá-la) e tirá-la da ordem — o `/set device` primeiro | pronto |
 //!
 //! **Nenhum desses estados é pior do que o anterior, e todos são reversíveis
 //! rodando o comando de novo** — ele começa apagando. O que não volta é o que
@@ -78,6 +79,15 @@
 //!
 //! Do passo 8 em diante o dispositivo **já boota**: um `prepare` interrompido
 //! ali deixa um Clonezilla utilizável pelo menu (§6.4), sem o ARCA dentro.
+//!
+//! ## O passo 1b existe por causa de 27/08/2026
+//!
+//! O passo 5, apagando um dispositivo ARCA que já existia, deixa a entrada de
+//! firmware apontando para uma partição que não existe mais — e o `bcdedit`,
+//! nesse estado, **listava tudo e saía com código 1** em todo `/enum`. O passo
+//! 11 começava lendo, e morria antes do `/set device` que o consertaria; o
+//! `arca sondar` morria na mesma leitura. Ver [`ler_o_firmware_antes`],
+//! [`criar_a_entrada`] e o ADR-0026.
 
 use crate::app::Contexto;
 use crate::confirmacao;
@@ -135,9 +145,16 @@ pub fn executar(
     let preparacao = preparacao::julgar(indice, alvo, &indices, letra_do_sistema())
         .map_err(Erro::PreparacaoRecusada)?;
 
+    // ─────────── 1b. o firmware, lido ANTES do ponto sem volta (C-15, PR-6) ───────────
+
+    // É daqui que saem a ordem permanente que C-5 protege e a entrada que o
+    // passo 11 vai reusar — lidas com o firmware ainda coerente. Ver
+    // [`ler_o_firmware_antes`] para o que custou descobrir isto.
+    let firmware_antes = ler_o_firmware_antes(contexto)?;
+
     // ─────────── 2. o plano inteiro na tela (PR-4, 1º tempo) ───────────
 
-    print!("{}", montar_o_plano(&preparacao, iso));
+    print!("{}", montar_o_plano(&preparacao, iso, &firmware_antes));
 
     if contexto.dry_run {
         print!("{}", montar_o_ensaio(&preparacao));
@@ -251,7 +268,7 @@ pub fn executar(
 
     // ─────────── 11. a entrada de firmware ───────────
 
-    let entrada = criar_a_entrada(contexto, feitas.boot.letra)?;
+    let entrada = criar_a_entrada(contexto, feitas.boot.letra, &firmware_antes)?;
     print!("{}", montar_a_entrada(&entrada));
 
     print!(
@@ -657,34 +674,55 @@ pub struct EntradaCriada {
 ///
 /// Isso é o que torna o `arca prepare` rodável duas vezes sem sujar o firmware
 /// — e é a mesma idempotência que o desarmar ganhou de graça no ADR-0005.
-fn criar_a_entrada(contexto: &Contexto, letra_do_boot: char) -> Resultado<EntradaCriada> {
+///
+/// # A leitura vem de antes do passo 5, e o `device` é a primeira escrita
+///
+/// **Medido em 27/08/2026.** Este comando apagou um dispositivo ARCA existente
+/// e morreu aqui, no primeiro `/enum`: a entrada `ARCA` apontava para o GUID
+/// da `ARCABOOT` que o passo 5 tinha acabado de apagar, e nesse estado
+/// **todo** `bcdedit /enum` desta máquina lista tudo e sai com código 1 —
+/// *"Foi especificado um dispositivo inexistente."*. O comando que conserta o
+/// estado é o `/set device` três linhas abaixo, e ele nunca era alcançado. O
+/// `arca sondar` morria na mesma leitura.
+///
+/// Duas coisas mudaram por isso. A entrada a reusar e a ordem permanente são
+/// **lidas antes do ponto sem volta** ([`ler_o_firmware_antes`]), quando o
+/// firmware ainda está coerente — e é lá que C-4 decide se pode haver `/copy`.
+/// E o primeiro `bcdedit` depois do apagar é o **`/set device`** para a
+/// partição nova, que é o que devolve o código 0 aos `/enum` seguintes
+/// (medido à mão no mesmo dia, sobre o estado quebrado). Os `/enum` daqui em
+/// diante passam por [`firmware::enumerar`], que aceita a listagem mesmo com
+/// código (C-15) — mas com o `device` já apontado eles nem precisam disso.
+fn criar_a_entrada(
+    contexto: &Contexto,
+    letra_do_boot: char,
+    antes: &firmware::Leitura,
+) -> Resultado<EntradaCriada> {
     let desejado = Alvo::ParticaoComLetra(letra_do_boot.to_ascii_uppercase());
 
-    // A ordem permanente, **antes** — é contra ela que se confere que o
-    // `/remove` fez o que devia, e que nada mais mudou.
-    let antes = firmware::ler(&contexto.firmware.enumerar(FWBOOTMGR)?);
-    if !antes.viu_o_gerenciador {
-        return Err(Erro::FirmwareIlegivel { alvo: FWBOOTMGR });
-    }
+    let existente = antes
+        .entrada_do_arca()
+        .map(|achada| achada.entrada.identificador.clone());
 
-    let leitura = firmware::ler(&contexto.firmware.enumerar(FIRMWARE)?);
-    let (identificador, ja_existia) = match leitura.entrada_do_arca() {
-        Some(achada) => (achada.entrada.identificador.clone(), true),
+    // C-15 com C-4 já foi decidido em `ler_o_firmware_antes`: chegar aqui sem
+    // entrada é chegar com uma leitura limpa, e o `/copy` pode acontecer.
+    let (identificador, ja_existia) = match existente {
+        Some(identificador) => (identificador, true),
         None => (copiar_do_bootmgr(contexto)?, false),
     };
 
-    // A descrição, o `device` e o `path`. As três com releitura de C-3 — o
-    // sucesso do `bcdedit` nunca é prova, e com mídia removível ele responde
-    // "êxito" mantendo o valor antigo (C-6).
-    let _ = contexto
-        .firmware
-        .executar(&["/set", &identificador, "description", firmware::ARCA]);
+    // O `device`, a descrição e o `path` — **o `device` primeiro**, ver acima.
+    // As três com releitura de C-3: o sucesso do `bcdedit` nunca é prova, e
+    // com mídia removível ele responde "êxito" mantendo o valor antigo (C-6).
     let _ = contexto.firmware.executar(&[
         "/set",
         &identificador,
         "device",
         &desejado.como_bcdedit_escreve(),
     ]);
+    let _ = contexto
+        .firmware
+        .executar(&["/set", &identificador, "description", firmware::ARCA]);
     let _ = contexto
         .firmware
         .executar(&["/set", &identificador, "path", CAMINHO_DO_EFI]);
@@ -738,7 +776,7 @@ fn criar_a_entrada(contexto: &Contexto, letra_do_boot: char) -> Resultado<Entrad
     //
     // Tirar não quebra o armar: o `bootsequence` funciona sobre entrada fora
     // da ordem, medido na E7 e exercitado no marco de 22/08 (ADR-0007).
-    let saiu_da_ordem = tirar_da_ordem(contexto, &identificador, &antes)?;
+    let saiu_da_ordem = tirar_da_ordem(contexto, &identificador, antes)?;
 
     // **A ordem que sobrou, e não a que saiu** (P-28). A promessa da tela de
     // fim é sobre onde a máquina vai bootar, e quem decide isso é o que ficou
@@ -749,7 +787,7 @@ fn criar_a_entrada(contexto: &Contexto, letra_do_boot: char) -> Resultado<Entrad
     // Uma leitura que não se deixa entender **recusa** em vez de virar `None`:
     // `None` aqui é a tela prometendo que a máquina sobe o Windows, e é
     // exatamente a afirmação que ela não poderia fazer sem ter lido a ordem.
-    let sobrou = firmware::ler(&contexto.firmware.enumerar(FIRMWARE)?);
+    let sobrou = firmware::enumerar(contexto.firmware, FIRMWARE)?;
     if !sobrou.viu_o_gerenciador {
         return Err(Erro::FirmwareIlegivel { alvo: FWBOOTMGR });
     }
@@ -762,6 +800,60 @@ fn criar_a_entrada(contexto: &Contexto, letra_do_boot: char) -> Resultado<Entrad
         saiu_da_ordem,
         ordem_sem_alvo,
     })
+}
+
+/// O firmware, lido **antes** do ponto sem volta — a ordem permanente e a
+/// entrada a reusar (PR-6).
+///
+/// # Por que antes, e não no passo 11
+///
+/// O passo 5 apaga o disco. Se ele era um dispositivo ARCA, a entrada de
+/// firmware passa a apontar para uma partição que não existe mais — e é o
+/// **próprio `prepare`** que a deixa assim. Medido em 27/08/2026: nesse
+/// estado, todo `bcdedit /enum` lista tudo e sai com código 1, e o passo 11,
+/// que começava lendo, morria antes de reapontar. Lido aqui, o firmware ainda
+/// está coerente, e o que se lê é o que vale: a entrada não muda de
+/// identificador porque uma partição sumiu.
+///
+/// # C-15 com C-4, e a decisão é daqui
+///
+/// Uma leitura que veio com código é aceita para **reusar** — a entrada está
+/// na listagem, com identificador — e recusada para **criar**: um `/copy`
+/// sobre uma listagem que o `bcdedit` disse ter problema é apostar que ela
+/// está completa, e a aposta errada é uma segunda entrada, que é exatamente o
+/// que C-4 proíbe. A recusa acontece aqui, com o disco intacto, e custa rodar
+/// de novo depois de olhar o `bcdedit`.
+///
+/// Uma chamada só, ao `firmware`, que traz o gerenciador e as entradas
+/// juntos — duas chamadas dariam duas leituras de momentos diferentes coladas
+/// numa só (§11 do PRD).
+fn ler_o_firmware_antes(contexto: &Contexto) -> Resultado<firmware::Leitura> {
+    let leitura = firmware::enumerar(contexto.firmware, FIRMWARE)?;
+    if !leitura.viu_o_gerenciador {
+        return Err(Erro::FirmwareIlegivel { alvo: FIRMWARE });
+    }
+
+    if let Some(codigo) = leitura.codigo_da_recusa {
+        let Some(achada) = leitura.entrada_do_arca() else {
+            return Err(Erro::EntradaNaoNasceDeLeituraRecusada { codigo });
+        };
+
+        // Fica no registro, e não na tela: é diagnóstico de projeto, e a tela
+        // do fim já diz o que a entrada passou a ser.
+        contexto.registro.info(format!(
+            "o bcdedit listou o firmware e saiu com codigo {codigo} · a entrada {} `{}` aponta para {} · sera reusada (C-15)",
+            achada.entrada.identificador,
+            achada.descricao,
+            achada
+                .entrada
+                .alvo
+                .as_ref()
+                .map(Alvo::como_bcdedit_escreve)
+                .unwrap_or_else(|| "nada".to_string()),
+        ));
+    }
+
+    Ok(leitura)
 }
 
 /// `bcdedit /copy {bootmgr} /d ARCA`, e o identificador achado **pela forma**.
@@ -840,7 +932,7 @@ fn tirar_da_ordem(
     };
 
     // A ordem **corrente**, depois do `/copy`. É ela que diz se há o que tirar.
-    let agora = firmware::ler(&contexto.firmware.enumerar(FWBOOTMGR)?);
+    let agora = firmware::enumerar(contexto.firmware, FWBOOTMGR)?;
     if !agora.viu_o_gerenciador {
         return Err(Erro::FirmwareIlegivel { alvo: FWBOOTMGR });
     }
@@ -856,7 +948,7 @@ fn tirar_da_ordem(
             .firmware
             .executar(&["/set", FWBOOTMGR, "displayorder", identificador, "/remove"]);
 
-    let depois = firmware::ler(&contexto.firmware.enumerar(FWBOOTMGR)?);
+    let depois = firmware::enumerar(contexto.firmware, FWBOOTMGR)?;
     if !depois.viu_o_gerenciador {
         return Err(Erro::FirmwareIlegivel { alvo: FWBOOTMGR });
     }
@@ -894,7 +986,7 @@ fn tirar_da_ordem(
 
 /// A entrada, relida pelo identificador (C-3).
 fn releitura(contexto: &Contexto, identificador: &str) -> Resultado<firmware::EntradaDeFirmware> {
-    firmware::ler(&contexto.firmware.enumerar(identificador)?)
+    firmware::enumerar(contexto.firmware, identificador)?
         .entradas
         .into_iter()
         .find(|entrada| entrada.identificador.eq_ignore_ascii_case(identificador))
@@ -908,7 +1000,11 @@ fn releitura(contexto: &Contexto, identificador: &str) -> Resultado<firmware::En
 /// **Quem vai perder dados tem de poder reconhecê-los na tela.** Por isso as
 /// partições existentes saem com rótulo, sistema de arquivos e tamanho — e não
 /// só "2 partições": ninguém reconhece um disco por uma contagem.
-pub fn montar_o_plano(preparacao: &Preparacao, iso: Option<&Path>) -> String {
+pub fn montar_o_plano(
+    preparacao: &Preparacao,
+    iso: Option<&Path>,
+    firmware_antes: &firmware::Leitura,
+) -> String {
     let disco = &preparacao.disco;
     let mut saida = String::new();
 
@@ -1035,12 +1131,26 @@ pub fn montar_o_plano(preparacao: &Preparacao, iso: Option<&Path>) -> String {
     // confirmação. Criar entrada de boot mexe na NVRAM da máquina, que é o
     // lugar onde um erro deixa alguém sem bootar — e quem lê um plano antes de
     // apagar um disco tem o direito de saber que o plano não para no disco.
-    saida.push_str(&format!(
-        "  Uma entrada de boot chamada `{}` e criada no firmware, apontando para o\n     \
-         ARCABOOT — e **tirada da ordem permanente** logo em seguida, para que\n     \
-         ligar a maquina continue subindo o Windows (C-5)\n",
-        firmware::ARCA
-    ));
+    //
+    // E o plano diz **qual** dos dois vai acontecer — criar ou reusar —,
+    // porque o firmware ja foi lido (PR-6). Um plano que dissesse "criada"
+    // sobre uma entrada que existe seria a tela afirmando o que o comando nao
+    // vai fazer.
+    match firmware_antes.entrada_do_arca() {
+        Some(achada) => saida.push_str(&format!(
+            "  A entrada de boot `{}` que ja existe no firmware ({}) e REAPONTADA\n     \
+             para o ARCABOOT deste disco — o ARCA mantem uma entrada, e nao uma por\n     \
+             dispositivo (C-4) —, e fica **fora da ordem permanente**, para que\n     \
+             ligar a maquina continue subindo o Windows (C-5)\n",
+            achada.descricao, achada.entrada.identificador
+        )),
+        None => saida.push_str(&format!(
+            "  Uma entrada de boot chamada `{}` e criada no firmware, apontando para o\n     \
+             ARCABOOT — e **tirada da ordem permanente** logo em seguida, para que\n     \
+             ligar a maquina continue subindo o Windows (C-5)\n",
+            firmware::ARCA
+        )),
+    }
     saida.push_str(
         "  O proprio `arca.exe` e instalado no ARCABOOT, porque o que julga uma\n     \
          restauracao nao pode morar no disco que ela substitui (§4.1)\n\n  \
@@ -1270,7 +1380,10 @@ mod testes {
             Bancada {
                 arquivos: ArquivosEmMemoria::novo(),
                 discos: DiscosDeMentira::default(),
-                firmware: FirmwareDeMentira::novo(),
+                // O firmware é lido antes do plano (PR-6), então a bancada
+                // nasce com um gerenciador legível e sem entrada do ARCA — o
+                // caso "disco qualquer, entrada por criar".
+                firmware: FirmwareDeMentira::novo().respondendo(FIRMWARE, &ordem_desta_mesa()),
                 relogio: RelogioParado::em("2026-08-23T18:38:00"),
                 entropia: EntropiaDeMentira::com(&[0; 8]),
                 sistema: SistemaDeMentira::novo(),
@@ -1457,6 +1570,12 @@ mod testes {
         preparacao::julgar(1, alvo, &[0, 1, 2], Some('C')).expect("o disco 1 desta mesa passa")
     }
 
+    /// O firmware lido antes do passo 5, sem entrada do ARCA — o caso em que
+    /// o plano promete criar.
+    fn sem_entrada() -> firmware::Leitura {
+        firmware::ler(&ordem_desta_mesa())
+    }
+
     // ─────────────────── o identificador, pela forma ───────────────────
 
     #[test]
@@ -1522,7 +1641,7 @@ mod testes {
         // PR-4 na letra: quem vai perder dados tem de poder reconhece-los. Uma
         // contagem — "2 particoes" — nao serve, porque ninguem reconhece um
         // disco por uma contagem.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None);
+        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
 
         assert!(saida.contains("Dell Beta Apps NO IA WSL"), "{saida}");
         assert!(saida.contains("NTFS"), "{saida}");
@@ -1533,7 +1652,7 @@ mod testes {
 
     #[test]
     fn o_plano_mostra_as_duas_particoes_que_vao_ficar() {
-        let saida = montar_o_plano(&preparacao_da_mesa(), None);
+        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
 
         assert!(saida.contains("ARCAVAULT"), "{saida}");
         assert!(saida.contains("ARCABOOT"), "{saida}");
@@ -1553,7 +1672,7 @@ mod testes {
         // desenvolvimento na tela de quem só quer preparar um disco.
         //
         // O porquê do esquema é registro de projeto, e mora no ADR.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None);
+        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
 
         for vazamento in [
             "ADR-",
@@ -1582,7 +1701,7 @@ mod testes {
         // valores ao lado, quem lê pode conferir a afirmacao. E a mesma razao
         // pela qual o §6.1 imprime os dois discos em setores em vez do
         // veredito de R-7 resumido.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None);
+        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
 
         assert!(saida.contains("IsSystem false"), "{saida}");
         assert!(saida.contains("IsBoot false"), "{saida}");
@@ -1593,7 +1712,7 @@ mod testes {
         // Criar entrada de boot mexe na NVRAM, que e o lugar onde um erro
         // deixa alguem sem bootar. Quem lê um plano antes de apagar um disco
         // tem o direito de saber que o plano nao para no disco.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None);
+        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
 
         assert!(saida.contains("entrada de boot"), "{saida}");
         assert!(saida.contains("tirada da ordem permanente"), "{saida}");
@@ -1613,7 +1732,7 @@ mod testes {
         let preparacao = preparacao::julgar(2, dispositivo, &[0, 1, 2], Some('C'))
             .expect("ele passa as defesas");
 
-        let saida = montar_o_plano(&preparacao, None);
+        let saida = montar_o_plano(&preparacao, None, &sem_entrada());
         assert!(saida.contains("JA E UM DISPOSITIVO ARCA"), "{saida}");
         assert!(saida.contains("AS IMAGENS"), "{saida}");
         assert!(saida.contains("B-10"), "{saida}");
@@ -1623,7 +1742,7 @@ mod testes {
     fn um_disco_qualquer_nao_ganha_o_aviso_das_imagens() {
         // Conselho que aparece sempre vira ruido — a licao que a E10 pagou no
         // `arca resultado` e a E11 repetiu em V-1.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None);
+        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
         assert!(!saida.contains("JA E UM DISPOSITIVO ARCA"), "{saida}");
     }
 
@@ -1645,7 +1764,7 @@ mod testes {
         let mut preparacao = preparacao_da_mesa();
         preparacao.disco.particoes.clear();
 
-        let saida = montar_o_plano(&preparacao, None);
+        let saida = montar_o_plano(&preparacao, None, &sem_entrada());
         assert!(saida.contains("o disco esta em branco"), "{saida}");
     }
 
@@ -1659,7 +1778,7 @@ mod testes {
         preparacao.disco.particoes[0].sistema_de_arquivos = None;
         preparacao.disco.particoes[0].letra = None;
 
-        let saida = montar_o_plano(&preparacao, None);
+        let saida = montar_o_plano(&preparacao, None, &sem_entrada());
         assert!(saida.contains("crua"), "{saida}");
         assert!(saida.contains("(sem rotulo)"), "{saida}");
         assert!(saida.contains("(sem letra)"), "{saida}");
@@ -1667,7 +1786,11 @@ mod testes {
 
     #[test]
     fn com_iso_a_tela_nao_promete_download() {
-        let saida = montar_o_plano(&preparacao_da_mesa(), Some(Path::new(r"D:\cz.zip")));
+        let saida = montar_o_plano(
+            &preparacao_da_mesa(),
+            Some(Path::new(r"D:\cz.zip")),
+            &sem_entrada(),
+        );
 
         assert!(saida.contains(r"D:\cz.zip"), "{saida}");
         assert!(!saida.contains("baixado de"), "{saida}");
@@ -2226,7 +2349,9 @@ mod testes {
             .respondendo(FIRMWARE, &com_a_ordem)
             .respondendo(GUID_DA_ENTRADA, depois);
 
-        criar_a_entrada(&bancada.contexto(false), 'R')
+        // A leitura de antes do passo 5 (PR-6) é a mesma que o `executar`
+        // faria: o `firmware` inteiro, ainda coerente.
+        criar_a_entrada(&bancada.contexto(false), 'R', &leitura)
     }
 
     #[test]
@@ -2322,6 +2447,163 @@ mod testes {
 
         assert!(criada.ja_existia, "a legada foi reusada, e nao duplicada");
         assert_eq!(criada.identificador, GUID_DA_ENTRADA);
+    }
+
+    // ─────────── C-15 e PR-6: o firmware lido antes, e a recusa que nao apaga a listagem ───────────
+
+    /// A mensagem com que o `bcdedit` desta maquina fechou toda listagem em
+    /// 27/08/2026.
+    const DISPOSITIVO_INEXISTENTE: &str = "Foi especificado um dispositivo inexistente.";
+
+    #[test]
+    fn a_entrada_pendurada_e_reusada_e_o_device_e_a_primeira_escrita() {
+        // **O caso de 27/08/2026, de ponta a ponta.** A entrada `ARCA` esta na
+        // listagem com `device unknown` — a particao para onde ela apontava foi
+        // apagada — e o `bcdedit` sai com codigo 1 em todo `/enum`. O comando
+        // tem de reusar a entrada e, antes de qualquer releitura, mandar o
+        // `/set device` para a particao nova: e ele que devolve o codigo 0.
+        let antes = format!(
+            "{}{}",
+            ordem_desta_mesa(),
+            entrada_com(firmware::ARCA, "unknown", CAMINHO_DO_EFI)
+        );
+        let mut bancada = Bancada::nova("c15-pendurada", ConsoleDeMentira::mudo());
+        bancada.firmware = FirmwareDeMentira::novo()
+            .respondendo(FWBOOTMGR, &ordem_desta_mesa())
+            .respondendo(FIRMWARE, &antes)
+            .respondendo(
+                GUID_DA_ENTRADA,
+                &entrada_com(firmware::ARCA, "partition=R:", CAMINHO_DO_EFI),
+            )
+            .listando_e_recusando_no_fim(1, DISPOSITIVO_INEXISTENTE);
+        let contexto = bancada.contexto(false);
+
+        let leitura = ler_o_firmware_antes(&contexto).expect("a entrada esta la: reusar pode");
+        assert_eq!(leitura.codigo_da_recusa, Some(1));
+
+        let criada = criar_a_entrada(&contexto, 'R', &leitura).expect("reusada e reapontada");
+        assert!(criada.ja_existia);
+        assert_eq!(criada.identificador, GUID_DA_ENTRADA);
+        assert_eq!(criada.alvo, Alvo::ParticaoComLetra('R'));
+
+        let executados = bancada.firmware.executados();
+        assert_eq!(
+            executados.first().map(Vec::as_slice),
+            Some(&["/set", GUID_DA_ENTRADA, "device", "partition=R:"].map(String::from)[..]),
+            "o `/set device` tem de ser a primeira escrita: {executados:?}"
+        );
+        assert!(
+            !executados
+                .iter()
+                .any(|argumentos| argumentos.first().map(String::as_str) == Some("/copy")),
+            "criou uma segunda entrada em vez de reusar: {executados:?}"
+        );
+    }
+
+    #[test]
+    fn sem_entrada_para_reusar_a_leitura_recusada_nao_apaga_o_disco() {
+        // C-15 com C-4: o `bcdedit` listou e recusou, e nao ha `ARCA` nem
+        // `Clonezilla` na listagem. Criar seria apostar que a listagem esta
+        // completa. A recusa acontece **antes do plano** — nenhuma pergunta,
+        // nenhum disco tocado.
+        let mut bancada = Bancada::nova(
+            "c15-sem-entrada",
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        );
+        bancada.firmware = FirmwareDeMentira::novo()
+            .respondendo(FIRMWARE, &ordem_desta_mesa())
+            .listando_e_recusando_no_fim(1, DISPOSITIVO_INEXISTENTE);
+
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
+
+        assert!(
+            matches!(erro, Erro::EntradaNaoNasceDeLeituraRecusada { codigo: 1 }),
+            "{erro:?}"
+        );
+        assert!(erro.to_string().contains("C-15"), "{erro}");
+        assert!(erro.to_string().contains("Nada foi apagado"), "{erro}");
+        assert!(!bancada.particionador.particionou(), "apagou o disco");
+        assert_eq!(bancada.console.lidas.get(), 0, "chegou a perguntar");
+    }
+
+    #[test]
+    fn um_bcdedit_sem_privilegio_recusa_antes_de_apagar_qualquer_coisa() {
+        // PR-6 pelo outro lado: o firmware e lido antes do ponto sem volta
+        // justamente para que "nao consigo ler o firmware" seja uma recusa
+        // barata — o disco continua como estava.
+        let mut bancada = Bancada::nova(
+            "pr6-acesso-negado",
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        );
+        bancada.firmware =
+            FirmwareDeMentira::novo().recusando_o_enumerar(Erro::FerramentaRecusou {
+                ferramenta: "bcdedit",
+                codigo: 1,
+                saida: "Acesso negado.".to_string(),
+            });
+
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
+
+        assert!(
+            matches!(erro, Erro::FerramentaRecusou { codigo: 1, .. }),
+            "{erro:?}"
+        );
+        assert!(!bancada.particionador.particionou(), "apagou o disco");
+        assert_eq!(bancada.console.lidas.get(), 0);
+    }
+
+    #[test]
+    fn o_plano_diz_reapontada_quando_a_entrada_ja_existe_e_criada_quando_nao() {
+        // O plano e lido antes de apagar um disco, e um "criada" sobre uma
+        // entrada que existe seria a tela afirmando o que o comando nao vai
+        // fazer. Com o firmware lido antes (PR-6), o plano sabe qual dos dois.
+        let com_entrada = firmware::ler(&format!(
+            "{}{}",
+            ordem_desta_mesa(),
+            entrada_com(firmware::ARCA, "partition=X:", CAMINHO_DO_EFI)
+        ));
+        let saida = montar_o_plano(&preparacao_da_mesa(), None, &com_entrada);
+        assert!(saida.contains("REAPONTADA"), "{saida}");
+        assert!(saida.contains(GUID_DA_ENTRADA), "{saida}");
+        assert!(saida.contains("C-4"), "{saida}");
+        assert!(!saida.contains("e criada no firmware"), "{saida}");
+
+        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
+        assert!(saida.contains("e criada no firmware"), "{saida}");
+        assert!(!saida.contains("REAPONTADA"), "{saida}");
+    }
+
+    #[test]
+    fn a_ordem_de_antes_e_a_lida_antes_do_apagar() {
+        // A conferencia de C-5 em `tirar_da_ordem` compara com a ordem lida
+        // **antes do passo 5**, e nao com uma releitura do passo 11: o
+        // `prepare` nao le o firmware entre o apagar e o reapontar. Uma
+        // entrada que sumisse da ordem nesse intervalo apareceria aqui.
+        let ordem_com_outra = ordem_desta_mesa().replace(
+            "displayorder            {bootmgr}",
+            "displayorder            {bootmgr}\r\n                        {outra}",
+        );
+        let antes = firmware::ler(&format!(
+            "{ordem_com_outra}{}",
+            entrada_com(firmware::ARCA, "partition=X:", CAMINHO_DO_EFI)
+        ));
+        assert_eq!(antes.ordem_permanente.len(), 2);
+
+        let mut bancada = Bancada::nova("pr6-ordem", ConsoleDeMentira::mudo());
+        bancada.firmware = FirmwareDeMentira::novo()
+            .respondendo(FWBOOTMGR, &ordem_desta_mesa())
+            .respondendo(FIRMWARE, &ordem_desta_mesa())
+            .respondendo(
+                GUID_DA_ENTRADA,
+                &entrada_com(firmware::ARCA, "partition=R:", CAMINHO_DO_EFI),
+            );
+
+        let erro = criar_a_entrada(&bancada.contexto(false), 'R', &antes)
+            .expect_err("a `{outra}` sumiu da ordem entre a leitura de antes e a de depois");
+        assert!(
+            matches!(erro, Erro::OrdemPermanenteAlterada { .. }),
+            "{erro:?}"
+        );
     }
 
     #[test]

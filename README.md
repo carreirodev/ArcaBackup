@@ -505,12 +505,13 @@ Com `--dispositivo` na linha, o menu **não aparece** — é o atalho de quem j�
 
 **Disco fixo é recusa dura, sem opção de forçar.** O modo de falha apaga o Windows de alguém, e nenhuma confirmação digitada compra isso.
 
-#### Os onze passos, e o que fica se você parar em cada um
+#### Os passos, e o que fica se você parar em cada um
 
 | # | Passo | Parando aqui, o que fica |
 |---|---|---|
 | 0 | Listar os discos e perguntar o número — **só sem `--dispositivo`** | nada tocado |
 | 1 | Descrever o disco e julgar as sete defesas | nada tocado |
+| 1b | **Ler o firmware** — a ordem permanente e a entrada a reusar, com o firmware ainda coerente (PR-6). Sem conseguir ler, o `prepare` recusa aqui | nada tocado |
 | 2 | Imprimir o plano inteiro | nada tocado |
 | 3 | Perguntar `(s/N)` e **reler o disco** | nada tocado |
 | 4 | Confirmação digitada: o **modelo** do disco | nada tocado |
@@ -520,7 +521,7 @@ Com `--dispositivo` na linha, o menu **não aparece** — é o atalho de quem j�
 | 8 | Extrair | `ARCABOOT` com o Clonezilla e `set default="0"` |
 | 9 | Devolver o `grub.cfg` ao estado inerte | dispositivo bootável e inerte |
 | 10 | Instalar o `arca.exe` e a cópia do pacote | dispositivo completo, sem entrada de firmware |
-| 11 | Criar a entrada, apontá-la e **tirá-la da ordem permanente** | pronto |
+| 11 | Reapontar a entrada (ou criá-la) e **tirá-la da ordem permanente** — o `/set device` é a primeira escrita | pronto |
 
 Nenhum desses estados é pior do que o anterior, e todos são reversíveis rodando o comando de novo — ele começa apagando. Do passo 8 em diante o dispositivo **já boota**: um `prepare` interrompido ali deixa um Clonezilla utilizável pelo menu.
 
@@ -1814,6 +1815,10 @@ O `bcdedit` respondeu "êxito" sem ter feito nada — é o modo de falha medido 
 
 A rejeição silenciosa: o `bcdedit` aceita o comando, responde "êxito" e mantém o valor antigo quando o alvo é mídia removível. Um dispositivo assim **boota por F12, nunca por entrada de firmware**.
 
+### `bcdedit recusou (codigo 1): … Foi especificado um dispositivo inexistente.`
+
+A listagem veio **inteira** e o `bcdedit` saiu com código 1 mesmo assim. Desde 27/08/2026 o ARCA lê uma listagem assim como leitura (C-15), então esta mensagem só aparece em versões anteriores — ou quando a listagem **não** veio. A causa medida: a entrada `ARCA` da NVRAM apontando para uma partição que não existe mais, tipicamente a `ARCABOOT` de um dispositivo que o `arca prepare` acabou de apagar (`device unknown` no `bcdedit`). O conserto é apontá-la para a partição atual — `bcdedit /set {identificador-da-entrada} device partition=E:`, com a letra do `ARCABOOT`, numa janela elevada — e o `arca prepare` faz isso sozinho antes de qualquer releitura (PR-6). Ver o [ADR-0026](docs/adr/0026-a-recusa-do-bcdedit-nao-apaga-o-que-ele-listou.md).
+
 ### `o SHA256 do pacote NAO bate`
 
 ```
@@ -1909,6 +1914,7 @@ Cada uma custou uma execução real para existir. Elas têm identificadores no c
 | **C-12** | **Ausência de desfecho é falha, nunca silêncio** — e reporta as duas causas possíveis |
 | **C-13** | Ao colher, devolver o `{bootmgr}` ao topo da ordem permanente — sem remover nada |
 | **C-14** | **Ausência de resposta do firmware nunca vira segurança.** Três estados: leva, não leva, não se sabe |
+| **C-15** | **A recusa do `bcdedit` não apaga o que ele listou** — listagem com código é leitura; e nenhuma leitura com código cria entrada |
 
 ### Backup
 
@@ -2166,6 +2172,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | 0023 | O `bootsequence` não é o gatilho da reescrita |
 | 0024 | O `arca prepare` **oferece a lista**, e continua não deduzindo o disco |
 | 0025 | **O ARCA particiona em GPT**, e o marco em hardware aconteceu |
+| 0026 | **A recusa do `bcdedit` não apaga o que ele listou** — e o `prepare` lê o firmware antes de apagar |
 
 ---
 

@@ -166,7 +166,7 @@ pub fn executar(
     caminho_do_grub: &Path,
 ) -> Resultado<Desarme> {
     // Falha cedo, antes de escrever: sem privilegio, o `bcdedit` recusa aqui.
-    let antes = firmware::ler(&ferramenta.enumerar(FWBOOTMGR)?);
+    let antes = firmware::enumerar(ferramenta, FWBOOTMGR)?;
 
     let corrente = arquivos.ler_texto(caminho_do_grub)?;
     let desarmado = grub::desarmar(&corrente).map_err(Erro::GrubRecusado)?;
@@ -206,7 +206,7 @@ fn limpar_a_marca(
     // leitura pode estar errada. Ele custa uma chamada de processo.
     let _ = ferramenta.executar(&["/deletevalue", FWBOOTMGR, BOOTSEQUENCE]);
 
-    let depois = firmware::ler(&ferramenta.enumerar(FWBOOTMGR)?);
+    let depois = firmware::enumerar(ferramenta, FWBOOTMGR)?;
 
     // "Nao entendi a resposta" nao pode virar "a marca sumiu". O parser nunca
     // falha por desenho — texto que ele nao reconhece vira leitura vazia, e
@@ -438,6 +438,35 @@ mod testes {
             "o grub.cfg foi tocado apesar da recusa"
         );
         assert!(ferramenta.executados.borrow().is_empty());
+    }
+
+    #[test]
+    fn o_bcdedit_que_lista_e_recusa_no_fim_ainda_desarma() {
+        // **C-15, medido em 27/08/2026.** Com a entrada `ARCA` apontando para
+        // uma particao que nao existe mais, todo `/enum` desta maquina lista
+        // tudo e sai com codigo 1. O desarmar le o `{fwbootmgr}` antes e
+        // depois do `/deletevalue`; as duas leituras vieram inteiras, e e a
+        // listagem que responde — nao o codigo. Um desarmar que morresse aqui
+        // deixaria o `grub.cfg` armado e a marca no firmware, que e o estado
+        // que C-1 existe para nao deixar sobreviver.
+        let arquivos = ArquivosEmMemoria::novo().com(GRUB, ARMADA);
+        let ferramenta = FirmwareDeMentira::novo()
+            .respondendo(FWBOOTMGR, &fwbootmgr(Some(ALVO)))
+            .respondendo_depois(FWBOOTMGR, &fwbootmgr(None))
+            .listando_e_recusando_no_fim(1, "Foi especificado um dispositivo inexistente.");
+
+        let desarme = executar(&arquivos, &ferramenta, Path::new(GRUB)).expect("a listagem veio");
+
+        assert_eq!(arquivos.conteudo_de(GRUB).as_deref(), Some(INERTE));
+        assert!(desarme.grub_regravado);
+        assert!(
+            ferramenta
+                .executados()
+                .iter()
+                .any(|argumentos| argumentos.first().map(String::as_str) == Some("/deletevalue")),
+            "a marca nao foi mandada apagar: {:?}",
+            ferramenta.executados()
+        );
     }
 
     #[test]

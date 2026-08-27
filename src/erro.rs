@@ -103,6 +103,17 @@ pub enum Erro {
     )]
     EntradaNaoFoiCriada { quantos: usize, resposta: String },
 
+    /// C-15 com C-4: o `bcdedit` listou o firmware mas saiu com codigo, e nao
+    /// ha entrada do ARCA para reusar. Criar uma (`/copy`) sobre uma leitura
+    /// que o `bcdedit` recusou e apostar que a listagem esta completa — e uma
+    /// segunda entrada e exatamente o que C-4 proibe. A recusa acontece
+    /// **antes** do ponto sem volta do `arca prepare`, e por isso custa so
+    /// rodar de novo.
+    #[error(
+        "o `bcdedit /enum firmware` listou o firmware mas saiu com codigo {codigo}. Nao ha entrada `ARCA` nem `Clonezilla` nessa listagem para reusar, e o ARCA nao CRIA entrada de firmware a partir de uma leitura que o `bcdedit` recusou (C-15, C-4). Nada foi apagado. Rode `bcdedit /enum firmware` numa janela elevada, leia o que ele diz DEPOIS da listagem e conserte isso antes de preparar"
+    )]
+    EntradaNaoNasceDeLeituraRecusada { codigo: i32 },
+
     /// C-3 sobre o `path` da entrada nova.
     #[error(
         "a entrada de firmware {identificador} devia carregar `{esperado}` e a releitura mostra `{tem}`. O dispositivo esta particionado e com o Clonezilla dentro; o que falta e a entrada de boot apontar para o `.efi` certo"

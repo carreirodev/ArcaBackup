@@ -1,0 +1,59 @@
+
+Gerenciador de Inicialização de Firmware
+----------------------------------------
+identificador           {fwbootmgr}
+displayorder            {bootmgr}
+                        {d13126af-a1f1-11f1-bb13-806e6f6e6963}
+                        {ffe63caa-a25d-11f1-bb16-806e6f6e6963}
+                        {ffe63cab-a25d-11f1-bb16-806e6f6e6963}
+                        {ffe63cac-a25d-11f1-bb16-806e6f6e6963}
+timeout                 1
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {8a1c6901-a179-11f1-be2c-cbfb5c43df57}
+device                  unknown
+path                    \EFI\boot\bootx64.efi
+description             ARCA
+locale                  pt-BR
+inherit                 {globalsettings}
+default                 {current}
+resumeobject            {8a1c68fd-a179-11f1-be2c-cbfb5c43df57}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Gerenciador de Inicialização do Windows
+---------------------------------------
+identificador           {bootmgr}
+device                  partition=\Device\HarddiskVolume1
+path                    \EFI\Microsoft\Boot\bootmgfw.efi
+description             Windows Boot Manager
+locale                  pt-BR
+inherit                 {globalsettings}
+default                 {current}
+resumeobject            {8a1c68fd-a179-11f1-be2c-cbfb5c43df57}
+displayorder            {current}
+toolsdisplayorder       {memdiag}
+timeout                 30
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {d13126af-a1f1-11f1-bb13-806e6f6e6963}
+description             UEFI:  USB, Partition 1
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {ffe63caa-a25d-11f1-bb16-806e6f6e6963}
+description             UEFI:CD/DVD Drive
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {ffe63cab-a25d-11f1-bb16-806e6f6e6963}
+description             UEFI:Removable Device
+
+Aplicativo de Firmware (101fffff)
+---------------------------------
+identificador           {ffe63cac-a25d-11f1-bb16-806e6f6e6963}
+description             UEFI:Network Device
+Foi especificado um dispositivo inexistente.
