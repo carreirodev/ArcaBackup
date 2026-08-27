@@ -209,6 +209,11 @@ pub struct Conferencia {
     /// estavam abertos no segundo em que ele foi escrito, e o `arca-check.log`
     /// de B-9, que so existe cinco minutos depois. E a hora em que cada um
     /// nasceu, e nao falta de nada.
+    ///
+    /// Numa imagem descrita sao **cinco**: o `arca-descricao.txt` de L-3 entra
+    /// aqui pelo mesmo motivo, e sem caso especial nenhum — ele nasceu depois
+    /// do `savedisk`, num bloco de notas, e o `MD5SUMS` nao teria como
+    /// lista-lo. Ver [`crate::imagens::DESCRICAO`].
     pub fora_do_md5sums: usize,
 }
 

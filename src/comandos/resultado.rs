@@ -532,7 +532,11 @@ pub fn montar(colheita: &Colheita) -> String {
     saida.push_str(&linha_da_ordem(colheita.ordem));
 
     saida.push('\n');
-    saida.push_str(&list::montar(colheita.pastas, colheita.livre_bytes));
+    saida.push_str(&list::montar(
+        colheita.pastas,
+        colheita.livre_bytes,
+        list::Descricoes::Omitir,
+    ));
 
     saida.push_str(&conselho(colheita));
     saida.push_str(&conselho_da_ordem(colheita.ordem));
@@ -794,7 +798,7 @@ pub fn montar_sem_job(pastas: &[Pasta], livre_bytes: u64, ordem: &OrdemDevolvida
     let mut saida = String::from("Nao ha job a colher.\n\n");
     saida.push_str(&linha_da_ordem(ordem));
     saida.push('\n');
-    saida.push_str(&list::montar(pastas, livre_bytes));
+    saida.push_str(&list::montar(pastas, livre_bytes, list::Descricoes::Omitir));
     saida.push_str(concat!(
         "\n  Nao ha `estado.json` no ARCABOOT, entao nenhum job foi armado por este\n",
         "  dispositivo — ou o ultimo ja foi colhido e o arquivo foi levado junto de\n",
@@ -848,7 +852,7 @@ pub fn montar_ja_colhido(
     saida.push_str(&linha_da_ordem(ordem));
 
     saida.push('\n');
-    saida.push_str(&list::montar(pastas, livre_bytes));
+    saida.push_str(&list::montar(pastas, livre_bytes, list::Descricoes::Omitir));
     saida.push_str(&conselho_da_ordem(ordem));
     saida.push_str(concat!(
         "\n  O desfecho deste job ja foi lido e dito. Colher duas vezes nao muda nada,\n",
@@ -901,6 +905,7 @@ mod testes {
             tamanho_bytes: 38_823_623_035,
             modificado_em: Some(momento("2026-08-22T09:14:02")),
             especie: Especie::Imagem { veredito },
+            descricao: None,
         }
     }
 
@@ -1770,7 +1775,7 @@ mod testes {
 
         assert!(
             saida.contains(
-                list::montar(&pastas, 176_312_811_520)
+                list::montar(&pastas, 176_312_811_520, list::Descricoes::Omitir)
                     .lines()
                     .next()
                     .unwrap()

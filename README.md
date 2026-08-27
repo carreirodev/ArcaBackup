@@ -352,6 +352,7 @@ Um **dispositivo** é um disco externo com duas partições, rotuladas sempre co
     ├── 2026-08-21_WindowsCompleto/          ← uma imagem
     │   ├── MD5SUMS                          ← é ele que distingue imagem de resíduo
     │   ├── arca-check.log                   ← o veredito do ocs-chkimg
+    │   ├── arca-descricao.txt               ← opcional, e escrito por você (L-3)
     │   ├── blkdev.list, disk, parts, ...
     │   └── nvme0n1p3.ntfs-ptcl-img.zst.aa, ...
     └── 2026-08-22_Apps/
@@ -986,9 +987,36 @@ Uma pasta sem `MD5SUMS` aparece marcada como resíduo, **nunca é oferecida para
   2026-08-22_Interrompido      22/08 · 512 B · residuo
 ```
 
+#### A descrição de uma imagem (L-3)
+
+Uma imagem pode carregar uma descrição: um `arca-descricao.txt` dentro da pasta dela, que aparece recuado sob a linha da imagem.
+
+```
+Imagens em ARCAVAULT:
+  2026-08-21_WindowsCompleto   21/08 · 36,2 GB · aprovada
+      Windows recém-instalado, antes dos apps.
+  2026-08-22_Apps              22/08 · 39,7 GB · aprovada
+      Depois do Office e do Visual Studio; já com as licenças ativadas.
+  ARCA-TESTE-03                22/08 · 32,9 GB · aprovada
+
+125 GB livres
+```
+
+**Quem escreve o arquivo é você, num bloco de notas** — o ARCA nunca o escreve, e não há comando para isso. Daí as consequências que importam:
+
+| | |
+|---|---|
+| **Nada precisa ser feito** | Imagem sem o arquivo aparece como sempre apareceu. Toda imagem gravada antes disto existir continua valendo, e ganha descrição no dia em que você criar o arquivo dentro da pasta dela |
+| **Acento é livre** | A descrição não entra em receita nenhuma — C-2 é sobre a string do `grub.cfg`. O nome da imagem continua sob B-2, e continua sem acento |
+| **Resíduo também pode ter** | Anotar por que um resíduo ficou lá é exatamente o que se quer poder fazer, já que quem o apaga é você |
+| **Nada julga por ela** | Nenhuma recusa, nenhum veredito e nenhuma restauração leem esse arquivo. O `MD5SUMS` não o lista, então `arca verify` o ignora — ele entra na contagem de arquivos fora do `MD5SUMS`, que nunca é falha |
+| **Só no `arca list`** | `arca status` e `arca resultado` reusam a mesma listagem e **não** mostram descrição: as duas são telas de diagnóstico |
+
+O que o ARCA faz com o texto antes de imprimi-lo: descarta o BOM que o "Salvar como" do Bloco de Notas escreve; junta as linhas numa frase só e decide ele mesmo onde quebrar; corta em **300 caracteres**, entre palavras, fechando com `…`; e trata arquivo vazio como arquivo inexistente. Salvo em UTF-16, a linha diz `descricao ilegivel: salve o arquivo em UTF-8` em vez de imprimir lixo.
+
 #### O que a listagem não é
 
-Não há catálogo, não há banco, não há índice. `arca list` lê o dispositivo: se a informação já está na listagem de diretórios, não há o que armazenar. A pasta `ARCA-LOGS` fica de fora — ela não é imagem nem resíduo.
+Não há catálogo, não há banco, não há índice. `arca list` lê o dispositivo: se a informação já está na listagem de diretórios, não há o que armazenar — e a descrição, que não está, mora **dentro da pasta da imagem**, e não num índice que envelheceria sozinho na primeira pasta renomeada à mão. A pasta `ARCA-LOGS` fica de fora — ela não é imagem nem resíduo.
 
 ---
 
@@ -1050,7 +1078,7 @@ A tela vai andando um arquivo por vez — parada nao e travamento.
 
 > **`D:` e não `E:` não é erro de transcrição.** As outras telas deste documento mostram o `ARCAVAULT` em `E:`; nesta sessão ele veio em `D:`. **A letra muda de uma conexão para outra e o rótulo não** — que é exatamente o motivo de o ARCA se localizar por rótulo.
 
-> **A linha `Fora do MD5SUMS` nunca é problema.** A pasta tem 43 arquivos e o `MD5SUMS` lista 39. Os quatro que sobram têm hora: o próprio `MD5SUMS`, o `clonezilla-img` e o `Info-img-id.txt` nascem no fim do `savedisk`, e o `arca-check.log` cinco minutos depois. Chamar isso de falta reprovaria toda imagem que o Clonezilla já fez.
+> **A linha `Fora do MD5SUMS` nunca é problema.** A pasta tem 43 arquivos e o `MD5SUMS` lista 39. Os quatro que sobram têm hora: o próprio `MD5SUMS`, o `clonezilla-img` e o `Info-img-id.txt` nascem no fim do `savedisk`, e o `arca-check.log` cinco minutos depois. Chamar isso de falta reprovaria toda imagem que o Clonezilla já fez. Numa imagem descrita são cinco: o `arca-descricao.txt` de L-3 entra aqui pela mesma razão — ele nasceu depois, e num bloco de notas.
 
 Quando alguma coisa não bate, a tela sai inteira antes do erro, com cada falha nomeada:
 

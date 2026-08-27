@@ -29,6 +29,43 @@ use crate::md5sums::ARQUIVO as MD5SUMS;
 /// do outro em silencio.
 pub const CHECK_LOG: &str = "arca-check.log";
 
+/// Onde mora a descricao de uma imagem, quando alguem escreveu uma (L-3).
+///
+/// **O ARCA nunca escreve este arquivo.** Quem o escreve e o usuario, num
+/// bloco de notas, dentro da pasta da imagem — e e por isso que a coisa
+/// inteira nao encosta em armar, colher nem restaurar. Nao existir e o caso
+/// normal: uma imagem de 21/08/2026 ganha descricao no dia em que alguem
+/// criar o arquivo, e nenhuma imagem precisa de um.
+///
+/// # Um arquivo por imagem, e nao um indice
+///
+/// L-1 diz que o `arca list` lê o dispositivo e nunca um catalogo. Isto nao e
+/// o catalogo que ele proibe: um indice central afirmaria coisas sobre pastas
+/// que ele nao olhou, e envelheceria sozinho na primeira renomeada a mao.
+/// Aqui a descricao anda junto da imagem — copie a pasta para outro lugar e
+/// ela vai junto —, exatamente como o `arca-check.log` de onde o veredito sai.
+///
+/// # Por que ele nao entra na receita
+///
+/// Porque nao ha nada que o Clonezilla faca com ele. A receita e uma linha so
+/// de shell dentro do `grub.cfg`, orcada em caracteres por
+/// [`crate::receita`] (C-2), e 300 caracteres de texto livre
+/// com acento a estourariam e a quebrariam ao mesmo tempo. A descricao e lida
+/// no Windows e impressa na tela, e so.
+pub const DESCRICAO: &str = "arca-descricao.txt";
+
+/// Ate onde uma descricao vai. Contado em **caracteres**, nunca em bytes.
+///
+/// O limite nao defende nada tecnico — nenhuma receita, nenhum orcamento de
+/// linha —, defende a listagem: com a largura de
+/// [`crate::comandos::list::LARGURA`], 300 caracteres dao **cinco** linhas
+/// recuadas, e e ate ai que uma descricao ainda nao afoga as imagens
+/// vizinhas. Passar disto nao e erro; ver [`interpretar_descricao`].
+pub const LIMITE_DA_DESCRICAO: usize = 300;
+
+/// O que a listagem diz quando o arquivo existe e nao e UTF-8.
+const ILEGIVEL: &str = "descricao ilegivel: salve o arquivo em UTF-8";
+
 /// Pastas de servico do `ARCAVAULT`: existem no dispositivo e nunca sao
 /// imagem nem residuo.
 ///
@@ -82,6 +119,13 @@ pub struct Pasta {
     pub modificado_em: Option<DateTime<Local>>,
 
     pub especie: Especie,
+
+    /// O que o [`DESCRICAO`] da pasta diz, quando alguem escreveu um (L-3).
+    ///
+    /// So para exibir, e so no `arca list`: nada aqui julga, nenhuma receita
+    /// carrega isto, e nenhuma recusa depende disto. `None` e o caso normal —
+    /// e o de toda imagem que ja estava no dispositivo.
+    pub descricao: Option<String>,
 }
 
 impl Pasta {
@@ -123,11 +167,20 @@ pub fn enumerar(arquivos: &dyn Arquivos, raiz_do_vault: &Path) -> Resultado<Vec<
             None => Especie::Residuo,
         };
 
+        // Fora do `match` acima porque nao depende dele: residuo tambem pode
+        // ter descricao, e o motivo de um residuo ter ficado no dispositivo e
+        // justamente o que se quer poder anotar (B-10).
+        let descricao = match arquivo_chamado(DESCRICAO) {
+            Some(arquivo) => interpretar_descricao(&arquivos.ler_texto_alheio(&arquivo.caminho)?),
+            None => None,
+        };
+
         pastas.push(Pasta {
             nome,
             tamanho_bytes: somar(arquivos, &dentro, 0)?,
             modificado_em: entrada.modificado_em,
             especie,
+            descricao,
         });
     }
 
@@ -216,6 +269,82 @@ pub fn interpretar_veredito(texto: &str) -> Option<Veredito> {
     }
 
     None
+}
+
+/// A descricao que o arquivo diz, ou `None` quando ele nao diz nada.
+///
+/// Recebe o texto de [`crate::portas::Arquivos::ler_texto_alheio`], que e a
+/// leitura certa aqui pela mesma razao do `arca-check.log`: quem escreveu foi
+/// **outro programa** — um bloco de notas —, e nada garante o que vai dentro.
+/// A diferenca e que aqui o texto vai para a tela inteiro, e nao procurado por
+/// uma frase. Dai cada uma das quatro coisas abaixo.
+///
+/// 1. **O BOM some.** O "Salvar como" do Bloco de Notas oferece *UTF-8 com
+///    BOM*, e o `U+FEFF` sairia como um glifo solto na frente da descricao.
+/// 2. **Vira uma frase so.** Quem edita a mao da Enter, e a listagem alinha
+///    por coluna: quem decide onde a linha quebra e quem imprime, e nao o
+///    arquivo. Controle vira espaco pelo mesmo caminho, e isso cobre o escape
+///    ANSI que um copiar-e-colar do `arca-check.log` traria junto — solto na
+///    tela, ele moveria o cursor e pintaria o resto.
+/// 3. **Nada e o mesmo que arquivo nenhum.** Um arquivo criado e nao escrito
+///    nao e uma descricao vazia; e a ausencia de uma.
+/// 4. **Longa demais corta, e nao recusa.** A listagem responde *"o que ha no
+///    dispositivo"*, e nada que alguem tenha digitado num bloco de notas pode
+///    fazer essa pergunta falhar. O corte cai entre palavras e fecha com `…`,
+///    para que a tela diga que ha mais.
+///
+/// O `U+FFFD` e o unico caso que vira uma frase do ARCA em vez do texto de
+/// quem escreveu: um arquivo salvo em UTF-16 chega aqui como replacement
+/// character, e imprimir o lixo — ou calar sobre um arquivo que existe — seria
+/// pior do que dizer o que houve.
+pub fn interpretar_descricao(texto: &str) -> Option<String> {
+    let sem_bom = texto.strip_prefix('\u{feff}').unwrap_or(texto);
+
+    if sem_bom.contains(char::REPLACEMENT_CHARACTER) {
+        return Some(ILEGIVEL.to_string());
+    }
+
+    let sem_controle: String = sem_bom
+        .chars()
+        .map(|caractere| {
+            if caractere.is_control() {
+                ' '
+            } else {
+                caractere
+            }
+        })
+        .collect();
+
+    let frase = sem_controle
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if frase.is_empty() {
+        return None;
+    }
+
+    Some(cortar(frase))
+}
+
+/// O corte de [`LIMITE_DA_DESCRICAO`], entre palavras.
+///
+/// Conta `chars()` e nao bytes, e nao e preciosismo: uma descricao em
+/// portugues passa de 300 bytes bem antes de passar de 300 caracteres, e
+/// fatiar por byte cortaria no meio de um acento — que em Rust nao trunca, e
+/// sim entra em panico.
+fn cortar(frase: String) -> String {
+    if frase.chars().count() <= LIMITE_DA_DESCRICAO {
+        return frase;
+    }
+
+    let ate_o_limite: String = frase.chars().take(LIMITE_DA_DESCRICAO).collect();
+    let corte = match ate_o_limite.rfind(' ') {
+        Some(espaco) if espaco > 0 => &ate_o_limite[..espaco],
+        // Uma "palavra" de 300 caracteres nao tem fronteira onde cair.
+        _ => &ate_o_limite,
+    };
+
+    format!("{corte}…")
 }
 
 #[cfg(test)]
@@ -333,6 +462,100 @@ mod testes {
     }
 
     #[test]
+    fn a_descricao_e_o_texto_do_arquivo_aparado() {
+        assert_eq!(
+            interpretar_descricao("  Windows recem-instalado, antes dos apps.  \r\n"),
+            Some("Windows recem-instalado, antes dos apps.".to_string())
+        );
+    }
+
+    #[test]
+    fn o_acento_e_livre_porque_a_descricao_nunca_entra_na_receita() {
+        // C-2 proibe nao-ASCII **na receita**, que e a string gravada no
+        // `grub.cfg`. A descricao nao vai a lugar nenhum: e lida do
+        // dispositivo e impressa na tela. O nome da imagem continua sob B-2.
+        assert_eq!(
+            interpretar_descricao("Antes da instalação do Visual Studio\n"),
+            Some("Antes da instalação do Visual Studio".to_string())
+        );
+    }
+
+    #[test]
+    fn o_bom_do_bloco_de_notas_nao_vira_caractere_na_tela() {
+        // O "Salvar como" do Bloco de Notas oferece UTF-8 com BOM, e o
+        // U+FEFF sairia como um glifo solto na frente da descricao.
+        assert_eq!(
+            interpretar_descricao("\u{feff}Depois do Office."),
+            Some("Depois do Office.".to_string())
+        );
+    }
+
+    #[test]
+    fn as_quebras_de_linha_viram_uma_frase_so() {
+        // Quem edita a mao da Enter. A listagem e alinhada por coluna, e a
+        // quebra de linha e decidida na hora de imprimir — nao pelo arquivo.
+        assert_eq!(
+            interpretar_descricao("Depois do Office\r\ne do Visual Studio.\r\n\r\n"),
+            Some("Depois do Office e do Visual Studio.".to_string())
+        );
+    }
+
+    #[test]
+    fn arquivo_vazio_ou_so_com_espaco_e_o_mesmo_que_nao_haver_arquivo() {
+        assert_eq!(interpretar_descricao(""), None);
+        assert_eq!(interpretar_descricao("\u{feff}"), None);
+        assert_eq!(interpretar_descricao("   \r\n\t\r\n"), None);
+    }
+
+    #[test]
+    fn caractere_de_controle_nao_chega_ao_terminal() {
+        // Um escape ANSI colado ali de um `arca-check.log` moveria o cursor e
+        // pintaria o resto da tela. O ESC vira espaco como qualquer controle.
+        assert_eq!(
+            interpretar_descricao("antes\x1bdepois\u{0}fim"),
+            Some("antes depois fim".to_string())
+        );
+    }
+
+    #[test]
+    fn descricao_longa_demais_e_cortada_na_fronteira_de_palavra() {
+        let longa = "palavra ".repeat(60);
+        let cortada = interpretar_descricao(&longa).unwrap();
+
+        assert!(cortada.ends_with('…'), "{cortada}");
+        assert!(
+            cortada.chars().count() <= LIMITE_DA_DESCRICAO + 1,
+            "{} caracteres",
+            cortada.chars().count()
+        );
+        assert!(
+            !cortada.contains("palavr…"),
+            "o corte cai entre palavras: {cortada}"
+        );
+    }
+
+    #[test]
+    fn o_limite_conta_caracteres_e_nao_bytes() {
+        // Uma descricao inteira de acentos tem o dobro de bytes e o mesmo
+        // tanto de caracteres. Contar bytes cortaria pela metade — e cortaria
+        // no meio de um caractere.
+        let acentuada = "á".repeat(LIMITE_DA_DESCRICAO);
+        assert_eq!(interpretar_descricao(&acentuada), Some(acentuada));
+    }
+
+    #[test]
+    fn texto_que_nao_e_utf8_diz_que_esta_ilegivel() {
+        // `ler_texto_alheio` troca por U+FFFD o que nao for UTF-8 — e um
+        // arquivo salvo em UTF-16 chega assim. Dizer que esta ilegivel e mais
+        // util do que imprimir o lixo ou calar sobre um arquivo que existe.
+        let como_utf16_chega = "\u{fffd}\u{fffd}D\u{0}e\u{0}p\u{0}o\u{0}i\u{0}s\u{0}";
+        assert_eq!(
+            interpretar_descricao(como_utf16_chega),
+            Some(ILEGIVEL.to_string())
+        );
+    }
+
+    #[test]
     fn imagem_tem_md5sums_e_residuo_nao() {
         let arquivos = ArquivosEmMemoria::novo()
             .com(r"E:\2026-08-21_WindowsCompleto\MD5SUMS", "abc  nvme0n1p1")
@@ -369,6 +592,54 @@ mod testes {
         assert_eq!(
             pastas[0].modificado_em,
             Some(crate::duplos::momento("2026-08-21T12:56:31"))
+        );
+    }
+
+    #[test]
+    fn a_descricao_da_pasta_chega_na_listagem() {
+        let arquivos = ArquivosEmMemoria::novo()
+            .com(r"E:\2026-08-22_Apps\MD5SUMS", "abc")
+            .com(
+                r"E:\2026-08-22_Apps\arca-descricao.txt",
+                "Depois do Office e do Visual Studio.\r\n",
+            );
+
+        let pastas = enumerar(&arquivos, &vault()).unwrap();
+        assert_eq!(
+            pastas[0].descricao.as_deref(),
+            Some("Depois do Office e do Visual Studio.")
+        );
+    }
+
+    #[test]
+    fn imagem_sem_o_arquivo_fica_sem_descricao() {
+        // O caso de toda imagem gravada antes de 27/08/2026, e o caso normal
+        // de qualquer imagem: nao ha nada a acrescentar ao dispositivo para
+        // que ele continue funcionando.
+        let arquivos = ArquivosEmMemoria::novo().com(r"E:\2026-08-22_Apps\MD5SUMS", "abc");
+
+        let pastas = enumerar(&arquivos, &vault()).unwrap();
+        assert_eq!(pastas[0].descricao, None);
+    }
+
+    #[test]
+    fn residuo_tambem_pode_ter_descricao() {
+        // Sem caso especial, e de proposito: anotar **por que** um residuo
+        // ficou no dispositivo e justamente o que se quer poder fazer, ja que
+        // o ARCA nunca o apaga (B-10) e quem apaga e o usuario, depois de
+        // olhar.
+        let arquivos = ArquivosEmMemoria::novo()
+            .com_pasta_vazia(r"E:\2026-08-22_Interrompido")
+            .com(
+                r"E:\2026-08-22_Interrompido\arca-descricao.txt",
+                "Faltou espaco no meio da gravacao.",
+            );
+
+        let pastas = enumerar(&arquivos, &vault()).unwrap();
+        assert_eq!(pastas[0].especie, Especie::Residuo);
+        assert_eq!(
+            pastas[0].descricao.as_deref(),
+            Some("Faltou espaco no meio da gravacao.")
         );
     }
 

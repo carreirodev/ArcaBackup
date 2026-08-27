@@ -193,6 +193,33 @@ mod testes {
     }
 
     #[test]
+    fn uma_descricao_como_o_bloco_de_notas_a_escreve_chega_a_listagem() {
+        // L-3 num sistema de arquivos de verdade, e nao no duplo: o
+        // `ArquivosEmMemoria` guarda `String`, e por isso nunca ve os **bytes**
+        // que um bloco de notas grava. Aqui eles sao reais — o BOM de UTF-8
+        // (`EF BB BF`) que o "Salvar como" escreve, CRLF no fim de cada linha,
+        // e um `ç` em dois bytes.
+        let vault = std::env::temp_dir().join(format!("arca-descricao-{}", std::process::id()));
+        let imagem = vault.join("2026-08-22_Apps");
+        fs::create_dir_all(&imagem).unwrap();
+        fs::write(imagem.join("MD5SUMS"), b"abc  nvme0n1p3").unwrap();
+        fs::write(
+            imagem.join("arca-descricao.txt"),
+            b"\xEF\xBB\xBFDepois do Office\r\ne das licen\xC3\xA7as.\r\n",
+        )
+        .unwrap();
+
+        let pastas = crate::imagens::enumerar(&ArquivosDoSistema, &vault).unwrap();
+
+        assert_eq!(
+            pastas[0].descricao.as_deref(),
+            Some("Depois do Office e das licenças.")
+        );
+
+        fs::remove_dir_all(&vault).unwrap();
+    }
+
+    #[test]
     fn a_escrita_atomica_deixa_o_conteudo_no_lugar() {
         let diretorio = std::env::temp_dir().join(format!("arca-atomico-{}", std::process::id()));
         fs::create_dir_all(&diretorio).unwrap();

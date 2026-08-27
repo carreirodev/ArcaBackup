@@ -1358,6 +1358,7 @@ Sector size (logical/physical): 512/512 bytes
             tamanho_bytes: 42_614_112_256,
             modificado_em: Some(momento("2026-08-22T09:14:02")),
             especie: Especie::Imagem { veredito },
+            descricao: None,
         }
     }
 
@@ -1367,6 +1368,7 @@ Sector size (logical/physical): 512/512 bytes
             tamanho_bytes: 512,
             modificado_em: Some(momento("2026-08-22T03:11:00")),
             especie: Especie::Residuo,
+            descricao: None,
         }
     }
 

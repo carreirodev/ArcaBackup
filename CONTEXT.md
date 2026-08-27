@@ -30,6 +30,12 @@ _Evitar_: backup, snapshot, ponto de restauração
 Pasta de imagem sem `MD5SUMS` — rastro de um backup interrompido. Não é imagem, e o ARCA nunca escreve por cima de uma.
 _Evitar_: imagem corrompida, imagem parcial
 
+**Descrição**:
+O que uma pasta do `ARCAVAULT` diz sobre si, num `arca-descricao.txt` dentro dela (L-3). **O ARCA nunca a escreve** — quem escreve é o usuário, num bloco de notas, e não há comando para isso. É a única coisa no dispositivo cuja fonte é essa, e daí vem o resto: ela nunca entra numa receita, então acento é livre onde o nome da imagem não pode ter; ausência do arquivo é ausência de descrição, jamais erro; e nada julga por ela — nem recusa, nem veredito, nem restauração. Um arquivo por pasta, e não um índice, pela mesma razão que L-1 proíbe o catálogo: um índice central afirma coisas sobre pastas que ninguém olhou.
+
+**Não é o veredito nem o desfecho**: os dois são julgamentos que o ARCA colhe do que o Clonezilla escreveu, e esta é a única linha da listagem que uma pessoa escreveu para outra ler. Por isso ela aparece só no `arca list`, e não nas telas de diagnóstico.
+_Evitar_: comentário, nota, legenda, rótulo, anotação
+
 ### A operação
 
 **Receita**:

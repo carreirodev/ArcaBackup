@@ -550,6 +550,7 @@ mod testes {
             tamanho_bytes: 42_604_877_207,
             modificado_em: Some(momento("2026-08-22T18:03:24")),
             especie: Especie::Imagem { veredito },
+            descricao: None,
         }
     }
 
@@ -559,6 +560,7 @@ mod testes {
             tamanho_bytes: 1024,
             modificado_em: None,
             especie: Especie::Residuo,
+            descricao: None,
         }
     }
 

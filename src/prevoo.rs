@@ -536,6 +536,7 @@ mod testes {
             tamanho_bytes,
             modificado_em: None,
             especie: Especie::Imagem { veredito: None },
+            descricao: None,
         }
     }
 
@@ -545,6 +546,7 @@ mod testes {
             tamanho_bytes: 12_000,
             modificado_em: None,
             especie: Especie::Residuo,
+            descricao: None,
         }
     }
 

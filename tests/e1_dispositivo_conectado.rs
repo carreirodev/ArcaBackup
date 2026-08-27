@@ -137,7 +137,11 @@ fn a_saida_tem_a_forma_do_paragrafo_5_4() {
     let raiz = dispositivo.raiz_do_vault().unwrap();
     let pastas = imagens::enumerar(&ArquivosDoSistema, &raiz).unwrap();
 
-    let saida = list::montar(&pastas, dispositivo.vault.livre_bytes);
+    let saida = list::montar(
+        &pastas,
+        dispositivo.vault.livre_bytes,
+        list::Descricoes::Mostrar,
+    );
     eprintln!("\n{saida}");
 
     let mut linhas = saida.lines();
@@ -158,6 +162,20 @@ fn a_saida_tem_a_forma_do_paragrafo_5_4() {
             2,
             "faltou separador em: {linha}"
         );
+
+        // A descricao de L-3 e texto que alguem escreveu num bloco de notas, e
+        // ocupa quantas linhas recuadas precisar. O que este teste afirma e a
+        // forma da linha **da imagem**, e por isso as dela sao consumidas
+        // aqui: a linha da imagem comeca com dois espacos e o nome.
+        if pasta.descricao.is_some() {
+            while linhas
+                .clone()
+                .next()
+                .is_some_and(|proxima| proxima.starts_with("      "))
+            {
+                linhas.next();
+            }
+        }
     }
 
     assert_eq!(linhas.next(), Some(""));

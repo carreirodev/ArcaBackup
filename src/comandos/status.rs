@@ -246,6 +246,7 @@ pub fn montar(diagnostico: &Diagnostico) -> String {
     saida.push_str(&list::montar(
         diagnostico.pastas,
         diagnostico.dispositivo.vault.livre_bytes,
+        list::Descricoes::Omitir,
     ));
     saida.push('\n');
 
@@ -823,6 +824,7 @@ mod testes {
             especie: Especie::Imagem {
                 veredito: Some(Veredito::Aprovada),
             },
+            descricao: None,
         }]
     }
 
@@ -1711,9 +1713,10 @@ mod testes {
         let dispositivo = dispositivo_conectado();
         let pastas = uma_imagem();
 
-        assert!(
-            montar_com(&dispositivo, PT)
-                .contains(&list::montar(&pastas, dispositivo.vault.livre_bytes))
-        );
+        assert!(montar_com(&dispositivo, PT).contains(&list::montar(
+            &pastas,
+            dispositivo.vault.livre_bytes,
+            list::Descricoes::Omitir
+        )));
     }
 }
