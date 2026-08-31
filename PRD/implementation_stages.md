@@ -535,11 +535,14 @@ que o plano tratava como separadas:
   máquina tem um NVMe só. Não havendo imagem de onde ler, o nome fica **por
   determinar**, e o pré-voo diz isso: é uma resposta, e a E7 herda. Aplicado ao
   PRD como §4.5.
-- **O modelo é casado sem caixa e sem pontuação, tirando o sufixo
-  `SCSI Disk Device`** que o Windows acrescenta a disco sem driver próprio.
-  Medido: `KGSSE100 256 SCSI Disk Device` e `KGSSE100256` casam assim. Não
-  casar é **recusa**, e nunca um palpite — um nome de disco errado numa receita
-  destrutiva é o pior desfecho possível deste módulo.
+- **O modelo é casado sem caixa e sem pontuação, tirando os dois afixos da
+  tradução SCSI do Windows**: o sufixo `SCSI Disk Device`, que ele acrescenta a
+  disco sem driver próprio, e o prefixo `NVMe`, que ele põe no lugar do
+  fabricante quando o controlador NVMe não dá outro. Medidos:
+  `KGSSE100 256 SCSI Disk Device` casa com `KGSSE100256` (22/08/2026), e
+  `NVMe EG6 KIOXIA 1024GB` casa com `EG6 KIOXIA 1024GB` (31/08/2026, máquina
+  `SCI-3403`). Não casar é **recusa**, e nunca um palpite — um nome de disco
+  errado numa receita destrutiva é o pior desfecho possível deste módulo.
 - **A origem não é o disco 0 por suposição.** Ela é o disco que tem o `C:` e
   não é o dispositivo. Numa máquina em que o dispositivo ARCA fosse o disco 0,
   supor o índice faria a receita clonar o próprio disco de backup.

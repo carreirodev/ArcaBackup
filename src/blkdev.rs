@@ -32,16 +32,35 @@
 //! havendo imagem de onde lê, o nome fica por determinar** — e isso e uma
 //! resposta, desde que escrita, e desde que a E7 saiba que herdou.
 //!
-//! # A comparacao de modelo, e o unico ajuste que ela precisa
+//! # A comparacao de modelo, e os dois ajustes que ela precisa
 //!
 //! O modelo e comparado sem caixa e sem os caracteres que nao sao letra nem
 //! digito, porque o WMI escreve `KGSSE100 256` e o `lsblk` escreve
 //! `KGSSE100256` — o mesmo texto com um espaco a mais.
 //!
-//! Ha um sufixo a tirar, e ele e um artefato conhecido do Windows: um disco
-//! sem driver proprio aparece como `<modelo> SCSI Disk Device`. Medido nesta
-//! maquina — `KGSSE100 256 SCSI Disk Device` no WMI, `KGSSE100256` no `lsblk`.
-//! Com o sufixo fora, os dois casam.
+//! Sobre isso ha **dois** afixos a tirar, e os dois sao a mesma coisa: o
+//! Windows fala com disco por uma traducao SCSI, e o que ela poe em volta do
+//! modelo entra no `Win32_DiskDrive.Model` como se fosse do fabricante.
+//!
+//! | | Windows | `lsblk` | medido em |
+//! |---|---|---|---|
+//! | sufixo `SCSI Disk Device` | `KGSSE100 256 SCSI Disk Device` | `KGSSE100256` | 22/08/2026 |
+//! | prefixo `NVMe` | `NVMe EG6 KIOXIA 1024GB` | `EG6 KIOXIA 1024GB` | 31/08/2026 |
+//!
+//! O prefixo custou um `arca backup` recusado numa maquina que estava inteira:
+//! dispositivo preparado, sondagem colhida, e `POR DETERMINAR` na linha do
+//! disco de origem. Que o disco desta mesa (`KINGSTON SNV3S500G`) nao tenha o
+//! prefixo e propriedade **do disco**, e nao da regra — quem o poe e a
+//! traducao SCSI, que preenche o *vendor* com `NVMe` quando o controlador nao
+//! da outro. O proprio Windows entrega a decomposicao, e foi assim que se viu:
+//! o `MSFT_Disk` do mesmo disco responde `Manufacturer=NVMe` e
+//! `Model=EG6 KIOXIA 1024GB`, que e exatamente o que o `lsblk` diz.
+//!
+//! **Ler o modelo do `MSFT_Disk` em vez de tirar o prefixo foi considerado e
+//! recusado**: o `Win32_DiskDrive` sempre responde e o `MSFT_Disk` depende do
+//! servico de armazenamento estar de pe (é por isso que so a *medida* de
+//! ADR-0010 vem de la, e com `Option`). Pendurar o campo que nomeia o disco de
+//! origem numa fonte que pode faltar troca uma recusa por outra.
 //!
 //! **Nao casar e recusa, e nunca um palpite.** Um nome de disco errado numa
 //! receita destrutiva e o pior desfecho possivel deste modulo.
@@ -550,12 +569,28 @@ pub fn mesmo_modelo(um: &str, outro: &str) -> bool {
     !um.is_empty() && um == normalizar(outro)
 }
 
+/// O prefixo que a traducao SCSI do Windows poe em disco NVMe, no lugar do
+/// fabricante. Medido em 31/08/2026 num `EG6 KIOXIA 1024GB`.
+const PREFIXO_DO_WINDOWS: &str = "NVME";
+
+/// O sufixo que o Windows acrescenta a disco sem driver proprio. Medido em
+/// 22/08/2026 num `KGSSE100 256`.
+const SUFIXO_DO_WINDOWS: &str = "SCSIDISKDEVICE";
+
 /// Um modelo comparavel entre o WMI e o `lsblk`.
 ///
-/// Maiusculas, so letra e digito, e sem o `SCSI Disk Device` que o Windows
-/// acrescenta a disco sem driver proprio. Medido nesta maquina:
-/// `KGSSE100 256 SCSI Disk Device` e `KGSSE100256` casam assim, e
-/// `KINGSTON SNV3S500G` casa consigo mesmo sem precisar de nada.
+/// Maiusculas, so letra e digito, e sem os dois afixos da traducao SCSI do
+/// Windows. Medido: `KGSSE100 256 SCSI Disk Device` casa com `KGSSE100256`,
+/// `NVMe EG6 KIOXIA 1024GB` casa com `EG6 KIOXIA 1024GB`, e
+/// `KINGSTON SNV3S500G` casa consigo mesmo sem precisar de nenhum dos dois.
+///
+/// O prefixo sai **quantas vezes aparecer**, e nao uma. Nao ha medicao de um
+/// disco cujo modelo comece por `NVMe` — o que haveria ali seria
+/// `NVMe NVMe ...` de um lado e `NVMe ...` do outro —, e tirar uma vez so
+/// deixaria justamente esse par sem casar. Repetir custa a mesma chamada e
+/// torna `normalizar` idempotente, que e o que se espera de um normalizador.
+/// Sobrar prefixo demais nao nomeia disco errado: dois modelos que colidissem
+/// por causa disto viram [`SemNome::ModeloAmbiguo`], que e recusa.
 fn normalizar(modelo: &str) -> String {
     let so_alfanumerico: String = modelo
         .chars()
@@ -564,8 +599,9 @@ fn normalizar(modelo: &str) -> String {
         .collect();
 
     so_alfanumerico
-        .strip_suffix("SCSIDISKDEVICE")
+        .strip_suffix(SUFIXO_DO_WINDOWS)
         .unwrap_or(&so_alfanumerico)
+        .trim_start_matches(PREFIXO_DO_WINDOWS)
         .to_string()
 }
 
@@ -700,6 +736,55 @@ mod testes {
         // escreve `KGSSE100256`. E o mesmo disco.
         let achado = nome_do_disco("KGSSE100 256 SCSI Disk Device", &listas()).expect("casa");
         assert_eq!(achado.disco.como_texto(), "sda");
+    }
+
+    /// A sondagem da maquina `SCI-3403`, colhida em 30/08/2026 as 16:03, e
+    /// copiada de `D:\ARCA-LOGS\sondagem\blkdev.list` sem retoque. As larguras
+    /// de coluna sao as do arquivo.
+    ///
+    /// O que ela tem de diferente do dispositivo desta mesa e o unico ponto:
+    /// o disco de origem e um KIOXIA, e o `Win32_DiskDrive.Model` dele vem com
+    /// o prefixo `NVMe`.
+    const DA_OUTRA_MAQUINA: &str = concat!(
+        "KNAME     NAME          SIZE TYPE FSTYPE   MOUNTPOINT                           MODEL\n",
+        "loop0     loop0       466.2M loop squashfs /run/live/rootfs/filesystem.squashfs \n",
+        "sda       sda         447.1G disk                                               Maxtor Z1 SSD 480GB\n",
+        "sda1      |-sda1      445.6G part ntfs     /home/partimag                       \n",
+        "sda2      `-sda2        1.6G part vfat                                          \n",
+        "nvme0n1   nvme0n1     953.9G disk                                               EG6 KIOXIA 1024GB\n",
+        "nvme0n1p1 |-nvme0n1p1   200M part vfat                                          \n",
+        "nvme0n1p2 |-nvme0n1p2    16M part                                               \n",
+        "nvme0n1p3 |-nvme0n1p3 952.8G part ntfs                                          \n",
+        "nvme0n1p4 `-nvme0n1p4   901M part ntfs                                          \n",
+    );
+
+    #[test]
+    fn o_prefixo_nvme_do_windows_nao_impede_o_casamento() {
+        // Medido em 31/08/2026, na maquina `SCI-3403`: o WMI escreve
+        // `NVMe EG6 KIOXIA 1024GB` e o `lsblk` escreve `EG6 KIOXIA 1024GB`. E
+        // o mesmo disco, e sem tirar o prefixo o `arca backup` daquela maquina
+        // parava em `POR DETERMINAR` com uma sondagem boa no dispositivo.
+        let achado = nome_do_disco("NVMe EG6 KIOXIA 1024GB", &[da_sondagem(DA_OUTRA_MAQUINA)])
+            .expect("casa");
+        assert_eq!(achado.disco.como_texto(), "nvme0n1");
+    }
+
+    #[test]
+    fn o_prefixo_nvme_nao_faz_o_dispositivo_passar_por_disco_de_origem() {
+        // A ponte USB responde `JMicron Generic SCSI Disk Device` ao Windows e
+        // o `lsblk` le `Maxtor Z1 SSD 480GB` atras dela (PRD §2084). Tirar o
+        // prefixo de um lado nao pode aproximar esses dois: se aproximasse, o
+        // `sda` — que e o proprio dispositivo — entraria numa receita como
+        // disco de origem.
+        assert_eq!(
+            nome_do_disco(
+                "JMicron Generic SCSI Disk Device",
+                &[da_sondagem(DA_OUTRA_MAQUINA)]
+            ),
+            Err(SemNome::ModeloNaoCasa {
+                modelo: "JMicron Generic SCSI Disk Device".to_string()
+            })
+        );
     }
 
     // ─────────────────────── as quatro recusas ───────────────────────
@@ -865,6 +950,25 @@ mod testes {
         assert_eq!(normalizar("KGSSE100 256 SCSI Disk Device"), "KGSSE100256");
         assert_eq!(normalizar("KGSSE100256"), "KGSSE100256");
         assert_eq!(normalizar("KINGSTON SNV3S500G"), "KINGSTONSNV3S500G");
+        assert_eq!(normalizar("NVMe EG6 KIOXIA 1024GB"), "EG6KIOXIA1024GB");
+        assert_eq!(normalizar("EG6 KIOXIA 1024GB"), "EG6KIOXIA1024GB");
+    }
+
+    #[test]
+    fn a_normalizacao_e_idempotente() {
+        // O que ela devolve ja esta normalizado. Sem isto, um modelo que
+        // comecasse por `NVMe` sairia diferente de cada lado da comparacao:
+        // `NVMe NVMe X` do Windows viraria `NVMEX`, e `NVMe X` do `lsblk`
+        // viraria `X`, e o mesmo disco nao casaria consigo.
+        for modelo in [
+            "KGSSE100 256 SCSI Disk Device",
+            "NVMe EG6 KIOXIA 1024GB",
+            "NVMe NVMe X",
+            "KINGSTON SNV3S500G",
+        ] {
+            let uma_vez = normalizar(modelo);
+            assert_eq!(normalizar(&uma_vez), uma_vez, "modelo `{modelo}`");
+        }
     }
 
     #[test]
@@ -873,6 +977,11 @@ mod testes {
         // distintos casarem, e ai a receita nomearia o errado.
         assert_ne!(normalizar("SAMSUNG 990 PRO"), normalizar("SAMSUNG 980 PRO"));
         assert_ne!(normalizar("WDC WD10"), normalizar("WDC WD100"));
+
+        // O prefixo sai do comeco, e nao de dentro nem do fim: `NVME` no meio
+        // de um modelo e parte do modelo.
+        assert_ne!(normalizar("ACME NVME 500"), normalizar("ACME 500"));
+        assert_ne!(normalizar("KIOXIA NVME"), normalizar("KIOXIA"));
     }
 
     // ─────────── a segunda fonte, e a precedencia (E12, SD-5) ───────────
