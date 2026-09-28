@@ -22,3 +22,12 @@ target
 
 # O bytecode que as skills de `.claude/skills/` deixam ao rodar.
 __pycache__/
+
+# Os planos que a skill `tlc-plan` escreve ficam só na cópia de quem planejou
+# (decisão de 28/09/2026). O que se versiona de uma feature mora em
+# `.specs/features/`.
+.tasks/
+
+# A cópia que o instalador de skills grava do lock antes de reescrevê-lo. O
+# histórico do git já guarda cada versão do `.skill-lock.json`.
+.agents/*.backup
