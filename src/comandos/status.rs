@@ -1704,6 +1704,27 @@ mod testes {
     }
 
     #[test]
+    fn sem_nome_o_bloco_do_dispositivo_sai_como_antes() {
+        // C-16 (28/09/2026) so muda a segunda linha quando o `ARCABOOT` tem
+        // nome. Sem nome — em qualquer caixa — o bloco e o de antes, e a
+        // comparacao e com o literal, e nao com `linha()` remontando o texto.
+        const ANTES: &str = "Dispositivo ARCA\n  \
+            ARCAVAULT ....................... E: · NTFS · 236,6 GB\n  \
+            ARCABOOT ........................ R: · FAT32 · 1,6 GB\n";
+
+        assert_eq!(secao_do_dispositivo(&dispositivo_conectado()), ANTES);
+
+        let em_minuscula = Dispositivo {
+            boot: Some(Volume {
+                sistema_de_arquivos: "FAT32".to_string(),
+                ..volume("arcaboot", 'R', 1_700_000_000, 1_070_000_000)
+            }),
+            ..dispositivo_conectado()
+        };
+        assert_eq!(secao_do_dispositivo(&em_minuscula), ANTES);
+    }
+
+    #[test]
     fn o_dispositivo_normal_nao_leva_aviso_nenhum() {
         assert!(!montar_com(&dispositivo_conectado(), PT).contains("AVISO"));
     }

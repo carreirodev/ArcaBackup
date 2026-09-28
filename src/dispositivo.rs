@@ -297,6 +297,39 @@ mod testes {
     }
 
     #[test]
+    fn sem_volume_nomeado_as_recusas_de_c10_saem_como_antes() {
+        // C-16 (28/09/2026) muda as duas recusas quando algum volume de boot
+        // tem nome, e so entao. Sem nome, o texto e o que ja foi capturado em
+        // hardware (README §5, 23/08/2026) — e a comparacao e com o literal,
+        // e nao com um texto remontado pelo codigo que esta sendo testado.
+        let dois_vaults = DiscosDeMentira::com_volumes(vec![
+            volume(ARCAVAULT, 'E', 1000, 500),
+            volume(ARCAVAULT, 'F', 1000, 500),
+            volume(ARCABOOT, 'R', 1000, 500),
+        ]);
+        assert_eq!(
+            encontrar(&dois_vaults).unwrap_err().to_string(),
+            "ha 2 volumes com o rotulo ARCAVAULT conectados (E:, F:), e o ARCA opera um \
+             dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele \
+             repetido nao ha o que escolher. Desconecte os demais e rode de novo. Se voce \
+             acabou de preparar um dispositivo, sao os dois — o novo e o de antes"
+        );
+
+        let dois_boots = DiscosDeMentira::com_volumes(vec![
+            volume(ARCAVAULT, 'E', 1000, 500),
+            volume(ARCABOOT, 'R', 1000, 500),
+            volume(ARCABOOT, 'S', 1000, 500),
+        ]);
+        assert_eq!(
+            encontrar(&dois_boots).unwrap_err().to_string(),
+            "ha 2 volumes com o rotulo ARCABOOT conectados (R:, S:), e o ARCA opera um \
+             dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele \
+             repetido nao ha o que escolher. Desconecte os demais e rode de novo. Se voce \
+             acabou de preparar um dispositivo, sao os dois — o novo e o de antes"
+        );
+    }
+
+    #[test]
     fn sem_arcaboot_o_dispositivo_ainda_serve_para_listar() {
         let discos = DiscosDeMentira::com_volumes(vec![volume(ARCAVAULT, 'E', 1000, 500)]);
         let dispositivo = encontrar(&discos).unwrap();

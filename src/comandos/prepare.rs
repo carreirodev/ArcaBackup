@@ -2107,6 +2107,32 @@ mod testes {
     }
 
     #[test]
+    fn o_menu_do_dispositivo_sem_nome_sai_como_antes() {
+        // C-16 (28/09/2026) acrescenta o nome à marca so quando o `ARCABOOT`
+        // tem um. O disco 2 desta mesa se chama `ARCABOOT`, e o menu inteiro
+        // continua o de antes — comparado com o literal, e nao com um texto
+        // remontado pelo codigo que esta sendo testado.
+        const ANTES: &str = "\nDiscos desta maquina:\n\n  \
+            [1]  disco 1   JMicron Generic      447,1 GB · USB · MBR · 1 particao (E:)\n  \
+            [2]  disco 2   KGSSE100 256         238,5 GB · USB · MBR · 2 particoes (D:, R:) \
+            · JA E UM DISPOSITIVO ARCA\n\n  \
+            Sem numero, e o `arca prepare` nao prepara:\n       \
+            disco 0   KINGSTON SNV3S500G   465,8 GB · NVMe · GPT · 1 particao (C:)\n                 \
+            e o disco do sistema E o disco de boot desta maquina (PR-5)\n\n  \
+            O numero entre colchetes e o que se digita; o `disco N` e o indice do\n  \
+            Windows, que e o que o `--dispositivo` recebe. Escolher um numero so\n  \
+            mostra o plano — nada e apagado antes da confirmacao digitada.\n";
+
+        assert_eq!(
+            montar_o_menu(&preparacao::Oferta::de(
+                &discos_para_preparar_desta_mesa(),
+                Some('C')
+            )),
+            ANTES
+        );
+    }
+
+    #[test]
     fn o_menu_marca_o_disco_que_ja_e_um_dispositivo_arca() {
         // Preparar por cima de um dispositivo apaga **as imagens dele**. A tela
         // do plano ja diz isso — mas dizer so la e tarde para quem tem dois
