@@ -688,7 +688,7 @@ As duas recusas que valem para todo comando que arma, porque falam do **disposit
 - **C-6** — o Windows classifica o disco do `ARCABOOT` como **mídia removível** (o `MediaType` do WMI). O `bcdedit` recusa esse alvo em silêncio: responde "êxito" e mantém o valor antigo. Um dispositivo assim boota por F12, nunca por entrada de firmware.
 - **C-10** — o `ARCAVAULT` e o `ARCABOOT` estão em **discos físicos diferentes**: dois dispositivos meio prontos na mesa, cada rótulo aparecendo uma vez. O `estado.json` iria para um e o desfecho da sondagem para o outro, e o `arca resultado` procuraria o desfecho no lugar errado.
 
-As duas acontecem depois do desarme e do cabeçalho, que já contam o que aconteceu, e **antes** da pergunta — também no `--dry-run`. Nada é armado. Saber isso custa uma consulta a mais ao WMI, a mesma que o `arca backup` e o `arca restore` já fazem.
+As duas acontecem depois do desarme e do cabeçalho, que já contam o que aconteceu, e **antes** da pergunta. Nada é armado. E valem também no `--dry-run`, que não desarma mas recusa igual. Saber isso custa uma consulta a mais ao WMI, a mesma que o `arca backup` e o `arca restore` já fazem.
 
 #### O que aparece na tela
 
