@@ -1,3 +1,15 @@
+# Tudo o que o git guarda e LF, e o checkout tambem escreve LF, seja qual for a
+# configuracao da maquina. Esta tem `core.autocrlf=true` no git do sistema e no
+# do usuario, e em 28/09/2026 um clone limpo tirava todo arquivo de texto fora
+# das capturas e dos `.sh` com CRLF. O indice so continuava LF porque o
+# autocrlf desfazia a troca na volta. Nesse dia o indice ja estava inteiro em
+# LF fora das capturas, entao esta linha nao mudou o conteudo de arquivo
+# nenhum, so o que o checkout escreve.
+#
+# Ela vem antes das outras porque, aqui, a ultima regra que casa com o caminho
+# e a que vale: as capturas e os `.sh` continuam sob as regras deles.
+* text=auto eol=lf
+
 # As capturas sao evidencia, e evidencia nao se normaliza.
 #
 # O `bcdedit` escreve CRLF. Com o `core.autocrlf` ligado — que e o padrao
