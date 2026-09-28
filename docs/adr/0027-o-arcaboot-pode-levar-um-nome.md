@@ -16,6 +16,8 @@ Nada do lado do boot depende dele, e as três razões estão no código:
 - **O GRUB acha a própria raiz por arquivo, e não por rótulo.** Todo `menuentry`, inclusive o do ARCA, faz `search --set -f /live/vmlinuz` (`grub.rs`). Lido em 28/09/2026 no `ARCABOOT` do dispositivo desta mesa: nenhum `LABEL=` nem `ARCABOOT` em `boot/`, `EFI/` ou `syslinux/`.
 - **A entrada de firmware aponta para a partição.** O device path dela carrega o PARTUUID da `ARCABOOT` ([ADR-0025](0025-o-arca-particiona-em-gpt.md)), e não o rótulo.
 
+**Medido em hardware em 28/09/2026, depois de escrito.** Com o `ARCABOOT` da mesa renomeado no Explorer para `ARCA-TEST`, um `arca sondar` real armou, a máquina bootou pela entrada de firmware, e o `arca resultado` colheu `concluida — o selo bate e a receita chegou ao fim`. As três razões acima valeram num boot de verdade, e não só na leitura dos arquivos.
+
 Quem depende do rótulo é o lado Windows do próprio ARCA, em três pontos:
 
 - `dispositivo::encontrar`, que acha a partição onde gravar a receita e o `estado.json`;
