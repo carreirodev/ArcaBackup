@@ -147,6 +147,37 @@ pub enum RecusaDoPacote {
     /// a frase seria mentira.
     NaoEstaLa { caminho: PathBuf },
 
+    /// PR-2: o `--iso` nomeia uma pasta, e não o arquivo.
+    ///
+    /// # Por que a pasta não cai em `NaoEstaLa`
+    ///
+    /// Porque a pasta **está** lá. Medido em 28/09/2026 (WPC-64): ela passava
+    /// pela pergunta de `NaoEstaLa` e chegava ao `certutil`, que responde para
+    /// uma pasta exatamente o que responde para um arquivo ausente —
+    /// `0x80070002 (WIN32: 2 ERROR_FILE_NOT_FOUND)`. Passar a pasta de
+    /// downloads no lugar do arquivo é o jeito mais provável de cometer o erro
+    /// que `NaoEstaLa` descreve, e era o único que ela não pegava.
+    ///
+    /// # Por que ela aponta o pacote, e não segue com ele
+    ///
+    /// `dentro` é o caminho do pacote, quando ele está dentro da pasta, e a
+    /// mensagem o dá inteiro para passar. O ARCA não o usa sozinho: o `--iso`
+    /// nomeia o arquivo (PR-2), e seguir com o de dentro seria deduzir o
+    /// arquivo de um caminho que nomeia outra coisa — o `prepare` oferece e
+    /// não deduz ([ADR-0024]).
+    ///
+    /// # Por que a mensagem pode prometer que nada foi apagado
+    ///
+    /// Pelo mesmo motivo de `NaoEstaLa`: esta variante nasce só no pré-voo do
+    /// `arca prepare`, que roda antes do passo 0. A conferência do passo 7 não
+    /// pergunta por pasta: lá o disco já foi apagado, e a frase seria mentira.
+    ///
+    /// [ADR-0024]: ../docs/adr/0024-o-prepare-oferece-a-lista-e-nao-deduz-o-disco.md
+    EUmaPasta {
+        caminho: PathBuf,
+        dentro: Option<PathBuf>,
+    },
+
     /// O `certutil` não resumiu o arquivo.
     NaoDeuParaResumir(RecusaDoResumo),
 
@@ -164,6 +195,23 @@ impl fmt::Display for RecusaDoPacote {
             RecusaDoPacote::NaoEstaLa { caminho } => write!(
                 f,
                 "o arquivo `{}` nao esta la, e e o caminho que o `--iso` deu. O `--iso` nomeia o arquivo, e nao a pasta onde ele esta: ele termina em `{ARQUIVO}`. Um caminho relativo vale a partir da pasta de onde o comando foi digitado — passe o caminho completo, entre aspas se ele tiver espaco. Nada foi apagado (PR-2)",
+                caminho.display()
+            ),
+            RecusaDoPacote::EUmaPasta {
+                caminho,
+                dentro: Some(pacote),
+            } => write!(
+                f,
+                "`{}` e uma pasta, e o `--iso` nomeia o arquivo. O pacote esta dentro dela — passe o caminho inteiro, entre aspas: \"{}\". Nada foi apagado (PR-2)",
+                caminho.display(),
+                pacote.display()
+            ),
+            RecusaDoPacote::EUmaPasta {
+                caminho,
+                dentro: None,
+            } => write!(
+                f,
+                "`{}` e uma pasta, e o `--iso` nomeia o arquivo, que termina em `{ARQUIVO}`. Esse arquivo nao esta nesta pasta. Nada foi apagado (PR-2)",
                 caminho.display()
             ),
             RecusaDoPacote::NaoDeuParaResumir(porque) => write!(

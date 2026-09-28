@@ -629,6 +629,17 @@ impl Arquivos for ArquivosEmMemoria {
                 .any(|diretorio| diretorio.starts_with(caminho))
     }
 
+    fn e_um_arquivo(&self, caminho: &Path) -> bool {
+        // Anotada como a de `existe`: perguntar tambem e olhar, e e o que os
+        // testes de C-1 e o do passo 7 do `arca prepare` leem em `consultados`.
+        self.anotar_consulta(caminho);
+
+        // So o que foi gravado com conteudo e arquivo. O diretorio implicito e
+        // a pasta vazia respondem `false`, como o `Path::is_file` responde para
+        // uma pasta de verdade.
+        self.conteudo.borrow().contains_key(caminho)
+    }
+
     fn ler_texto(&self, caminho: &Path) -> Resultado<String> {
         self.anotar_consulta(caminho);
         self.conteudo.borrow().get(caminho).cloned().ok_or_else(|| {
@@ -1328,6 +1339,12 @@ impl Arquivos for ArquivosQueRecusam {
     /// mentira que o duplo existe para nao reproduzir.
     fn existe(&self, caminho: &Path) -> bool {
         caminho == self.recusado || self.dentro.existe(caminho)
+    }
+
+    /// `true` para o caminho recusado, pelo mesmo motivo do `existe` daqui: o
+    /// recusado e um arquivo que esta la e nao se deixa lê.
+    fn e_um_arquivo(&self, caminho: &Path) -> bool {
+        caminho == self.recusado || self.dentro.e_um_arquivo(caminho)
     }
 
     fn ler_texto(&self, caminho: &Path) -> Resultado<String> {

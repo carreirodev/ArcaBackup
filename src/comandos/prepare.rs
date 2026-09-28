@@ -549,19 +549,21 @@ fn resumir_o_conteudo(disco: &DiscoParaPreparar) -> String {
 
 /// O pré-voo de PR-2: o pacote do `--iso` julgado inteiro com o disco intacto.
 ///
-/// # Por que a pergunta "o arquivo está lá?" mora aqui, e não em
-/// [`conferir_o_pacote`]
+/// # Por que as perguntas "o arquivo está lá?" e "é uma pasta?" moram aqui, e
+/// não em [`conferir_o_pacote`]
 ///
-/// Porque [`pacote::RecusaDoPacote::NaoEstaLa`] promete que *nada foi
-/// apagado*, e só esta função pode fazer essa promessa — ela roda antes do
-/// passo 0. A conferência do passo 7 chama a mesma [`conferir_o_pacote`] com o
-/// disco já particionado, e levantar a mesma recusa de lá faria o ARCA
-/// prometer o que não é verdade.
+/// Porque [`pacote::RecusaDoPacote::NaoEstaLa`] e
+/// [`pacote::RecusaDoPacote::EUmaPasta`] prometem que *nada foi apagado*, e só
+/// esta função pode fazer essa promessa — ela roda antes do passo 0. A
+/// conferência do passo 7 chama a mesma [`conferir_o_pacote`] com o disco já
+/// particionado, e levantar as mesmas recusas de lá faria o ARCA prometer o
+/// que não é verdade.
 ///
-/// Um arquivo que existe no pré-voo e some antes do passo 7 continua caindo
-/// onde caía: no `certutil`, que responde `ERROR_FILE_NOT_FOUND`. É o desfecho
-/// certo para esse caso — ele **é** uma surpresa, e a mensagem crua diz isso
-/// melhor do que uma frase escrita para quem digitou um caminho errado.
+/// Um arquivo que existe no pré-voo e some — ou vira pasta — antes do passo 7
+/// continua caindo onde caía: no `certutil`, que responde
+/// `ERROR_FILE_NOT_FOUND`. É o desfecho certo para esse caso — ele **é** uma
+/// surpresa, e a mensagem crua diz isso melhor do que uma frase escrita para
+/// quem digitou um caminho errado.
 fn conferir_o_pacote_local(
     contexto: &Contexto,
     caminho: &Path,
@@ -569,6 +571,17 @@ fn conferir_o_pacote_local(
     if !contexto.arquivos.existe(caminho) {
         return Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoEstaLa {
             caminho: caminho.to_path_buf(),
+        }));
+    }
+
+    // Uma pasta passa pelo `existe`, e o `certutil` responde para ela o mesmo
+    // `0x80070002` de um arquivo ausente (WPC-64, 28/09/2026). O pacote de
+    // dentro dela só é apontado: ver `EUmaPasta` para por que não é usado.
+    if !contexto.arquivos.e_um_arquivo(caminho) {
+        let dentro = caminho.join(pacote::ARQUIVO);
+        return Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::EUmaPasta {
+            caminho: caminho.to_path_buf(),
+            dentro: contexto.arquivos.e_um_arquivo(&dentro).then_some(dentro),
         }));
     }
 
@@ -1719,6 +1732,234 @@ mod testes {
         assert!(
             bancada.sistema.resumidos().is_empty(),
             "conferiu um pacote que ninguem apontou"
+        );
+    }
+
+    // ─────────── uma pasta no `--iso`, e o pacote que ela pode ter dentro ───────────
+
+    /// A pasta onde o pacote costuma estar — e o erro mais provável de quem o
+    /// baixou é passá-la no lugar dele.
+    const A_PASTA_DE_DOWNLOADS: &str = r"C:\Users\Ana Paula\Downloads";
+
+    #[test]
+    fn uma_pasta_no_iso_sem_o_pacote_dentro_recusa_no_pre_voo() {
+        // Medido em 28/09/2026 (WPC-64): a pasta passava pelo `existe` do
+        // pré-voo e chegava ao `certutil`, que responde para ela o mesmo
+        // `0x80070002` de um arquivo ausente. Aqui a pasta tem o ISO, e não o
+        // zip — o nome da flag convida ao engano —, e a recusa diz que o
+        // arquivo que o `--iso` nomeia não está ali.
+        let mut bancada = Bancada::nova("iso-pasta-sem-pacote", ConsoleDeMentira::mudo());
+        bancada.arquivos = ArquivosEmMemoria::novo().com(
+            r"C:\Users\Ana Paula\Downloads\clonezilla-live-3.3.3-15-amd64.iso",
+            "o iso, de mentira",
+        );
+
+        let erro = executar(
+            &bancada.contexto(false),
+            Some(1),
+            Some(Path::new(A_PASTA_DE_DOWNLOADS)),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::EUmaPasta { dentro: None, .. })
+            ),
+            "{erro}"
+        );
+        let dito = erro.to_string();
+        for trecho in [
+            r"C:\Users\Ana Paula\Downloads",
+            "e uma pasta",
+            "clonezilla-live-3.3.3-15-amd64.zip",
+            "nao esta nesta pasta",
+            "Nada foi apagado",
+        ] {
+            assert!(dito.contains(trecho), "falta `{trecho}`: {dito}");
+        }
+
+        // O `certutil` não é chamado, e o sintoma dele não chega à tela.
+        assert!(
+            bancada.sistema.resumidos().is_empty(),
+            "a pasta foi mandada ao certutil: {:?}",
+            bancada.sistema.resumidos()
+        );
+        assert!(!dito.contains("0x80070002"), "{dito}");
+        assert!(
+            !bancada.particionador.particionou(),
+            "a pasta no `--iso` apagou o disco"
+        );
+    }
+
+    #[test]
+    fn uma_pasta_no_iso_com_o_pacote_dentro_aponta_o_arquivo_e_para() {
+        // O pacote certo está dentro da pasta, e o ARCA sabe disso. Ele dá o
+        // caminho e para: o `--iso` nomeia o arquivo (PR-2), e seguir com o de
+        // dentro seria deduzir (ADR-0024). A bancada está montada para que
+        // seguir custasse o disco — o `certutil` responde o SHA256 certo para
+        // o zip, e o console responde a pergunta e o modelo.
+        let bancada = com_o_pacote_em(
+            "iso-pasta-com-pacote",
+            NA_PASTA_DE_DOWNLOADS,
+            pacote::SHA256,
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        );
+
+        let erro = executar(
+            &bancada.contexto(false),
+            Some(1),
+            Some(Path::new(A_PASTA_DE_DOWNLOADS)),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::EUmaPasta {
+                    dentro: Some(_),
+                    ..
+                })
+            ),
+            "{erro}"
+        );
+        let dito = erro.to_string();
+        for trecho in [
+            "e uma pasta",
+            r"C:\Users\Ana Paula\Downloads\clonezilla-live-3.3.3-15-amd64.zip",
+            "Nada foi apagado",
+        ] {
+            assert!(dito.contains(trecho), "falta `{trecho}`: {dito}");
+        }
+
+        // Nem o de dentro vai ao `certutil`: apontar não é conferir.
+        assert!(
+            bancada.sistema.resumidos().is_empty(),
+            "o pacote apontado foi mandado ao certutil: {:?}",
+            bancada.sistema.resumidos()
+        );
+        assert!(!dito.contains("0x80070002"), "{dito}");
+
+        // E o comando termina na recusa.
+        assert_eq!(bancada.console.lidas.get(), 0, "seguiu para a pergunta");
+        assert!(
+            !bancada.particionador.particionou(),
+            "seguiu com o pacote de dentro e apagou o disco"
+        );
+        assert!(
+            bancada.sistema.extraidos.borrow().is_empty(),
+            "extraiu o pacote de dentro"
+        );
+    }
+
+    #[test]
+    fn uma_pasta_com_o_nome_do_pacote_dentro_nao_e_apontada() {
+        // "Como arquivo" é metade da regra. Uma pasta que tem o nome do pacote
+        // não é o pacote, e apontá-la mandaria a pessoa passar outra pasta ao
+        // `--iso` — a recusa seguinte seria esta mesma, e o conselho andaria em
+        // círculo.
+        let mut bancada = Bancada::nova("iso-pasta-com-pasta", ConsoleDeMentira::mudo());
+        bancada.arquivos = ArquivosEmMemoria::novo().com(
+            r"C:\Users\Ana Paula\Downloads\clonezilla-live-3.3.3-15-amd64.zip\live\vmlinuz",
+            "o kernel, de mentira",
+        );
+
+        let erro = executar(
+            &bancada.contexto(false),
+            Some(1),
+            Some(Path::new(A_PASTA_DE_DOWNLOADS)),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::EUmaPasta { dentro: None, .. })
+            ),
+            "{erro}"
+        );
+        assert!(erro.to_string().contains("nao esta nesta pasta"), "{erro}");
+    }
+
+    #[test]
+    fn uma_pasta_no_iso_sem_dispositivo_recusa_antes_do_menu() {
+        // O menu do passo 0 é a primeira leitura do console, e a pasta tem de
+        // ser recusada antes dela. Este console responderia o menu, a pergunta
+        // e o modelo até apagar o disco 1.
+        let console = || ConsoleDeMentira::respondendo(&["1", "s", "JMicron Generic"]);
+
+        let mut bancada = Bancada::nova("iso-pasta-sem-dispositivo", console());
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com(NA_PASTA_DE_DOWNLOADS, "o zip, de mentira");
+
+        let erro = executar(
+            &bancada.contexto(false),
+            None,
+            Some(Path::new(A_PASTA_DE_DOWNLOADS)),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::EUmaPasta { .. })
+            ),
+            "{erro}"
+        );
+        assert_eq!(
+            bancada.console.lidas.get(),
+            0,
+            "o menu leu antes da recusa da pasta"
+        );
+        assert!(
+            !bancada.particionador.particionou(),
+            "a pasta no `--iso` apagou o disco escolhido no menu"
+        );
+
+        // O controle: sem `--iso`, o mesmo console é lido pelo menu. Sem ele,
+        // o zero acima não distinguiria "recusou antes do menu" de "o menu não
+        // leu nada".
+        let controle = Bancada::nova("iso-pasta-sem-dispositivo-controle", console());
+        let _ = executar(&controle.contexto(false), None, None);
+        assert!(
+            controle.console.lidas.get() >= 1,
+            "sem `--iso` o menu nao leu nada"
+        );
+    }
+
+    #[test]
+    fn depois_do_ponto_sem_volta_uma_pasta_cai_no_certutil() {
+        // A metade da regra que o pré-voo não alcança. `EUmaPasta` promete que
+        // nada foi apagado, e só pode prometer porque nasce antes do passo 0.
+        // Os passos 6 e 7 não perguntam por pasta: um `--iso` que virasse pasta
+        // depois do pré-voo cai no `certutil`, como um que sumisse, e a frase
+        // dele não promete nada — ali o disco já foi.
+        let mut bancada = Bancada::nova("iso-pasta-no-passo-7", ConsoleDeMentira::mudo());
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com(NA_PASTA_DE_DOWNLOADS, "o zip, de mentira");
+
+        let erro = obter_o_pacote(
+            &bancada.contexto(false),
+            Some(Path::new(A_PASTA_DE_DOWNLOADS)),
+            Path::new(r"E:\"),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaResumir(_))
+            ),
+            "{erro}"
+        );
+        assert!(!erro.to_string().contains("Nada foi apagado"), "{erro}");
+        assert_eq!(
+            bancada.sistema.resumidos(),
+            vec![PathBuf::from(r"C:\Users\Ana Paula\Downloads")]
+        );
+        assert!(
+            !bancada.arquivos.foi_consultado(A_PASTA_DE_DOWNLOADS),
+            "o passo 7 perguntou pela pasta"
         );
     }
 

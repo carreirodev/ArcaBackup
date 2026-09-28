@@ -43,6 +43,21 @@ impl Entrada {
 
 pub trait Arquivos {
     fn existe(&self, caminho: &Path) -> bool;
+
+    /// Se o que ha neste caminho e um **arquivo**, e nao uma pasta.
+    ///
+    /// # Por que nao basta [`Arquivos::existe`]
+    ///
+    /// Porque `existe` responde "ha alguma coisa aqui", arquivo ou pasta, e
+    /// quem o usa conta com isso: a raiz de um volume, a pasta de uma imagem.
+    /// Medido em 28/09/2026 (WPC-64): uma pasta no `--iso` passava pelo
+    /// `existe` do pre-voo do `arca prepare` e chegava ao `certutil`, que
+    /// responde para ela o mesmo `0x80070002` de um arquivo ausente.
+    ///
+    /// Metadados que nao se deixam ler respondem `false`, como em `existe`:
+    /// "nao consegui olhar" ainda vira "nao e arquivo" aqui (WPC-68).
+    fn e_um_arquivo(&self, caminho: &Path) -> bool;
+
     fn ler_texto(&self, caminho: &Path) -> Resultado<String>;
 
     /// Lê um texto que **outro programa** escreveu, trocando por `U+FFFD` o

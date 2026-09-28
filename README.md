@@ -576,7 +576,7 @@ O SHA256 é conferido do mesmo jeito; só o `curl` é pulado. É o que salva qua
 arca prepare --dispositivo 1 --iso "C:\Users\<voce>\Downloads\clonezilla-live-3.3.3-15-amd64.zip"
 ```
 
-Um caminho que não existe, um pacote de outra versão e um zip sem o `bootx64.efi` são recusados no pré-voo, **antes do passo 5** — o disco fica intacto.
+Um caminho que não existe, uma pasta no lugar do arquivo, um pacote de outra versão e um zip sem o `bootx64.efi` são recusados no pré-voo, **antes do passo 5** — o disco fica intacto.
 
 #### Ver o plano sem executá-lo
 
@@ -1900,6 +1900,20 @@ de onde o comando foi digitado. Nada foi apagado (PR-2)
 ```
 
 O ARCA procurou exatamente o caminho que recebeu e não achou nada. Confira a pasta, o nome do arquivo e as aspas — um caminho com espaço precisa delas. **Nada foi apagado**: esta recusa acontece no pré-voo, antes do passo 0.
+
+### `... e uma pasta, e o --iso nomeia o arquivo`
+
+```
+O pacote esta dentro dela — passe o caminho inteiro, entre aspas:
+"C:\Users\Ana Paula\Downloads\clonezilla-live-3.3.3-15-amd64.zip". Nada foi
+apagado (PR-2)
+```
+
+O `--iso` recebeu a pasta onde o pacote está, e não o pacote. Quando o `clonezilla-live-3.3.3-15-amd64.zip` está dentro dela, a mensagem é esta: passe ao `--iso` o caminho que ela dá, entre aspas. O ARCA não segue sozinho com o arquivo que achou — o `--iso` nomeia o arquivo, e quem o nomeia é você.
+
+Quando o pacote não está na pasta, a mensagem termina em `Esse arquivo nao esta nesta pasta`, e o que falta é achar o download. O pacote é o **zip**, e não o ISO.
+
+**Nada foi apagado**: esta recusa acontece no pré-voo, antes do passo 0.
 
 ### `o disco N NAO e mais o que estava no plano`
 

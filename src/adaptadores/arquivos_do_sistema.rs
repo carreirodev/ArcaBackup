@@ -25,6 +25,10 @@ impl Arquivos for ArquivosDoSistema {
         caminho.exists()
     }
 
+    fn e_um_arquivo(&self, caminho: &Path) -> bool {
+        caminho.is_file()
+    }
+
     fn ler_texto(&self, caminho: &Path) -> Resultado<String> {
         fs::read_to_string(caminho).map_err(erro_de_arquivo("leitura", caminho))
     }
@@ -217,6 +221,32 @@ mod testes {
         );
 
         fs::remove_dir_all(&vault).unwrap();
+    }
+
+    #[test]
+    fn uma_pasta_existe_e_nao_e_arquivo() {
+        // O pre-voo do `arca prepare --iso` separa a pasta do pacote com esta
+        // pergunta, e os testes dele rodam sobre o duplo, que responde o que
+        // lhe ensinaram. Aqui quem responde e o Windows: o `existe` diz sim
+        // para a pasta — foi por isso que ela chegava ao `certutil` ate
+        // 28/09/2026 (WPC-64) —, e o `e_um_arquivo` tem de dizer nao.
+        let pasta = std::env::temp_dir().join(format!("arca-pasta-{}", std::process::id()));
+        fs::create_dir_all(&pasta).unwrap();
+        let pacote = pasta.join("clonezilla-live-3.3.3-15-amd64.zip");
+        fs::write(&pacote, b"o zip, de mentira").unwrap();
+
+        assert!(ArquivosDoSistema.existe(&pasta));
+        assert!(
+            !ArquivosDoSistema.e_um_arquivo(&pasta),
+            "a pasta respondeu que e arquivo"
+        );
+        assert!(
+            ArquivosDoSistema.e_um_arquivo(&pacote),
+            "o arquivo dentro dela respondeu que nao e"
+        );
+        assert!(!ArquivosDoSistema.e_um_arquivo(&pasta.join("nao-existe.zip")));
+
+        let _ = fs::remove_dir_all(&pasta);
     }
 
     #[test]
