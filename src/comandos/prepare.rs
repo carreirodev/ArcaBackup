@@ -444,18 +444,31 @@ pub fn montar_o_menu(oferta: &preparacao::Oferta) -> String {
 /// dispositivo apaga **as imagens dele**, e a tela do plano já diz isso — mas
 /// dizer só lá é tarde para quem tem dois SSDs iguais na mesa e está
 /// escolhendo qual dos dois é o velho.
+///
+/// A marca sozinha não resolvia isso: os dois SSDs iguais saíam na mesma
+/// linha. Desde C-16 (27/09/2026), quando o `ARCABOOT` tem nome, ele vai
+/// entre parênteses no fim — o mesmo rótulo que o Explorer mostra.
 fn descrever_o_disco(disco: &DiscoParaPreparar) -> String {
+    let marca = if !e_um_dispositivo_arca(disco) {
+        String::new()
+    } else {
+        let nome = disco
+            .particoes
+            .iter()
+            .filter_map(|particao| particao.rotulo.as_deref())
+            .find_map(dispositivo::nome_do_boot);
+        match nome {
+            Some(nome) => format!(" · JA E UM DISPOSITIVO ARCA ({nome})"),
+            None => " · JA E UM DISPOSITIVO ARCA".to_string(),
+        }
+    };
+
     format!(
-        "{} · {} · {} · {}{}",
+        "{} · {} · {} · {}{marca}",
         tamanho(disco.tamanho_bytes),
         disco.barramento,
         disco.estilo_de_particao,
         resumir_o_conteudo(disco),
-        if e_um_dispositivo_arca(disco) {
-            " · JA E UM DISPOSITIVO ARCA"
-        } else {
-            ""
-        }
     )
 }
 
@@ -2124,6 +2137,39 @@ mod testes {
         let saida = menu_da_mesa();
 
         assert!(saida.contains("nada e apagado"), "{saida}");
+    }
+
+    #[test]
+    fn o_menu_diz_o_nome_do_dispositivo_arca() {
+        // A marca sozinha diz que o disco e um dispositivo; com dois SSDs
+        // iguais na mesa, e o nome que diz **qual** (C-16).
+        let mut discos = discos_para_preparar_desta_mesa();
+        discos[1].particoes = vec![
+            crate::portas::particionador::ParticaoExistente {
+                numero: 1,
+                letra: Some('E'),
+                rotulo: Some(ARCAVAULT.to_string()),
+                sistema_de_arquivos: Some("NTFS".to_string()),
+                tamanho_bytes: 478_000_000_000,
+            },
+            crate::portas::particionador::ParticaoExistente {
+                numero: 2,
+                letra: Some('F'),
+                rotulo: Some("ARCA-CASA".to_string()),
+                sistema_de_arquivos: Some("FAT32".to_string()),
+                tamanho_bytes: crate::preparacao::ARCABOOT_BYTES,
+            },
+        ];
+
+        let saida = montar_o_menu(&preparacao::Oferta::de(&discos, Some('C')));
+        let linha_do_disco = saida
+            .lines()
+            .find(|linha| linha.contains("disco 1 "))
+            .expect("o disco 1 esta no menu");
+        assert!(
+            linha_do_disco.ends_with("· JA E UM DISPOSITIVO ARCA (ARCA-CASA)"),
+            "{linha_do_disco}"
+        );
     }
 
     #[test]

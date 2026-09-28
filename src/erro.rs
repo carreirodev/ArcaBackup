@@ -420,8 +420,10 @@ pub enum Erro {
     )]
     DispositivoAusente,
 
-    /// C-10. Dois rotulos iguais tornam o destino ambiguo, e e por rotulo que
-    /// a receita resolve o destino (S-3).
+    /// C-10. Mais de um `ARCAVAULT` torna o destino ambiguo, e e por rotulo
+    /// que a receita resolve o destino (S-3). Mais de um volume de boot —
+    /// `ARCABOOT` ou `ARCA-<texto>`, iguais ou nao (C-16) — deixa a receita e
+    /// o estado do job com dois lugares para ir.
     ///
     /// **A mensagem nomeia as letras desde a E10**, e a razao e que o caso
     /// deixou de ser raro: `arca prepare` cria um dispositivo, e um comando
@@ -429,7 +431,8 @@ pub enum Erro {
     /// comando cai aqui — inclusive o `arca status`, que e o que alguem
     /// rodaria para entender o que esta acontecendo.
     #[error(
-        "ha {quantos} volumes com o rotulo {rotulo} conectados ({onde}), e o ARCA opera um dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele repetido nao ha o que escolher. Desconecte os demais e rode de novo. Se voce acabou de preparar um dispositivo, sao os dois — o novo e o de antes"
+        "{}",
+        mensagem_de_dispositivos_demais(.rotulo, .quantos, .onde, .volumes_de_boot)
     )]
     DispositivosDemais {
         rotulo: &'static str,
@@ -439,6 +442,12 @@ pub enum Erro {
         /// desconectar. `Desconecte os demais` sem dizer quais empurra a
         /// pergunta de volta para quem não tem como respondê-la.
         onde: String,
+
+        /// A letra e o rotulo de cada volume de boot conectado, como `R:
+        /// ARCA-CASA, S: ARCABOOT` — so quando algum deles tem nome (C-16).
+        /// Sem nome, as letras de `onde` sao tudo o que ha para dizer, e a
+        /// mensagem sai como antes.
+        volumes_de_boot: Option<String>,
     },
 
     #[error(
@@ -483,6 +492,36 @@ impl Erro {
             Erro::ElevacaoRecusada | Erro::AindaNaoImplementado { .. } | Erro::NomeRecusado(_) => 2,
             _ => 1,
         }
+    }
+}
+
+/// O texto de [`Erro::DispositivosDemais`], nos tres casos de C-10.
+///
+/// Sem volume de boot nomeado, e o texto de antes de C-16, byte a byte. Com
+/// nome, a recusa por volumes de boot perde duas coisas que deixam de ser
+/// verdade — que eles tem o mesmo rotulo, e que e pelo rotulo deles que a
+/// receita resolve o destino, o que nunca foi: a receita so cita o
+/// `ARCAVAULT`. E a recusa por dois `ARCAVAULT` ganha os volumes de boot, porque
+/// e ela que aparece com dois dispositivos inteiros na mesa, e os dois
+/// `ARCAVAULT` sao iguais — o nome e o que diz qual desconectar.
+fn mensagem_de_dispositivos_demais(
+    rotulo: &str,
+    quantos: &usize,
+    onde: &str,
+    volumes_de_boot: &Option<String>,
+) -> String {
+    const O_QUE_FAZER: &str = "Desconecte os demais e rode de novo. Se voce acabou de preparar um dispositivo, sao os dois — o novo e o de antes";
+
+    match volumes_de_boot {
+        None => format!(
+            "ha {quantos} volumes com o rotulo {rotulo} conectados ({onde}), e o ARCA opera um dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele repetido nao ha o que escolher. {O_QUE_FAZER}"
+        ),
+        Some(boots) if rotulo == crate::dispositivo::ARCABOOT => format!(
+            "ha {quantos} volumes de boot ARCA conectados ({boots}), e o ARCA opera um dispositivo por vez: e no volume de boot que a receita e o estado do job sao gravados, e com mais de um nao ha como saber qual e o do dispositivo. {O_QUE_FAZER}"
+        ),
+        Some(boots) => format!(
+            "ha {quantos} volumes com o rotulo {rotulo} conectados ({onde}), e o ARCA opera um dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele repetido nao ha o que escolher. Os volumes de boot conectados sao {boots}. {O_QUE_FAZER}"
+        ),
     }
 }
 

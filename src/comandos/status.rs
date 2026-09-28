@@ -271,8 +271,17 @@ fn secao_do_dispositivo(dispositivo: &Dispositivo) -> String {
         dispositivo::ARCAVAULT,
         &descrever(&dispositivo.vault),
     ));
+    // O nome no lugar do papel, quando o `ARCABOOT` tem um (C-16): e o mesmo
+    // rotulo que o Explorer mostra, e e ele que diz qual dos dispositivos
+    // esta conectado.
+    let nome = dispositivo
+        .boot
+        .as_ref()
+        .and_then(|boot| boot.rotulo.as_deref())
+        .and_then(dispositivo::nome_do_boot);
+
     saida.push_str(&linha(
-        dispositivo::ARCABOOT,
+        nome.unwrap_or(dispositivo::ARCABOOT),
         &match &dispositivo.boot {
             Some(boot) => descrever(boot),
             // Sem `ARCABOOT` da para listar imagens, e nao da para armar: a
@@ -1701,6 +1710,31 @@ mod testes {
         let saida = montar_com(&dispositivo, PT);
         assert!(saida.contains("AVISO (C-6)"), "{saida}");
         assert!(saida.contains("F12"), "faltou dizer o que fazer");
+    }
+
+    #[test]
+    fn o_status_mostra_o_nome_do_arcaboot() {
+        // C-16: o nome aparece como o Explorer o mostra — o rotulo inteiro, e
+        // na caixa em que o Windows o devolve.
+        for nome in ["ARCA-CASA", "arca-Casa"] {
+            let nomeado = Dispositivo {
+                boot: Some(Volume {
+                    sistema_de_arquivos: "FAT32".to_string(),
+                    ..volume(nome, 'R', 1_700_000_000, 1_070_000_000)
+                }),
+                ..dispositivo_conectado()
+            };
+
+            let saida = montar_com(&nomeado, PT);
+            assert!(
+                saida.contains(&linha(nome, "R: · FAT32 · 1,6 GB")),
+                "faltou `{nome}`:\n{saida}"
+            );
+            assert!(
+                !saida.contains(&linha(dispositivo::ARCABOOT, "R: · FAT32 · 1,6 GB")),
+                "o nome nao substituiu `ARCABOOT`:\n{saida}"
+            );
+        }
     }
 
     #[test]

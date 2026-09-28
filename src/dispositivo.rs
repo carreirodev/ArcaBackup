@@ -137,12 +137,22 @@ pub fn encontrar(discos: &dyn Discos) -> Resultado<Dispositivo> {
     // comando cai aqui — inclusive o `arca status`, que é o que alguém rodaria
     // para entender o que está acontecendo. O caso deixou de ser raro, e a
     // mensagem passou a precisar dizer **quais**.
+    //
+    // Desde C-16 (27/09/2026) ela diz também o **nome** dos volumes de boot,
+    // quando algum tem: as letras dizem onde estão, e só o nome diz qual
+    // dispositivo é qual. Sem nome nenhum, a mensagem é a de antes.
+    let volumes_de_boot = boots
+        .iter()
+        .any(|boot| boot.rotulo.as_deref().and_then(nome_do_boot).is_some())
+        .then(|| letras_e_rotulos_de(&boots));
+
     for (rotulo, achados) in [(ARCAVAULT, &vaults), (ARCABOOT, &boots)] {
         if achados.len() > 1 {
             return Err(Erro::DispositivosDemais {
                 rotulo,
                 quantos: achados.len(),
                 onde: letras_de(achados),
+                volumes_de_boot: volumes_de_boot.clone(),
             });
         }
     }
@@ -173,6 +183,32 @@ pub fn e_rotulo_de_boot(rotulo: &str) -> bool {
         || rotulo
             .get(..PREFIXO_DO_NOME.len())
             .is_some_and(|comeco| comeco.eq_ignore_ascii_case(PREFIXO_DO_NOME))
+}
+
+/// O nome que o `ARCABOOT` leva, quando leva um (C-16): o rotulo inteiro, na
+/// caixa em que o Windows o devolve, se ele tem a forma `ARCA-<texto>`.
+///
+/// Inteiro, e nao so o texto depois do hifen, porque e assim que o Explorer o
+/// mostra — e e no Explorer que os dois SSDs iguais aparecem lado a lado.
+/// `ARCABOOT`, em qualquer caixa, nao e nome: e o que todo dispositivo tem.
+pub fn nome_do_boot(rotulo: &str) -> Option<&str> {
+    (e_rotulo_de_boot(rotulo) && !rotulo.eq_ignore_ascii_case(ARCABOOT)).then_some(rotulo)
+}
+
+/// As letras e os rotulos de uma lista de volumes, como `R: ARCA-CASA, S:
+/// ARCABOOT` — para a recusa de C-10 dizer qual dispositivo e qual.
+fn letras_e_rotulos_de(volumes: &[Volume]) -> String {
+    volumes
+        .iter()
+        .map(|volume| {
+            let rotulo = volume.rotulo.as_deref().unwrap_or_default();
+            match volume.letra {
+                Some(letra) => format!("{letra}: {rotulo}"),
+                None => format!("{rotulo} sem letra"),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Os volumes que carregam um rotulo, sem diferenciar caixa.
@@ -286,6 +322,7 @@ mod testes {
                 rotulo,
                 quantos,
                 onde,
+                ..
             } => {
                 assert_eq!(*rotulo, ARCAVAULT);
                 assert_eq!(*quantos, 2);
@@ -419,6 +456,75 @@ mod testes {
                 outro => panic!("{primeiro} + {segundo}: esperava C-10, veio {outro}"),
             }
         }
+    }
+
+    #[test]
+    fn a_recusa_por_dois_volumes_de_boot_nomeados_diz_a_letra_e_o_rotulo_de_cada_um() {
+        // "com o rotulo ARCABOOT" deixa de ser verdade quando os rotulos
+        // diferem, e "e pelo rotulo que a receita resolve o destino" nunca foi
+        // verdade para o boot: a receita so cita o `ARCAVAULT`. O que torna
+        // dois volumes de boot ambiguos e que a receita e o estado do job sao
+        // gravados neles (C-16, ADR-0027).
+        let discos = DiscosDeMentira::com_volumes(vec![
+            volume(ARCAVAULT, 'E', 1000, 500),
+            volume("ARCA-CASA", 'R', 1000, 500),
+            volume("ARCA-ESCRIT", 'S', 1000, 500),
+        ]);
+
+        let mensagem = encontrar(&discos).unwrap_err().to_string();
+        for deve in [
+            "R: ARCA-CASA, S: ARCA-ESCRIT",
+            "estado do job",
+            "receita",
+            "Desconecte os demais",
+            "Se voce acabou de preparar um dispositivo",
+        ] {
+            assert!(mensagem.contains(deve), "faltou `{deve}`: {mensagem}");
+        }
+        for nao_deve in [
+            "com o rotulo ARCABOOT",
+            "repetido",
+            "e pelo rotulo que a receita resolve o destino",
+        ] {
+            assert!(
+                !mensagem.contains(nao_deve),
+                "sobrou `{nao_deve}`: {mensagem}"
+            );
+        }
+
+        let um_sem_nome = DiscosDeMentira::com_volumes(vec![
+            volume(ARCAVAULT, 'E', 1000, 500),
+            volume(ARCABOOT, 'R', 1000, 500),
+            volume("ARCA-CASA", 'S', 1000, 500),
+        ]);
+        let mensagem = encontrar(&um_sem_nome).unwrap_err().to_string();
+        assert!(mensagem.contains("R: ARCABOOT, S: ARCA-CASA"), "{mensagem}");
+    }
+
+    #[test]
+    fn a_recusa_por_dois_arcavault_nomeia_os_volumes_de_boot_quando_ha_nome() {
+        // Com dois dispositivos inteiros na mesa, o `ARCAVAULT` e contado
+        // primeiro, e e nesta recusa que o ARCA manda desconectar um. Os dois
+        // `ARCAVAULT` sao iguais no Explorer; o nome do boot e o que diz qual
+        // e qual.
+        let discos = DiscosDeMentira::com_volumes(vec![
+            volume(ARCAVAULT, 'E', 1000, 500),
+            volume(ARCAVAULT, 'F', 1000, 500),
+            volume("ARCA-CASA", 'R', 1000, 500),
+            volume(ARCABOOT, 'S', 1000, 500),
+        ]);
+
+        let erro = encontrar(&discos).unwrap_err();
+        match &erro {
+            Erro::DispositivosDemais { rotulo, onde, .. } => {
+                assert_eq!(*rotulo, ARCAVAULT);
+                assert_eq!(onde, "E:, F:");
+            }
+            outro => panic!("esperava C-10, veio {outro}"),
+        }
+        let mensagem = erro.to_string();
+        assert!(mensagem.contains("(E:, F:)"), "{mensagem}");
+        assert!(mensagem.contains("R: ARCA-CASA, S: ARCABOOT"), "{mensagem}");
     }
 
     #[test]
