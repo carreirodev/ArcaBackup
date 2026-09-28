@@ -75,3 +75,7 @@ Proof: `O=$(cargo doc --no-deps 2>&1); printf '%s\n' "$O" | grep -qF '(lib doc) 
 ## Handoff
 
 - S1 = ~84k: `wc -c` dos seis arquivos que a fatia toca (`src/comandos/prepare.rs` 128 KB, `README.md` 123 KB, `src/duplos.rs` 53 KB, `src/pacote.rs` 20 KB, `src/adaptadores/arquivos_do_sistema.rs` 10 KB, `src/portas/arquivos.rs` 4 KB) dividido por quatro. Abaixo dos 150k: um construtor só, sem handoff
+
+- **Boundary:** C1-C8 fechados em `601c174`. A base da feature é `4d2c773`, e o checklist entrou sozinho em `c99bab9`
+- **Settled mid-build:** nada foi perguntado ao usuário. As mensagens de commit seguem a prosa em português do repositório, com os trailers, e não Conventional Commits (o `CLAUDE.md` do projeto e a regra global de seguir a convenção do repositório)
+- **Abandoned:** nada. Duas regressões foram injetadas e desfeitas antes do commit, para ver as provas caírem: a pergunta por pasta dentro de `conferir_o_pacote` (C5 caiu) e `existe` no lugar de `e_um_arquivo` na pergunta de dentro da pasta (só a segunda prova de C2 caiu). O adaptador começou respondendo `exists()`, o defeito original, e a segunda prova de C1 saiu vermelha antes de ele passar a `is_file()`
