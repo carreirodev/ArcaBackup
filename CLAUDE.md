@@ -68,11 +68,11 @@ Os comentários deste projeto não dizem o que o código faz: dizem **por que el
 
 ### Issue tracker
 
-Issues vivem como GitHub issues em `carreirodev/ArcaBackup`, operados pelo CLI `gh`. Veja `docs/agents/issue-tracker.md`.
+Issues vivem no Linear, no projeto `ArcaBackup` do time `WPC Solutions`, operados pelas ferramentas do MCP do Linear. Os pull requests continuam no GitHub, em `carreirodev/ArcaBackup`. Veja `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Os cinco papéis canônicos de triagem, cada label idêntica ao seu nome. Veja `docs/agents/triage-labels.md`.
+Os cinco papéis canônicos de triagem, cada um como um estado do Linear mais, quando o estado não basta, uma label. Veja `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
