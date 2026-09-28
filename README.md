@@ -325,7 +325,7 @@ Os três são respondidos pelo próprio `clap`, saem com código `0`, e **não p
 
 ## 5. Anatomia de um dispositivo ARCA
 
-Um **dispositivo** é um disco externo com duas partições, rotuladas sempre com os mesmos nomes. É o rótulo — nunca a letra, nunca `sda`, nunca o número de série — que torna a receita reproduzível e os dispositivos intercambiáveis.
+Um **dispositivo** é um disco externo com duas partições rotuladas. É o rótulo — nunca a letra, nunca `sda`, nunca o número de série — que torna a receita reproduzível e os dispositivos intercambiáveis: o `ARCAVAULT` se chama assim em todo dispositivo, e é só ele que a receita cita. O `ARCABOOT` pode levar um nome (C-16, ver [Dar nome a um dispositivo](#dar-nome-a-um-dispositivo)).
 
 ```
 [dispositivo]  — um SSD externo, tabela GPT, duas partições
@@ -378,6 +378,29 @@ acabou de preparar um dispositivo, sao os dois — o novo e o de antes
 ```
 
 *(captura real de 23/08/2026, logo depois de um `arca prepare` bem-sucedido)*
+
+Quando algum `ARCABOOT` tem nome (C-16), a recusa lista também os volumes de boot, com letra e rótulo. É por eles que se sabe qual desconectar, porque os dois `ARCAVAULT` são iguais:
+
+```
+erro: ha 2 volumes com o rotulo ARCAVAULT conectados (E:, F:), e o ARCA opera
+um dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele
+repetido nao ha o que escolher. Os volumes de boot conectados sao R: ARCA-CASA,
+S: ARCABOOT. Desconecte os demais e rode de novo. Se voce acabou de preparar um
+dispositivo, sao os dois — o novo e o de antes
+```
+
+*(o texto que o teste `a_recusa_por_dois_arcavault_nomeia_os_volumes_de_boot_quando_ha_nome` exige, quebrado em linhas; ainda sem captura em hardware)*
+
+### Dar nome a um dispositivo
+
+Todo dispositivo sai do `arca prepare` com os mesmos dois rótulos, e dois SSDs iguais aparecem iguais no Explorer. Para distingui-los, renomeie o `ARCABOOT` de cada um no Explorer (botão direito → Renomear) para `ARCA-<texto>`, como `ARCA-CASA` ou `ARCA-ESCRIT`. O rótulo FAT32 tem 11 caracteres, e `ARCA-` ocupa 5: o texto tem até 6 caracteres.
+
+O ARCA reconhece o nome sem diferenciar caixa e o mostra no `arca status`, nas recusas de dois dispositivos e no menu do `arca prepare`. Nada mais muda. A receita cita só o `ARCAVAULT` (S-3), e o GRUB e a entrada de firmware acham o `ARCABOOT` sem olhar o rótulo dele. Veja o [ADR-0027](docs/adr/0027-o-arcaboot-pode-levar-um-nome.md).
+
+- **O `ARCAVAULT` não leva nome.** É por `LABEL=ARCAVAULT` que a receita acha o destino.
+- **O `ARCA-` precisa do hífen.** Sem ele, `ARCACASA` não é reconhecido, e o dispositivo aparece sem `ARCABOOT`.
+- **Um pendrive rotulado `ARCA-...` conta como um segundo volume de boot.** Com ele conectado ao lado do dispositivo, todo comando recusa e nomeia os dois (C-10).
+- **Um `arca prepare` por cima de um dispositivo nomeado o devolve a `ARCABOOT`**, e apaga as imagens como sempre. Antes de apagar, o menu e o plano dizem o nome.
 
 ### Os dois estados de um dispositivo
 
@@ -786,7 +809,7 @@ O nome é julgado **antes de tocar no dispositivo**: um nome recusado não preci
    - **B-3** — o nome já existe? Recusa mesmo se a pasta for resíduo.
    - **B-4** — cabe? O mínimo é o maior entre *maior imagem × 1,3* e *em uso × 0,45*. Entre 1× e 1,5× disso: avisa e pede confirmação.
    - **C-6** — o dispositivo é mídia removível que o `bcdedit` recusaria como alvo?
-   - **C-10** — há rótulo repetido na mesa?
+   - **C-10** — o `ARCAVAULT` e o volume de boot estão em discos físicos diferentes, como dois dispositivos meio prontos? (Mais de um dispositivo inteiro já foi recusado no passo 2.)
 6. **Lê a Inicialização Rápida** (B-5) — direto do registro, em `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power` → `HiberbootEnabled`. Nunca do `powercfg /a`, que responde traduzido. Valor ausente é **"não se sabe"**, nunca "desativada".
 7. **Roda `chkdsk /scan`** no volume do **sistema** (B-6) — julgado pelo **código de saída**, nunca pelo texto, que vem traduzido. Leva ~16 s nesta máquina.
 8. **Descobre o disco de origem** no oráculo (§4.5).
@@ -1154,7 +1177,7 @@ Um script antigo que passe a flag recebe erro de uso, e não um argumento ignora
 | # | Defesa | O que impede |
 |---|---|---|
 | 1 | Desarma incondicionalmente e **imprime que desarmou** antes de qualquer recusa | Um job sumir em silêncio |
-| 2 | Recusa mídia removível como alvo de entrada de boot, e rótulo repetido | Armar num dispositivo errado, ou num partido entre dois |
+| 2 | Recusa mídia removível como alvo de entrada de boot, mais de um dispositivo conectado e o dispositivo partido entre dois discos (C-6, C-10) | Armar num dispositivo errado, ou num partido entre dois |
 | 3 | Resíduo nunca ganha número na lista | Digitar um número que não se pode restaurar |
 | 4 | Confere a imagem contra o que há dentro dela — `disk`, `<disco>-gpt.sgdisk`, `blkdev.list` | Restaurar uma imagem incompleta |
 | 5 | **R-7: os setores têm de bater exatamente** com o que o `MSFT_Disk` responde para o disco na mesa | Restaurar no disco errado. A medição prova **identidade**, não capacidade: para mais **ou** para menos, recusa |
@@ -1270,6 +1293,16 @@ Ultimo job, ja colhido
   o que era. O `estado.json` fica no dispositivo de proposito — e o unico
   registro que liga este selo a este nome, e o ARCA nao apaga nada (B-10).
 ```
+
+Com o `ARCABOOT` renomeado (C-16, ver [Dar nome a um dispositivo](#dar-nome-a-um-dispositivo)), a segunda linha do bloco `Dispositivo ARCA` mostra o nome no lugar do papel, do jeito que o Explorer o mostra:
+
+```
+Dispositivo ARCA
+  ARCAVAULT ....................... D: · NTFS · 236,9 GB
+  ARCA-CASA ....................... R: · FAT32 · 1,6 GB
+```
+
+As outras linhas que dizem `ARCABOOT`, como `Estado no ARCABOOT`, continuam dizendo, porque ali a palavra é o papel da partição, e não o rótulo dela.
 
 #### As três leituras que ele faz
 
@@ -1775,6 +1808,12 @@ um volume bloqueado pelo BitLocker ou ainda montando nao aparece
 
 Desconecte um dos dois. Se você acabou de rodar `arca prepare`, são o novo e o de antes.
 
+Quando algum `ARCABOOT` tem nome (C-16), a mensagem lista também os volumes de boot, como `R: ARCA-CASA, S: ARCABOOT`. É por eles que se sabe qual dos dois desconectar.
+
+### `ha 2 volumes de boot ARCA conectados (R: ARCA-CASA, S: ARCA-ESCRIT)`
+
+Há dois volumes de boot na mesa, com nomes iguais ou diferentes. Um exemplo é um pendrive qualquer rotulado `ARCA-...` conectado ao lado do dispositivo. Desconecte o que não for o dispositivo que você quer usar (C-10, C-16).
+
 ### `o volume ARCAVAULT nao tem letra atribuida`
 
 Atribua uma no Gerenciamento de Disco. Sem letra não há caminho por onde lê-lo do lado Windows.
@@ -1920,12 +1959,13 @@ Cada uma custou uma execução real para existir. Elas têm identificadores no c
 | **C-7** | Repassar os argumentos **brutos** ao relançar com elevação |
 | **C-8** | Escapar aspas com **barra invertida**, não crase — quem reparte a linha é o parser do Windows |
 | **C-9** | Avisar para remover o SSD **depois de armado e antes de reiniciar** — é a última coisa que alguém lê antes de a tela apagar |
-| **C-10** | Recusar rótulo repetido |
+| **C-10** | Recusar mais de um dispositivo conectado — dois `ARCAVAULT`, ou dois volumes de boot (`ARCABOOT` ou `ARCA-<texto>`, iguais ou não) — e o dispositivo partido entre dois discos |
 | **C-11** | Gerar um **selo** ao armar, gravá-lo no `estado.json` e embuti-lo na receita |
 | **C-12** | **Ausência de desfecho é falha, nunca silêncio** — e reporta as duas causas possíveis |
 | **C-13** | Ao colher, devolver o `{bootmgr}` ao topo da ordem permanente — sem remover nada |
 | **C-14** | **Ausência de resposta do firmware nunca vira segurança.** Três estados: leva, não leva, não se sabe |
 | **C-15** | **A recusa do `bcdedit` não apaga o que ele listou** — listagem com código é leitura; e nenhuma leitura com código cria entrada |
+| **C-16** | O `ARCABOOT` **pode levar um nome**, `ARCA-<texto>`, com até 6 caracteres depois do hífen. O `ARCAVAULT`, não |
 
 ### Backup
 
@@ -2184,6 +2224,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | 0024 | O `arca prepare` **oferece a lista**, e continua não deduzindo o disco |
 | 0025 | **O ARCA particiona em GPT**, e o marco em hardware aconteceu |
 | 0026 | **A recusa do `bcdedit` não apaga o que ele listou** — e o `prepare` lê o firmware antes de apagar |
+| 0027 | O `ARCABOOT` **pode levar um nome**, e o `ARCAVAULT` não |
 
 ---
 
@@ -2193,7 +2234,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 |---|---|---|
 | **Dispositivo** | O SSD externo que carrega o Clonezilla e as imagens juntos, com as partições `ARCABOOT` e `ARCAVAULT`. O que separa um disco de um dispositivo é o `arca prepare` — e não haver sido comprado como tal | pendrive, mídia, unidade, drive |
 | **Preparar** | Transformar um disco num dispositivo. É a **única** operação que destrói dados sem reiniciar | formatar, instalar, inicializar |
-| **`ARCABOOT`** | A partição FAT32 de onde a máquina boota. Guarda o Clonezilla, o `grub.cfg` e o estado do job. **Sempre fora da imagem** | partição de boot, EFI |
+| **`ARCABOOT`** | A partição FAT32 de onde a máquina boota. Guarda o Clonezilla, o `grub.cfg` e o estado do job. **Sempre fora da imagem**. O rótulo é `ARCABOOT`, ou `ARCA-<texto>` quando o dispositivo tem nome (C-16) | partição de boot, EFI |
 | **`ARCAVAULT`** | A partição NTFS onde as imagens e os logs ficam. É o que o Clonezilla monta como `/home/partimag` | repositório, storage, cofre |
 | **Imagem** | Uma pasta no `ARCAVAULT` com o resultado de um `savedisk`. Nomeada por você, **nunca sobrescrita** | backup, snapshot, ponto de restauração |
 | **Resíduo** | Pasta de imagem **sem `MD5SUMS`** — rastro de um backup interrompido. Não é imagem, e o ARCA nunca escreve por cima de uma | imagem corrompida, imagem parcial |

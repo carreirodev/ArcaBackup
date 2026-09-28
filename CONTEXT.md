@@ -7,7 +7,7 @@ Automatizador de Clonezilla para backup e restauração de imagem de disco, de u
 ### O dispositivo
 
 **Dispositivo**:
-O SSD externo que carrega o Clonezilla e as imagens juntos, com as partições `ARCABOOT` e `ARCAVAULT`. **Desde a E10 o ARCA faz um**: `arca prepare` particiona um disco qualquer, rotula as duas partições, instala o Clonezilla e cria a entrada de boot. O que separa um disco de um dispositivo é isso — e não haver sido comprado como tal.
+O SSD externo que carrega o Clonezilla e as imagens juntos, com as partições `ARCABOOT` e `ARCAVAULT`. **Desde a E10 o ARCA faz um**: `arca prepare` particiona um disco qualquer, rotula as duas partições, instala o Clonezilla e cria a entrada de boot. O que separa um disco de um dispositivo é isso — e não haver sido comprado como tal. Os dispositivos são intercambiáveis para a receita, que só cita o `ARCAVAULT`, e não precisam ser iguais para quem os usa: o `ARCABOOT` de cada um pode levar um nome, `ARCA-<texto>` (C-16).
 _Evitar_: pendrive, mídia, unidade, drive
 
 **Preparar**:
@@ -15,7 +15,7 @@ Transformar um disco num dispositivo: apagar a tabela de partição, criar as du
 _Evitar_: formatar, instalar, inicializar
 
 **ARCABOOT**:
-A partição FAT32 do dispositivo, de onde a máquina boota. Guarda o Clonezilla, o `grub.cfg` e o estado do job. Está sempre fora da imagem.
+A partição FAT32 do dispositivo, de onde a máquina boota. Guarda o Clonezilla, o `grub.cfg` e o estado do job. Está sempre fora da imagem. **O nome é o papel, e o rótulo pode ser outro**: o `arca prepare` grava `ARCABOOT`, e o usuário pode renomeá-lo no Explorer para `ARCA-<texto>`, com até 6 caracteres depois do hífen (C-16). Um volume cujo rótulo tem uma dessas duas formas é um **volume de boot**. Ele só é o `ARCABOOT` do dispositivo quando é o único na mesa e está no mesmo disco físico do `ARCAVAULT`. Um pendrive rotulado `ARCA-...` é um volume de boot, e não é o `ARCABOOT` de ninguém (C-10).
 _Evitar_: partição de boot, EFI
 
 **ARCAVAULT**:
