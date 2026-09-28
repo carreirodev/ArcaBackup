@@ -24,7 +24,7 @@
 //! | situacao | [`Situacao`] | `armado` ou `colhido` |
 //!
 //! Nenhum deles alcanca `"`, `\`, caractere de controle ou nao-ASCII. Ainda
-//! assim [`campo`] confere antes de escrever, porque "ja foi validado" e
+//! assim `campo` confere antes de escrever, porque "ja foi validado" e
 //! exatamente o que este projeto ja viu ser falso duas vezes.
 //!
 //! O sexto campo entrou na etapa E8, e a premissa que sustenta escrever a mao

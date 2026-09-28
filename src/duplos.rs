@@ -220,7 +220,7 @@ impl FirmwareDeMentira {
     /// marca, o `/deletevalue` tira, e o `/enum` conta o que ha.
     ///
     /// E o que um comando que **desarma e depois arma** exige — ver o campo
-    /// [`FirmwareDeMentira::fwbootmgr`].
+    /// `FirmwareDeMentira::fwbootmgr`.
     pub fn modelando_o_fwbootmgr(mut self, ordem_permanente: &[&str]) -> FirmwareDeMentira {
         self.fwbootmgr = Some(RefCell::new(Fwbootmgr {
             ordem_permanente: ordem_permanente.iter().map(|o| o.to_string()).collect(),

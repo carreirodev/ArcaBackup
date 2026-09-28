@@ -33,8 +33,8 @@
 //! | O `if/then/else` de R-5 | **Codigo novo** — nenhuma receita real o usou |
 //! | O `arca-fim.txt`, o selo, o `ARCA_FIM` | **Codigo novo** — nenhuma receita real o escreveu |
 //! | O `ARCA_VEREDITO=` no `arca-check.log` | **Codigo novo** — ver ADR-0003 |
-//! | O `lsblk` da sondagem, e o `ARCA_PROBE=` | **Codigo novo** — ver [`montar_sondagem`] |
-//! | As flags do `lsblk` | **Reconstrucao**, e ha uma terceira coluna para isso — ver [`FLAGS_DE_SONDAGEM`] |
+//! | O `lsblk` da sondagem, e o `ARCA_PROBE=` | **Codigo novo** — ver `montar_sondagem` |
+//! | As flags do `lsblk` | **Reconstrucao**, e ha uma terceira coluna para isso — ver `FLAGS_DE_SONDAGEM` |
 //!
 //! A terceira procedencia nasceu na etapa E12, e ela nao e nenhuma das duas
 //! anteriores: das outras receitas se tem a **linha de comando** que rodou; da
@@ -475,7 +475,7 @@ pub enum RecusaDaReceita {
     },
 
     /// A linha nao caberia no `COMMAND_LINE_SIZE` do kernel, e o kernel a
-    /// truncaria em silencio. Ver [`TETO_DOS_PARAMETROS`].
+    /// truncaria em silencio. Ver `TETO_DOS_PARAMETROS`.
     LinhaLongaDemais {
         tem: usize,
         teto: usize,

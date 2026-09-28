@@ -69,12 +69,12 @@ pub const LEGADA: &str = "Clonezilla";
 /// TESTE`, com `device partition=E:`. Ele nomeia o *slot* `Boot####` da NVRAM,
 /// e nao a entrada que esta nele — e o firmware reescreve os slots.
 ///
-/// Este projeto ja fazia a coisa certa sem ter medido por que: [`chamada`]
+/// Este projeto ja fazia a coisa certa sem ter medido por que: `Leitura::chamada`
 /// procura a entrada **pela descricao**, e nao por um GUID guardado. Esta
 /// funcao e a mesma regra exposta para quem precisa conferir o caminho
 /// inverso — dado um identificador, ele ainda nomeia a entrada que se pensava?
 ///
-/// A caixa nao diferencia pela mesma razao de [`Leitura::chamada`]: quem
+/// A caixa nao diferencia pela mesma razao de `Leitura::chamada`: quem
 /// digitou a descricao da entrada legada foi uma pessoa, uma vez.
 ///
 /// Ver o [ADR-0025](../docs/adr/0025-o-arca-particiona-em-gpt.md).

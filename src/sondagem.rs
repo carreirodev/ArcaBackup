@@ -9,7 +9,7 @@
 //! ```
 //!
 //! Quem escreve e a receita, do outro lado do reinicio
-//! ([`crate::receita::montar_sondagem`]); quem lê e este modulo, na volta. Os
+//! (`crate::receita::montar_sondagem`); quem lê e este modulo, na volta. Os
 //! dois caminhos saem da **mesma** funcao — [`crate::receita::pasta_do_log`] —
 //! pelo motivo de sempre: dois lugares onde o nome da pasta se escreva
 //! divergem na primeira mudanca, e o rastro disso seria um desfecho procurado

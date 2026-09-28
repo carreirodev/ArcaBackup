@@ -402,7 +402,7 @@ pub enum Alcance {
 
 /// Se esta entrada leva ao `ARCABOOT` que esta na mesa.
 ///
-/// A versao de julgamento do [`confere_com_o_arcaboot`], e ela responde
+/// A versao de julgamento do `confere_com_o_arcaboot`, e ela responde
 /// **`NaoLeva`** para o que da para conferir que e outra coisa e **`NaoSeSabe`**
 /// para o que nao declara alvo nenhum.
 ///
@@ -475,7 +475,7 @@ impl LugarNaOrdem {
 /// **Quem chama tem de ter conferido `viu_o_gerenciador` antes.** Uma leitura
 /// que nao se deixou entender produz ordem vazia, e ordem vazia sai daqui como
 /// "o dispositivo esta fora da ordem" — a resposta tranquilizadora. Ver a
-/// guarda em [`secao_da_ordem_de_boot`].
+/// guarda em `secao_da_ordem_de_boot`.
 pub fn lugar_do_dispositivo(leitura: &Leitura, dispositivo: &Dispositivo) -> LugarNaOrdem {
     let julgadas: Vec<Alcance> = leitura
         .ordem_resolvida()

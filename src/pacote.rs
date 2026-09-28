@@ -141,7 +141,7 @@ pub enum RecusaDoPacote {
     /// # Por que a mensagem pode prometer que nada foi apagado
     ///
     /// Porque esta variante nasce em **um lugar só** —
-    /// [`crate::comandos::prepare::conferir_o_pacote_local`], que roda antes
+    /// `crate::comandos::prepare::conferir_o_pacote_local`, que roda antes
     /// do passo 0 —, e é isso que autoriza a promessa. A conferência que
     /// acontece de novo no passo 7 não a levanta: lá o disco já foi apagado, e
     /// a frase seria mentira.

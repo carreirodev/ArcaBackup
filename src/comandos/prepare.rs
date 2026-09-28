@@ -87,8 +87,8 @@
 //! firmware apontando para uma partição que não existe mais — e o `bcdedit`,
 //! nesse estado, **listava tudo e saía com código 1** em todo `/enum`. O passo
 //! 11 começava lendo, e morria antes do `/set device` que o consertaria; o
-//! `arca sondar` morria na mesma leitura. Ver [`ler_o_firmware_antes`],
-//! [`criar_a_entrada`] e o ADR-0026.
+//! `arca sondar` morria na mesma leitura. Ver `ler_o_firmware_antes`,
+//! `criar_a_entrada` e o ADR-0026.
 //!
 //! # O pré-voo do pacote, e por que ele não é um passo
 //!
