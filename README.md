@@ -681,6 +681,15 @@ A receita da sondagem **não chama programa nenhum do Clonezilla** — nem `ocs-
 
 Ao contrário dos outros comandos que armam, a sondagem não pede um nome digitado por extenso: ela pergunta `Reiniciar agora e sondar? (s/N)`, com o padrão no **não**. A razão sobrevive à pergunta *"o que essa confirmação impede?"* — ela impede o **reinício** de quem digitou o comando sem saber que ele reinicia. Não há alvo destrutivo a confirmar.
 
+#### O que ela recusa antes da pergunta
+
+As duas recusas que valem para todo comando que arma, porque falam do **dispositivo** e não da operação:
+
+- **C-6** — o Windows classifica o disco do `ARCABOOT` como **mídia removível** (o `MediaType` do WMI). O `bcdedit` recusa esse alvo em silêncio: responde "êxito" e mantém o valor antigo. Um dispositivo assim boota por F12, nunca por entrada de firmware.
+- **C-10** — o `ARCAVAULT` e o `ARCABOOT` estão em **discos físicos diferentes**: dois dispositivos meio prontos na mesa, cada rótulo aparecendo uma vez. O `estado.json` iria para um e o desfecho da sondagem para o outro, e o `arca resultado` procuraria o desfecho no lugar errado.
+
+As duas acontecem depois do desarme e do cabeçalho, que já contam o que aconteceu, e **antes** da pergunta — também no `--dry-run`. Nada é armado. Saber isso custa uma consulta a mais ao WMI, a mesma que o `arca backup` e o `arca restore` já fazem.
+
 #### O que aparece na tela
 
 ```
@@ -1115,6 +1124,8 @@ Sem `--completo`, o comando **não desarma** — desarmar é obrigação dos com
 #### Recusas
 
 Os dois caminhos recusam **antes** de conferir ou armar qualquer coisa: imagem inexistente, pasta que é resíduo, ou `MD5SUMS` que não serve.
+
+O `--completo` recusa ainda, depois do desarme e **antes** da confirmação digitada, as duas coisas que todo comando que arma recusa sobre o **dispositivo**: o disco do `ARCABOOT` que o Windows classifica como mídia removível (**C-6**), e o `ARCAVAULT` e o `ARCABOOT` em discos físicos diferentes (**C-10**). Ninguém digita o nome inteiro de uma imagem para ouvir um não que o WMI já sabia dar. Sem `--completo` o comando não arma, e não faz essa consulta.
 
 ---
 

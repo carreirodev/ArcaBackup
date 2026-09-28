@@ -17,10 +17,10 @@
 //!
 //! # Ele arma como os outros tres, e nao faz mais nada
 //!
-//! Desarma (C-1), imprime o que ja aconteceu, pergunta, arma, avisa C-9 e
-//! reinicia. O que muda e a receita: sem `ocs-sr`, sem `ocs-chkimg`, sem
-//! `savedisk` e sem `restoredisk` — so `lsblk`, e nada e escrito fora do
-//! `ARCAVAULT`.
+//! Desarma (C-1), imprime o que ja aconteceu, recusa o dispositivo que C-6 e
+//! C-10 recusam, pergunta, arma, avisa C-9 e reinicia. O que muda e a
+//! receita: sem `ocs-sr`, sem `ocs-chkimg`, sem `savedisk` e sem
+//! `restoredisk` — so `lsblk`, e nada e escrito fora do `ARCAVAULT`.
 //!
 //! # Por que ele nao lê imagem nenhuma antes de armar
 //!
@@ -42,6 +42,7 @@ use crate::desarme;
 use crate::dispositivo::{self, Dispositivo};
 use crate::erro::{Erro, Resultado};
 use crate::formato::{dia_e_hora, gigabytes, linha};
+use crate::prevoo;
 use crate::receita::{Operacao, Pedido, Receita, Selo};
 use crate::sondagem;
 
@@ -49,6 +50,12 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
     let dispositivo = dispositivo::encontrar(contexto.discos)?;
     let raiz_do_vault = dispositivo.raiz_do_vault()?;
     let caminho_do_grub = dispositivo.caminho_do_grub()?;
+
+    // A consulta ao WMI vem **antes** do desarme, no mesmo lugar que o
+    // `arca backup` e o `arca restore` a fazem: se ela falhar depois do
+    // desarme, o erro sobe antes do cabecalho e a noticia de que o desarme
+    // aconteceu se perde. Custa uns 2 s, e a E12 nasceu sem ela (WPC-53).
+    let discos = contexto.discos.discos_fisicos()?;
 
     // A leitura acontece **antes** do desarme, e nao depois: e a sondagem
     // anterior, e e o que a tela vai dizer que sera substituido. Desarmar nao
@@ -74,6 +81,11 @@ pub fn executar(contexto: &Contexto) -> Resultado<()> {
         "{}",
         montar_o_cabecalho(&dispositivo, anterior.as_ref(), &caminho_do_grub, &desarme)
     );
+
+    // C-6 e C-10, antes da pergunta: sao sobre o **dispositivo**, e valem para
+    // toda operacao que arma. A E12 nasceu sem elas, como a E9 tinha nascido
+    // — ver [`crate::prevoo::julgar_o_dispositivo`] para os dois furos.
+    prevoo::julgar_o_dispositivo(&dispositivo, &discos).map_err(Erro::PreVooRecusou)?;
 
     if contexto.dry_run {
         print!("{}", ensaio_da_receita()?);
@@ -243,8 +255,15 @@ fn ensaio_da_receita() -> Resultado<String> {
 #[cfg(test)]
 mod testes {
     use super::*;
+    use crate::adaptadores::RelogioDoSistema;
     use crate::blkdev::{Fonte, Lista};
-    use crate::duplos::{DiscosDeMentira, momento};
+    use crate::duplos::{
+        ArquivosEmMemoria, ConsoleDeMentira, DiscosDeMentira, EntropiaDeMentira, FirmwareDeMentira,
+        ParticionadorDeMentira, RelogioParado, SistemaDeMentira, momento,
+    };
+    use crate::portas::{DiscoFisico, TipoDeMidia};
+    use crate::prevoo::RecusaDoPreVoo;
+    use crate::registro::Registro;
 
     fn dispositivo_conectado() -> Dispositivo {
         dispositivo::encontrar(&DiscosDeMentira::com_dispositivo()).unwrap()
@@ -382,5 +401,192 @@ mod testes {
         assert!(saida.contains("arca resultado"), "{saida}");
         assert!(saida.contains("arca backup"), "{saida}");
         assert!(saida.contains("remova o SSD"), "C-9: {saida}");
+    }
+
+    // ─────────────────────────── o comando inteiro ───────────────────────────
+
+    const GRUB_INERTE: &str = include_str!("../../recursos/capturas/grub-inerte-arcaboot.cfg");
+
+    /// O `bcdedit` desta maquina, com o `{fwbootmgr}` modelado: o comando
+    /// desarma e depois arma, e as duas escritas caem no mesmo lugar.
+    const FIRMWARE_PT: &str = include_str!("../../recursos/capturas/bcdedit-enum-firmware-pt.txt");
+
+    struct Bancada {
+        arquivos: ArquivosEmMemoria,
+        discos: DiscosDeMentira,
+        firmware: FirmwareDeMentira,
+        relogio: RelogioParado,
+        sistema: SistemaDeMentira,
+        entropia: EntropiaDeMentira,
+        console: ConsoleDeMentira,
+
+        /// O `Contexto` e um so, e a porta vem junto mesmo sem uso aqui.
+        particionador: ParticionadorDeMentira,
+        registro: Registro,
+    }
+
+    impl Bancada {
+        /// O dispositivo com os discos pedidos, o `grub.cfg` inerte, e alguem
+        /// que responde **sim** a pergunta de SD-6. Com o sim dado, a unica
+        /// coisa que pode separar o comando de armar e a recusa.
+        fn com_discos(discos: Vec<DiscoFisico>) -> Bancada {
+            Bancada {
+                arquivos: ArquivosEmMemoria::novo().com(r"R:\boot\grub\grub.cfg", GRUB_INERTE),
+                discos: DiscosDeMentira::com_dispositivo().com_discos(discos),
+                firmware: FirmwareDeMentira::novo()
+                    .respondendo("firmware", FIRMWARE_PT)
+                    .modelando_o_fwbootmgr(&["{bootmgr}"]),
+                relogio: RelogioParado::em("2026-09-28T10:30:00"),
+                sistema: SistemaDeMentira::novo(),
+                entropia: EntropiaDeMentira::com(&[0xa3, 0xf1, 0xc9, 0xe0, 0x7b, 0x2d, 0x48, 0x56]),
+                console: ConsoleDeMentira::respondendo(&["s"]),
+                particionador: ParticionadorDeMentira::desta_mesa(),
+                registro: Registro::em(
+                    std::env::temp_dir().join(format!(
+                        "arca-sondar-{}-{:?}",
+                        std::process::id(),
+                        std::thread::current().id()
+                    )),
+                    Box::new(RelogioDoSistema),
+                ),
+            }
+        }
+
+        fn contexto(&self) -> Contexto<'_> {
+            Contexto {
+                dry_run: false,
+                registro: &self.registro,
+                firmware: &self.firmware,
+                discos: &self.discos,
+                arquivos: &self.arquivos,
+                relogio: &self.relogio,
+                sistema: &self.sistema,
+                entropia: &self.entropia,
+                console: &self.console,
+                particionador: &self.particionador,
+            }
+        }
+
+        /// O que "recusou sem armar nada" quer dizer, uma coisa por linha.
+        ///
+        /// O desarmar de C-1 escreve no firmware e tem de escrever: ele vem
+        /// antes de qualquer recusa. O que nao pode e uma escrita que **arme**.
+        fn nada_foi_armado(&self) {
+            assert_eq!(
+                self.console.lidas.get(),
+                0,
+                "fez a pergunta antes de saber que ia recusar"
+            );
+            assert!(
+                self.arquivos.conteudo_de(r"R:\arca\estado.json").is_none(),
+                "gravou estado de job"
+            );
+            assert_eq!(
+                self.arquivos
+                    .conteudo_de(r"R:\boot\grub\grub.cfg")
+                    .as_deref(),
+                Some(GRUB_INERTE),
+                "armou o grub.cfg"
+            );
+            let escritas = self.firmware.executados();
+            assert!(
+                escritas.iter().all(
+                    |argumentos| argumentos.first().map(String::as_str) == Some("/deletevalue")
+                ),
+                "escreveu no firmware alem do desarmar de C-1: {escritas:?}"
+            );
+            assert_eq!(self.sistema.reinicios(), 0, "reiniciou");
+        }
+    }
+
+    impl Drop for Bancada {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(self.registro.caminho().parent().unwrap());
+        }
+    }
+
+    #[test]
+    fn o_sondar_recusa_o_dispositivo_partido_antes_da_pergunta() {
+        // C-10, que a E12 nasceu sem (WPC-53, 28/09/2026). Com dois
+        // dispositivos meio prontos na mesa — o `ARCAVAULT` num, o `ARCABOOT`
+        // noutro —, cada rotulo aparece uma vez e `dispositivo::encontrar`
+        // passa. O `estado.json` iria para um e o `arca-fim.txt` da sondagem
+        // para o outro, e a colheita procuraria o desfecho no lugar errado.
+        let mut discos = crate::duplos::discos_desta_mesa();
+        discos[1].letras = vec!['E'];
+        discos.push(DiscoFisico {
+            indice: 2,
+            modelo: "OUTRO SSD".to_string(),
+            tamanho_bytes: 1_000,
+            medida: None,
+            em_uso_bytes: 0,
+            tipo_de_midia: TipoDeMidia::DiscoExterno,
+            letras: vec!['R'],
+        });
+        let bancada = Bancada::com_discos(discos);
+
+        let erro = executar(&bancada.contexto()).unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PreVooRecusou(RecusaDoPreVoo::DispositivoPartido {
+                    vault: 'E',
+                    boot: 'R'
+                })
+            ),
+            "veio {erro}"
+        );
+        bancada.nada_foi_armado();
+    }
+
+    #[test]
+    fn o_sondar_recusa_midia_removivel_antes_da_pergunta() {
+        // C-6 (WPC-53, 28/09/2026). O `armar` pegaria a rejeicao silenciosa
+        // do `bcdedit` na releitura do `device` — mas so **depois** do sim.
+        // O `MediaType` do WMI sabe antes, e a pergunta nao chega a ser feita.
+        let mut discos = crate::duplos::discos_desta_mesa();
+        discos[1].tipo_de_midia = TipoDeMidia::Removivel;
+        let bancada = Bancada::com_discos(discos);
+
+        let erro = executar(&bancada.contexto()).unwrap_err();
+
+        assert!(
+            matches!(erro, Erro::PreVooRecusou(RecusaDoPreVoo::MidiaRemovivel)),
+            "veio {erro}"
+        );
+        bancada.nada_foi_armado();
+    }
+
+    #[test]
+    fn com_o_sim_o_sondar_arma_e_so_entao_reinicia() {
+        // O controle das duas recusas acima: sem ele, um `sondar` que
+        // recusasse sempre passaria nelas. O dispositivo desta mesa tem os
+        // dois rotulos no mesmo disco externo, e passa.
+        let bancada = Bancada::com_discos(crate::duplos::discos_desta_mesa());
+
+        executar(&bancada.contexto()).expect("arma e reinicia");
+
+        let estado = bancada
+            .arquivos
+            .conteudo_de(r"R:\arca\estado.json")
+            .expect("estado gravado");
+        assert!(estado.contains("\"situacao\": \"armado\""), "{estado}");
+
+        let grub = bancada
+            .arquivos
+            .conteudo_de(r"R:\boot\grub\grub.cfg")
+            .expect("grub gravado");
+        assert!(grub.contains("ARCA_PROBE"), "{grub}");
+
+        assert!(
+            bancada
+                .firmware
+                .executados()
+                .iter()
+                .any(|argumentos| argumentos.contains(&"bootsequence".to_string())),
+            "nao marcou o boot unico"
+        );
+        assert_eq!(bancada.sistema.reinicios(), 1);
     }
 }

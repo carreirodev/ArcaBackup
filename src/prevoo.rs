@@ -249,6 +249,10 @@ pub fn julgar(
 ///   `ARCABOOT` de um dispositivo e o desfecho para o `ARCAVAULT` do outro —
 ///   e a colheita procuraria o desfecho de um job no lugar errado.
 ///
+/// A E11 (`arca verify --completo`) e a E12 (`arca sondar`) nasceram depois e
+/// repetiram o furo, e ficaram assim ate 28/09/2026 (WPC-53). Hoje os quatro
+/// comandos que armam passam por aqui.
+///
 /// Duas versoes da mesma regra divergem na primeira mudanca. Esta e uma so.
 pub fn julgar_o_dispositivo(
     dispositivo: &Dispositivo,

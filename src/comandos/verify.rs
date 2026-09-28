@@ -11,8 +11,9 @@
 //!   comando de consulta, como o `arca list` — e por isso C-1 nao se aplica:
 //!   ele fala dos comandos que **armam**, e o mesmo raciocinio ja esta
 //!   registrado em [`super::resultado`].
-//! - **V-2 arma.** Desarma primeiro (C-1), pede a confirmacao digitada, arma,
-//!   avisa C-9 e reinicia. E o mecanismo da E7 inteiro, com uma receita menor.
+//! - **V-2 arma.** Desarma primeiro (C-1), recusa o dispositivo que C-6 e C-10
+//!   recusam, pede a confirmacao digitada, arma, avisa C-9 e reinicia. E o
+//!   mecanismo da E7 inteiro, com uma receita menor.
 //!
 //! # Por que `--completo` pede confirmacao se nao destroi nada
 //!
@@ -386,6 +387,12 @@ fn armada(
 ) -> Resultado<()> {
     let caminho_do_grub = dispositivo.caminho_do_grub()?;
 
+    // A consulta ao WMI mora aqui, e nao em `executar`: V-1 nao arma, e nao
+    // paga os 2 s dela. E vem **antes** do desarme, como no `arca backup` e no
+    // `arca restore` — uma falha depois dele subiria antes do cabecalho, e a
+    // noticia do desarme se perderia. A E11 nasceu sem ela (WPC-53).
+    let discos = contexto.discos.discos_fisicos()?;
+
     // C-1, incondicionalmente e como primeiro passo — este comando arma.
     let desarme = if contexto.dry_run {
         None
@@ -441,6 +448,12 @@ fn armada(
             }
         )
     );
+
+    // C-6 e C-10, antes da confirmacao digitada: sao sobre o **dispositivo**,
+    // e valem para toda operacao que arma. Ninguem digita o nome inteiro de uma
+    // imagem para ouvir um nao que o WMI ja sabia dar. Ver
+    // [`crate::prevoo::julgar_o_dispositivo`] para os dois furos.
+    crate::prevoo::julgar_o_dispositivo(dispositivo, &discos).map_err(Erro::PreVooRecusou)?;
 
     if contexto.dry_run {
         print!("{}", ensaio_da_receita(nome)?);
@@ -542,7 +555,14 @@ fn ensaio_da_receita(nome: &Nome) -> Resultado<String> {
 #[cfg(test)]
 mod testes {
     use super::*;
-    use crate::duplos::momento;
+    use crate::adaptadores::RelogioDoSistema;
+    use crate::duplos::{
+        ArquivosEmMemoria, ConsoleDeMentira, DiscosDeMentira, EntropiaDeMentira, FirmwareDeMentira,
+        ParticionadorDeMentira, RelogioParado, SistemaDeMentira, momento,
+    };
+    use crate::portas::{DiscoFisico, TipoDeMidia};
+    use crate::prevoo::RecusaDoPreVoo;
+    use crate::registro::Registro;
 
     fn imagem(nome: &str, veredito: Option<Veredito>) -> Pasta {
         Pasta {
@@ -751,5 +771,218 @@ mod testes {
             !saida.contains("savedisk") && !saida.contains("restoredisk"),
             "a receita da verificacao nao toca em disco"
         );
+    }
+
+    // ─────────────────────────── o comando inteiro ───────────────────────────
+
+    const GRUB_INERTE: &str = include_str!("../../recursos/capturas/grub-inerte-arcaboot.cfg");
+
+    /// O `bcdedit` desta maquina, com o `{fwbootmgr}` modelado: o comando
+    /// desarma e depois arma, e as duas escritas caem no mesmo lugar.
+    const FIRMWARE_PT: &str = include_str!("../../recursos/capturas/bcdedit-enum-firmware-pt.txt");
+
+    /// O resumo do unico arquivo da imagem de teste, que o `MD5SUMS` lista e o
+    /// `certutil` de mentira devolve.
+    const RESUMO_DO_DISK: &str = "bf6850d736dc6b480994de0cee9c0f63";
+
+    const IMAGEM: &str = "2026-08-22_Apps";
+
+    struct Bancada {
+        arquivos: ArquivosEmMemoria,
+        discos: DiscosDeMentira,
+        firmware: FirmwareDeMentira,
+        relogio: RelogioParado,
+        sistema: SistemaDeMentira,
+        entropia: EntropiaDeMentira,
+        console: ConsoleDeMentira,
+
+        /// O `Contexto` e um so, e a porta vem junto mesmo sem uso aqui.
+        particionador: ParticionadorDeMentira,
+        registro: Registro,
+    }
+
+    impl Bancada {
+        /// Uma imagem que V-1 aprova, o `grub.cfg` inerte, e alguem que
+        /// digita o nome certo na confirmacao de S-2. Com a confirmacao dada,
+        /// a unica coisa que pode separar o `--completo` de armar e a recusa.
+        fn com_discos(discos: Vec<DiscoFisico>) -> Bancada {
+            Bancada {
+                arquivos: ArquivosEmMemoria::novo()
+                    .com(
+                        format!(r"E:\{IMAGEM}\MD5SUMS"),
+                        &format!("{RESUMO_DO_DISK}  disk\n"),
+                    )
+                    .com(format!(r"E:\{IMAGEM}\disk"), "nvme0n1")
+                    .com(r"R:\boot\grub\grub.cfg", GRUB_INERTE),
+                discos: DiscosDeMentira::com_dispositivo().com_discos(discos),
+                firmware: FirmwareDeMentira::novo()
+                    .respondendo("firmware", FIRMWARE_PT)
+                    .modelando_o_fwbootmgr(&["{bootmgr}"]),
+                relogio: RelogioParado::em("2026-09-28T10:30:00"),
+                sistema: SistemaDeMentira::novo()
+                    .com_resumo(&format!(r"E:\{IMAGEM}\disk"), RESUMO_DO_DISK),
+                entropia: EntropiaDeMentira::com(&[0xa3, 0xf1, 0xc9, 0xe0, 0x7b, 0x2d, 0x48, 0x56]),
+                console: ConsoleDeMentira::respondendo(&[IMAGEM]),
+                particionador: ParticionadorDeMentira::desta_mesa(),
+                registro: Registro::em(
+                    std::env::temp_dir().join(format!(
+                        "arca-verify-{}-{:?}",
+                        std::process::id(),
+                        std::thread::current().id()
+                    )),
+                    Box::new(RelogioDoSistema),
+                ),
+            }
+        }
+
+        fn contexto(&self) -> Contexto<'_> {
+            Contexto {
+                dry_run: false,
+                registro: &self.registro,
+                firmware: &self.firmware,
+                discos: &self.discos,
+                arquivos: &self.arquivos,
+                relogio: &self.relogio,
+                sistema: &self.sistema,
+                entropia: &self.entropia,
+                console: &self.console,
+                particionador: &self.particionador,
+            }
+        }
+
+        /// O que "recusou sem armar nada" quer dizer, uma coisa por linha.
+        ///
+        /// O desarmar de C-1 escreve no firmware e tem de escrever: ele vem
+        /// antes de qualquer recusa. O que nao pode e uma escrita que **arme**.
+        fn nada_foi_armado(&self) {
+            assert_eq!(
+                self.console.lidas.get(),
+                0,
+                "pediu a confirmacao antes de saber que ia recusar"
+            );
+            assert!(
+                self.arquivos.conteudo_de(r"R:\arca\estado.json").is_none(),
+                "gravou estado de job"
+            );
+            assert_eq!(
+                self.arquivos
+                    .conteudo_de(r"R:\boot\grub\grub.cfg")
+                    .as_deref(),
+                Some(GRUB_INERTE),
+                "armou o grub.cfg"
+            );
+            let escritas = self.firmware.executados();
+            assert!(
+                escritas.iter().all(
+                    |argumentos| argumentos.first().map(String::as_str) == Some("/deletevalue")
+                ),
+                "escreveu no firmware alem do desarmar de C-1: {escritas:?}"
+            );
+            assert_eq!(self.sistema.reinicios(), 0, "reiniciou");
+        }
+    }
+
+    impl Drop for Bancada {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(self.registro.caminho().parent().unwrap());
+        }
+    }
+
+    #[test]
+    fn o_completo_recusa_o_dispositivo_partido_antes_da_confirmacao() {
+        // C-10, que a E11 nasceu sem (WPC-53, 28/09/2026). Com o `ARCAVAULT`
+        // num disco e o `ARCABOOT` noutro, cada rotulo aparece uma vez e
+        // `dispositivo::encontrar` passa. O `estado.json` iria para um e o
+        // parecer do `ocs-chkimg` para o outro, e a colheita procuraria o
+        // desfecho no lugar errado.
+        let mut discos = crate::duplos::discos_desta_mesa();
+        discos[1].letras = vec!['E'];
+        discos.push(DiscoFisico {
+            indice: 2,
+            modelo: "OUTRO SSD".to_string(),
+            tamanho_bytes: 1_000,
+            medida: None,
+            em_uso_bytes: 0,
+            tipo_de_midia: TipoDeMidia::DiscoExterno,
+            letras: vec!['R'],
+        });
+        let bancada = Bancada::com_discos(discos);
+
+        let erro = executar(&bancada.contexto(), IMAGEM, true).unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PreVooRecusou(RecusaDoPreVoo::DispositivoPartido {
+                    vault: 'E',
+                    boot: 'R'
+                })
+            ),
+            "veio {erro}"
+        );
+        bancada.nada_foi_armado();
+    }
+
+    #[test]
+    fn o_completo_recusa_midia_removivel_antes_da_confirmacao() {
+        // C-6 (WPC-53, 28/09/2026). O `armar` pegaria a rejeicao silenciosa
+        // do `bcdedit` na releitura do `device` — mas so **depois** de a pessoa
+        // digitar o nome inteiro da imagem. O `MediaType` do WMI sabe antes.
+        let mut discos = crate::duplos::discos_desta_mesa();
+        discos[1].tipo_de_midia = TipoDeMidia::Removivel;
+        let bancada = Bancada::com_discos(discos);
+
+        let erro = executar(&bancada.contexto(), IMAGEM, true).unwrap_err();
+
+        assert!(
+            matches!(erro, Erro::PreVooRecusou(RecusaDoPreVoo::MidiaRemovivel)),
+            "veio {erro}"
+        );
+        bancada.nada_foi_armado();
+    }
+
+    #[test]
+    fn com_a_confirmacao_certa_o_completo_arma_e_so_entao_reinicia() {
+        // O controle das duas recusas acima — sem ele, um `--completo` que
+        // recusasse sempre passaria nelas — e do contador que o teste de V-1
+        // lê: aqui a consulta acontece, e uma vez so.
+        let bancada = Bancada::com_discos(crate::duplos::discos_desta_mesa());
+
+        executar(&bancada.contexto(), IMAGEM, true).expect("arma e reinicia");
+
+        let estado = bancada
+            .arquivos
+            .conteudo_de(r"R:\arca\estado.json")
+            .expect("estado gravado");
+        assert!(estado.contains("\"situacao\": \"armado\""), "{estado}");
+
+        let grub = bancada
+            .arquivos
+            .conteudo_de(r"R:\boot\grub\grub.cfg")
+            .expect("grub gravado");
+        assert!(grub.contains("ARCA_VERIFY"), "{grub}");
+
+        assert!(
+            bancada
+                .firmware
+                .executados()
+                .iter()
+                .any(|argumentos| argumentos.contains(&"bootsequence".to_string())),
+            "nao marcou o boot unico"
+        );
+        assert_eq!(bancada.sistema.reinicios(), 1);
+        assert_eq!(bancada.discos.consultas_aos_discos.get(), 1);
+    }
+
+    #[test]
+    fn sem_completo_os_discos_fisicos_nao_sao_consultados() {
+        // V-1 nao arma, entao C-6 e C-10 nao tem o que proteger — e a
+        // consulta ao WMI custa uns 2 s num comando que existe para ser a
+        // verificacao barata (WPC-53, AC 4).
+        let bancada = Bancada::com_discos(crate::duplos::discos_desta_mesa());
+
+        executar(&bancada.contexto(), IMAGEM, false).expect("V-1 aprova");
+
+        assert_eq!(bancada.discos.consultas_aos_discos.get(), 0);
     }
 }

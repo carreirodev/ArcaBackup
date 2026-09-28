@@ -435,6 +435,14 @@ pub fn volume(rotulo: &str, letra: char, total_bytes: u64, livre_bytes: u64) -> 
 pub struct DiscosDeMentira {
     pub volumes: Vec<Volume>,
     pub discos: Vec<DiscoFisico>,
+
+    /// Quantas vezes [`Discos::discos_fisicos`] foi chamado.
+    ///
+    /// Existe desde 28/09/2026 (WPC-53): a consulta custa uns 2 s de WMI, e o
+    /// `arca verify` sem `--completo` nao arma e nao a deve pagar. Sem
+    /// contador, "nao consultou" nao tem como ser dito por um teste — o duplo
+    /// responde igual se ninguem perguntar.
+    pub consultas_aos_discos: Cell<usize>,
 }
 
 impl DiscosDeMentira {
@@ -452,13 +460,14 @@ impl DiscosDeMentira {
                 volume("ARCABOOT", 'R', 1_673_527_296, 1_101_361_152),
             ],
             discos: discos_desta_mesa(),
+            ..DiscosDeMentira::default()
         }
     }
 
     pub fn com_volumes(volumes: Vec<Volume>) -> DiscosDeMentira {
         DiscosDeMentira {
             volumes,
-            discos: Vec::new(),
+            ..DiscosDeMentira::default()
         }
     }
 
@@ -515,6 +524,8 @@ impl Discos for DiscosDeMentira {
     }
 
     fn discos_fisicos(&self) -> Resultado<Vec<DiscoFisico>> {
+        self.consultas_aos_discos
+            .set(self.consultas_aos_discos.get() + 1);
         Ok(self.discos.clone())
     }
 }
