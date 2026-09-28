@@ -66,7 +66,7 @@ Proof: `O=$(cargo doc --no-deps 2>&1); printf '%s\n' "$O" | grep -qF '(lib doc) 
 - failure modes: existing - `Path::exists` e `Path::is_file` respondem `false` quando os metadados não se deixam ler, e o pré-voo trata isso como hoje, caindo em `NaoEstaLa`. A pergunta sobre o arquivo de dentro da pasta herda a mesma coerção. As duas são a WPC-68 (Out of scope)
 - idempotency and retry: n/a - a recusa não escreve nada, e repetir com a mesma pasta dá a mesma recusa
 - authorization: n/a - o processo já roda elevado (`requireAdministrator`), e a pergunta nova só lê os metadados do caminho que a pessoa deu
-- concurrency and ordering: existing - um arquivo que muda entre o pré-voo e o passo 7, inclusive virando pasta, cai no `certutil` do passo 7 de propósito (`src/comandos/prepare.rs:561-564`). C5 prova a metade "virando pasta"
+- concurrency and ordering: existing - um arquivo que muda entre o pré-voo e o passo 7, inclusive virando pasta, cai no `certutil` do passo 7 de propósito (`src/comandos/prepare.rs:562-566`, em `601c174`; era `:561-564` na base). C5 prova a metade "virando pasta"
 - data lifecycle: n/a - nada é criado, guardado nem apagado. `tests/b10_nada_e_apagado.rs:100-107` cobra os nomes dos métodos da porta, e `e_um_arquivo` não é verbo de exclusão
 - external-dependency failure: C3
 - state transitions: C4, C5

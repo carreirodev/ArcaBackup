@@ -1911,7 +1911,7 @@ apagado (PR-2)
 
 O `--iso` recebeu a pasta onde o pacote está, e não o pacote. Quando o `clonezilla-live-3.3.3-15-amd64.zip` está dentro dela, a mensagem é esta: passe ao `--iso` o caminho que ela dá, entre aspas. O ARCA não segue sozinho com o arquivo que achou — o `--iso` nomeia o arquivo, e quem o nomeia é você.
 
-Quando o pacote não está na pasta, a mensagem termina em `Esse arquivo nao esta nesta pasta`, e o que falta é achar o download. O pacote é o **zip**, e não o ISO.
+Quando o pacote não está na pasta, a mensagem diz `Esse arquivo nao esta nesta pasta`, e o que falta é achar o download. O pacote é o **zip**, e não o ISO.
 
 **Nada foi apagado**: esta recusa acontece no pré-voo, antes do passo 0.
 
