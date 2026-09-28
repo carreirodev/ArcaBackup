@@ -70,6 +70,8 @@ Os comentários deste projeto não dizem o que o código faz: dizem **por que el
 
 Issues vivem no Linear, no projeto `ArcaBackup` do time `WPC Solutions`, operados pelas ferramentas do MCP do Linear. Os pull requests continuam no GitHub, em `carreirodev/ArcaBackup`. Veja `docs/agents/issue-tracker.md`.
 
+**O que se acertou na conversa vai para o issue, no momento em que se acerta.** Um trabalho que começou num issue do Linear deixa nele o que foi combinado pelo caminho: as decisões e o porquê, o texto que o usuário aprovou (literal, e não resumido), as respostas às perguntas abertas e o que saiu do escopo. Não basta estar no código, na conversa ou num arquivo que o git não guarda: o `.tasks/` é ignorado, e a conversa não tem endereço. Um comentário que só aponte para um desses lugares também não basta. Decidido em 28/09/2026, quando o texto aprovado da recusa da WPC-64 só existia num `.tasks/`.
+
 ### Triage labels
 
 Os cinco papéis canônicos de triagem, cada um como um estado do Linear mais, quando o estado não basta, uma label. Veja `docs/agents/triage-labels.md`.
