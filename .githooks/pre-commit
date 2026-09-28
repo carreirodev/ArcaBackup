@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Formatação, clippy e a suíte, antes de deixar commitar.
+# Formatação, clippy, documentação e a suíte, antes de deixar commitar.
 #
 # Fica em `.githooks/` e não em `.git/hooks/` de propósito: assim ele é
 # versionado, e uma máquina nova o ganha com o `git clone`. O que falta é uma
@@ -13,7 +13,7 @@
 
 set -e
 
-echo "pre-commit: formatação, clippy e a suíte"
+echo "pre-commit: formatação, clippy, documentação e a suíte"
 
 if ! command -v cargo >/dev/null 2>&1; then
   echo "pre-commit: sem cargo no PATH — pulando. O workflow semanal ainda pega." >&2
@@ -43,6 +43,13 @@ passo "\`cargo fmt --all --check\` (rode \`cargo fmt --all\`)" \
 
 passo "\`cargo clippy\`" \
   cargo clippy --all-targets --quiet -- -D warnings
+
+# Um link da documentação para item privado, ou que não resolve, não quebra
+# nada — e por isso se acumulava sem ninguém ver: eram 13 em 28/09/2026
+# (WPC-65). `cargo rustdoc`, e não `cargo doc`, porque é ele que aceita o
+# `-- -D warnings`, na mesma forma do clippy acima.
+passo "\`cargo rustdoc\` (os links da documentação)" \
+  cargo rustdoc --lib --quiet -- -D warnings
 
 # `--no-fail-fast` para quem lê a saída ver todos os alvos que falharam, e não
 # só o primeiro — um commit reprovado por dois motivos deve mostrar os dois.

@@ -17,6 +17,7 @@ cargo test montar_backup                    # todo teste cujo nome contenha isso
 cargo test -- --nocapture                   # mostrando o que os testes imprimem
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
+cargo rustdoc --lib -- -D warnings
 cargo run --example <nome>                  # os diagnósticos de `examples/`
 cargo doc --open                            # onde as razões estão
 ```
@@ -27,7 +28,7 @@ cargo doc --open                            # onde as razões estão
 git config core.hooksPath .githooks
 ```
 
-O hook de `.githooks/pre-commit` roda formatação, clippy e a suíte antes de deixar commitar; o workflow `semanal.yml` roda os mesmos três num Windows que não é esta mesa.
+O hook de `.githooks/pre-commit` roda formatação, clippy, documentação e a suíte antes de deixar commitar; o workflow `semanal.yml` roda os mesmos passos num Windows que não é esta mesa.
 
 Duas consequências do `Cargo.toml` + `build.rs` que mudam onde o código vai:
 

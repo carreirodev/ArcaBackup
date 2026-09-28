@@ -1,7 +1,8 @@
 # A suíte inteira, uma vez por semana, num Windows que não é esta mesa.
 #
 # Por que semanal, e não a cada push: o guarda-corpo do dia a dia é o hook de
-# `.githooks/pre-commit`, que roda os mesmos três antes de deixar commitar.
+# `.githooks/pre-commit`, que roda os mesmos passos — formatação, clippy,
+# documentação e a suíte — antes de deixar commitar.
 # Este workflow existe para as coisas que o hook não alcança — um commit feito
 # de outra máquina, um `--no-verify`, uma dependência que mudou debaixo do
 # `Cargo.lock`, ou um lint novo que veio com o Rust da semana.
@@ -37,6 +38,9 @@ jobs:
 
       - name: Clippy, com aviso valendo erro
         run: cargo clippy --all-targets -- -D warnings
+
+      - name: Documentação, com aviso valendo erro
+        run: cargo rustdoc --lib -- -D warnings
 
       # Os testes que leem o hardware desta mesa — o `grub.cfg` do dispositivo,
       # o `bcdedit` da máquina — sabem pular quando o oráculo não está lá, e

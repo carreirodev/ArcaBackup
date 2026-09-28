@@ -2149,12 +2149,15 @@ cargo test -- --nocapture                 # mostrando o que os testes imprimem
 
 ### Os dois guarda-corpos, e o que cada um alcança
 
-`cargo fmt --all --check` e `cargo clippy --all-targets -- -D warnings` passam
-limpos, e passam a ser exigíveis. Duas coisas cobram isso:
+`cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings` e
+`cargo rustdoc --lib -- -D warnings` passam limpos, e passam a ser exigíveis.
+O `cargo rustdoc` entrou em 28/09/2026: um link da documentação para item
+privado, ou que não resolve, não quebra nada, e por isso eles se acumulavam —
+eram 13 quando se contou. Duas coisas cobram isso:
 
-**O hook de pre-commit**, que roda os três — formatação, clippy e a suíte —
-antes de deixar commitar. Ele vive em `.githooks/`, versionado, para uma cópia
-nova do repositório já vir com ele. Falta uma linha, **uma vez por cópia**:
+**O hook de pre-commit**, que roda esses comandos e a suíte antes de deixar
+commitar. Ele vive em `.githooks/`, versionado, para uma cópia nova do
+repositório já vir com ele. Falta uma linha, **uma vez por cópia**:
 
 ```powershell
 git config core.hooksPath .githooks
@@ -2164,7 +2167,7 @@ Ele passa calado e só fala quando reprova. Numa emergência, `git commit
 --no-verify` o pula — pular é legítimo, e é para isso que existe o segundo.
 
 **O workflow semanal** (`.github/workflows/semanal.yml`), que roda os mesmos
-três num Windows que não é esta mesa, toda segunda às 06:00 UTC. Ele alcança o
+passos num Windows que não é esta mesa, toda segunda às 06:00 UTC. Ele alcança o
 que o hook não alcança: um commit feito de outra máquina, um `--no-verify`, uma
 dependência que mudou debaixo do `Cargo.lock`, ou um lint novo que veio com o
 Rust da semana. Dá para rodá-lo à mão pelo `workflow_dispatch`, sem esperar

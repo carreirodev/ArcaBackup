@@ -16,7 +16,7 @@ Quando isto for entregue, o `cargo doc` termina sem aviso. Um commit que traga u
 Reusa o `passo` do `.githooks/pre-commit` e a forma que o clippy já tem nos dois guarda-corpos, `-- -D warnings` no fim da chamada. Não cria configuração nova, nem no `Cargo.toml` nem em `.cargo/config.toml`.
 
 1. a documentação de 8 arquivos de `src/` (exists) - cada um dos 13 links vira o nome do item em crase, no mesmo lugar do texto
-2. `git commit` -> `.githooks/pre-commit` (exists) - um `passo` novo roda `cargo rustdoc --lib -- -D warnings`. Um aviso da documentação vira erro, e o `passo` reprova o commit com a saída do `rustdoc`
+2. `git commit` -> `.githooks/pre-commit` (exists) - um `passo` novo, entre o clippy e a suíte, roda `cargo rustdoc --lib --quiet -- -D warnings`. O `--quiet` é o mesmo do clippy ao lado. Um aviso da documentação vira erro, e o `passo` reprova o commit com a saída do `rustdoc`
 3. segunda-feira, 06:00 UTC -> `.github/workflows/semanal.yml` (exists) - um passo novo roda o mesmo comando, e o job reprova no GitHub
 4. out: `README.md` §15, `CLAUDE.md` e os cabeçalhos do hook e do workflow citam a documentação entre o que os dois guarda-corpos cobram, sem contar os passos
 
