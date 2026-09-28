@@ -1125,7 +1125,7 @@ Sem `--completo`, o comando **não desarma** — desarmar é obrigação dos com
 
 Os dois caminhos recusam **antes** de conferir ou armar qualquer coisa: imagem inexistente, pasta que é resíduo, ou `MD5SUMS` que não serve.
 
-O `--completo` recusa ainda, depois do desarme e **antes** da confirmação digitada, as duas coisas que todo comando que arma recusa sobre o **dispositivo**: o disco do `ARCABOOT` que o Windows classifica como mídia removível (**C-6**), e o `ARCAVAULT` e o `ARCABOOT` em discos físicos diferentes (**C-10**). Ninguém digita o nome inteiro de uma imagem para ouvir um não que o WMI já sabia dar. Sem `--completo` o comando não arma, e não faz essa consulta.
+O `--completo` recusa ainda, depois do desarme e **antes** da confirmação digitada, as duas coisas que todo comando que arma recusa sobre o **dispositivo**: o disco do `ARCABOOT` que o Windows classifica como mídia removível (**C-6**), e o `ARCAVAULT` e o `ARCABOOT` em discos físicos diferentes (**C-10**) — também no `--dry-run`, que não desarma mas recusa igual. Ninguém digita o nome inteiro de uma imagem para ouvir um não que o WMI já sabia dar. Sem `--completo` o comando não arma, e não faz essa consulta.
 
 ---
 

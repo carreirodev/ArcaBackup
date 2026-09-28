@@ -850,6 +850,14 @@ mod testes {
             }
         }
 
+        /// O mesmo contexto, com `--dry-run`.
+        fn ensaio(&self) -> Contexto<'_> {
+            Contexto {
+                dry_run: true,
+                ..self.contexto()
+            }
+        }
+
         /// O que "recusou sem armar nada" quer dizer, uma coisa por linha.
         ///
         /// O desarmar de C-1 escreve no firmware e tem de escrever: ele vem
@@ -888,13 +896,9 @@ mod testes {
         }
     }
 
-    #[test]
-    fn o_completo_recusa_o_dispositivo_partido_antes_da_confirmacao() {
-        // C-10, que a E11 nasceu sem (WPC-53, 28/09/2026). Com o `ARCAVAULT`
-        // num disco e o `ARCABOOT` noutro, cada rotulo aparece uma vez e
-        // `dispositivo::encontrar` passa. O `estado.json` iria para um e o
-        // parecer do `ocs-chkimg` para o outro, e a colheita procuraria o
-        // desfecho no lugar errado.
+    /// Dois dispositivos meio prontos: o `ARCAVAULT` (`E:`) no disco desta
+    /// mesa, e o `ARCABOOT` (`R:`) sozinho num outro.
+    fn discos_partidos() -> Vec<DiscoFisico> {
         let mut discos = crate::duplos::discos_desta_mesa();
         discos[1].letras = vec!['E'];
         discos.push(DiscoFisico {
@@ -906,7 +910,17 @@ mod testes {
             tipo_de_midia: TipoDeMidia::DiscoExterno,
             letras: vec!['R'],
         });
-        let bancada = Bancada::com_discos(discos);
+        discos
+    }
+
+    #[test]
+    fn o_completo_recusa_o_dispositivo_partido_antes_da_confirmacao() {
+        // C-10, que a E11 nasceu sem (WPC-53, 28/09/2026). Com o `ARCAVAULT`
+        // num disco e o `ARCABOOT` noutro, cada rotulo aparece uma vez e
+        // `dispositivo::encontrar` passa. O `estado.json` iria para um e o
+        // parecer do `ocs-chkimg` para o outro, e a colheita procuraria o
+        // desfecho no lugar errado.
+        let bancada = Bancada::com_discos(discos_partidos());
 
         let erro = executar(&bancada.contexto(), IMAGEM, true).unwrap_err();
 
@@ -937,6 +951,35 @@ mod testes {
         assert!(
             matches!(erro, Erro::PreVooRecusou(RecusaDoPreVoo::MidiaRemovivel)),
             "veio {erro}"
+        );
+        bancada.nada_foi_armado();
+    }
+
+    #[test]
+    fn o_ensaio_do_completo_tambem_recusa_o_dispositivo_partido() {
+        // O `--dry-run` mostra o que o comando faria, e com o dispositivo
+        // partido ele recusaria. Um ensaio que imprimisse a receita diria que
+        // a verificacao ia armar, e ela nao ia. Decidido em 28/09/2026
+        // (WPC-53), igual ao `arca backup` e ao `arca restore`.
+        let bancada = Bancada::com_discos(discos_partidos());
+
+        let erro = executar(&bancada.ensaio(), IMAGEM, true).unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PreVooRecusou(RecusaDoPreVoo::DispositivoPartido {
+                    vault: 'E',
+                    boot: 'R'
+                })
+            ),
+            "veio {erro}"
+        );
+        // O ensaio nao desarma: nem o `/deletevalue` de C-1 chega ao firmware.
+        assert!(
+            bancada.firmware.executados().is_empty(),
+            "o ensaio escreveu no firmware: {:?}",
+            bancada.firmware.executados()
         );
         bancada.nada_foi_armado();
     }
