@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 5,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "spec_precision_gap::a documentation check that claims wording or ordering must grep for that wording not only for the rule identifiers it cites",
+      "text": "A documentation check that claims wording or ordering must grep for that wording, not only for the rule identifiers it cites",
+      "signal": "spec_precision_gap",
+      "scope": "readme",
+      "status": "candidate",
+      "features": [
+        "wpc-53"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "verification.md finding 1 - C8/C9 README proofs grep only for rule ids (readme)"
+      ],
+      "created": "2026-09-28T10:59:01Z",
+      "last_seen": "2026-09-28T10:59:01Z"
+    },
+    {
+      "id": "L-002",
+      "key": "spec_precision_gap::scope a documentation grep to the smallest block that holds the claimed text so text added nearby in the same change cannot satisfy it",
+      "text": "Scope a documentation grep to the smallest block that holds the claimed text, so text added nearby in the same change cannot satisfy it",
+      "signal": "spec_precision_gap",
+      "scope": "readme",
+      "status": "candidate",
+      "features": [
+        "arcaboot-com-nome"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "verification.md finding 1 - C20 sed range now spans the new naming section (README.md:394-396) (readme)"
+      ],
+      "created": "2026-09-28T12:32:54Z",
+      "last_seen": "2026-09-28T12:32:54Z"
+    },
+    {
+      "id": "L-003",
+      "key": "spec_precision_gap::a document block presented as a command s exact output must be pinned by a test that compares the whole text or labelled as unpinned",
+      "text": "A document block presented as a command's exact output must be pinned by a test that compares the whole text, or labelled as unpinned",
+      "signal": "spec_precision_gap",
+      "scope": "readme",
+      "status": "candidate",
+      "features": [
+        "arcaboot-com-nome"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "verification.md finding 2 - README.md:392 presented a refusal block as test-required text, test pins two substrings (src/dispositivo.rs:526-527) (readme)"
+      ],
+      "created": "2026-09-28T12:32:55Z",
+      "last_seen": "2026-09-28T12:32:55Z"
+    },
+    {
+      "id": "L-004",
+      "key": "spec_precision_gap::a documentation check that removes stale wording must also assert the wording that replaces it",
+      "text": "A documentation check that removes stale wording must also assert the wording that replaces it",
+      "signal": "spec_precision_gap",
+      "scope": "readme",
+      "status": "candidate",
+      "features": [
+        "arcaboot-com-nome"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "verification.md finding 3 - C17 proves the old C-10 wording is gone, not that README.md:812 and :1180 state the new one (readme)"
+      ],
+      "created": "2026-09-28T12:32:55Z",
+      "last_seen": "2026-09-28T12:32:55Z"
+    }
+  ]
+}
