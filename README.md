@@ -389,7 +389,7 @@ S: ARCABOOT. Desconecte os demais e rode de novo. Se voce acabou de preparar um
 dispositivo, sao os dois — o novo e o de antes
 ```
 
-*(o texto que o teste `a_recusa_por_dois_arcavault_nomeia_os_volumes_de_boot_quando_ha_nome` exige, quebrado em linhas; ainda sem captura em hardware)*
+*(o texto que `src/erro.rs` monta hoje, quebrado em linhas; ainda sem captura em hardware)*
 
 ### Dar nome a um dispositivo
 
