@@ -91,7 +91,7 @@
 
 use crate::app::Contexto;
 use crate::confirmacao;
-use crate::dispositivo::{ARCABOOT, ARCAVAULT};
+use crate::dispositivo::{self, ARCABOOT, ARCAVAULT};
 use crate::erro::{Erro, Resultado};
 use crate::firmware::{self, Alvo};
 use crate::formato::{linha, tamanho};
@@ -1165,17 +1165,19 @@ pub fn montar_o_plano(
 /// Pelos **dois** rótulos, e não por um: um disco com só o `ARCAVAULT` é um
 /// dispositivo partido ou outra coisa qualquer que alguém rotulou assim, e o
 /// aviso fala de perder imagens — que só faz sentido quando o par está lá.
+///
+/// O boot se reconhece pelo mesmo casamento do `dispositivo::encontrar`, e
+/// não pela constante: desde C-16 (27/09/2026) ele pode se chamar
+/// `ARCA-<texto>`, e um dispositivo nomeado perde as imagens do mesmo jeito.
 fn e_um_dispositivo_arca(disco: &DiscoParaPreparar) -> bool {
-    let tem = |procurado: &str| {
-        disco.particoes.iter().any(|particao| {
-            particao
-                .rotulo
-                .as_deref()
-                .is_some_and(|rotulo| rotulo.eq_ignore_ascii_case(procurado))
-        })
+    let tem = |casa: &dyn Fn(&str) -> bool| {
+        disco
+            .particoes
+            .iter()
+            .any(|particao| particao.rotulo.as_deref().is_some_and(casa))
     };
 
-    tem(ARCAVAULT) && tem(ARCABOOT)
+    tem(&|rotulo| rotulo.eq_ignore_ascii_case(ARCAVAULT)) && tem(&dispositivo::e_rotulo_de_boot)
 }
 
 /// O que o `--dry-run` diz no lugar da confirmação.
@@ -1736,6 +1738,24 @@ mod testes {
         assert!(saida.contains("JA E UM DISPOSITIVO ARCA"), "{saida}");
         assert!(saida.contains("AS IMAGENS"), "{saida}");
         assert!(saida.contains("B-10"), "{saida}");
+    }
+
+    #[test]
+    fn preparar_por_cima_de_um_dispositivo_nomeado_avisa_das_imagens() {
+        // C-16: um dispositivo com o `ARCABOOT` renomeado continua sendo um
+        // dispositivo, e as imagens dele se perdem do mesmo jeito.
+        let mut discos = discos_para_preparar_desta_mesa();
+        discos[2].particoes[1].rotulo = Some("ARCA-CASA".to_string());
+        let dispositivo = discos.iter().find(|disco| disco.indice == 2);
+        let preparacao = preparacao::julgar(2, dispositivo, &[0, 1, 2], Some('C'))
+            .expect("ele passa as defesas");
+
+        let saida = montar_o_plano(&preparacao, None, &sem_entrada());
+        assert!(
+            saida.contains("ESTE DISCO JA E UM DISPOSITIVO ARCA"),
+            "{saida}"
+        );
+        assert!(saida.contains("AS IMAGENS"), "{saida}");
     }
 
     #[test]

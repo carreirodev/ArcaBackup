@@ -23,7 +23,8 @@ pub enum TipoDeMidia {
 /// Uma particao montada, vista do lado Windows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Volume {
-    /// O rotulo — `ARCABOOT` ou `ARCAVAULT` num dispositivo ARCA.
+    /// O rotulo — num dispositivo ARCA, `ARCAVAULT`, e `ARCABOOT` ou
+    /// `ARCA-<texto>` (C-16).
     pub rotulo: Option<String>,
     /// A letra atribuida pelo Windows, quando ha uma.
     pub letra: Option<char>,

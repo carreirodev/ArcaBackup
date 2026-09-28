@@ -1333,6 +1333,25 @@ mod testes {
         );
     }
 
+    #[test]
+    fn nenhuma_receita_cita_o_rotulo_do_arcaboot() {
+        // C-16 depende disto: o rotulo do `ARCABOOT` pode levar um nome porque
+        // nenhuma receita o cita — o destino e o `ARCAVAULT`, por LABEL, e o
+        // GRUB acha a propria raiz por arquivo (ADR-0027).
+        for receita in [backup(), restauracao(), verificacao(), sondagem()] {
+            let parametros = receita.parametros_do_grub();
+            assert!(
+                parametros.contains("dev:///LABEL=ARCAVAULT"),
+                "{parametros}"
+            );
+            assert_eq!(parametros.matches("LABEL=").count(), 1, "{parametros}");
+            assert!(
+                !parametros.to_ascii_uppercase().contains("ARCABOOT"),
+                "{parametros}"
+            );
+        }
+    }
+
     // ───────────────────────── codigo novo ─────────────────────────
     //
     // Daqui para baixo nao havia original. Nenhuma receita real escreveu

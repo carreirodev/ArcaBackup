@@ -1,9 +1,11 @@
 //! Achar o dispositivo conectado.
 //!
 //! Pelo rotulo, sempre — nunca por letra, `sda` ou numero de serie (B-1,
-//! S-3). Os rotulos sao os mesmos em todo dispositivo ARCA, e e isso que
+//! S-3). O `ARCAVAULT` se chama assim em todo dispositivo ARCA, e e isso que
 //! torna a receita reproduzivel e os dispositivos intercambiaveis (§4 do
-//! PRD).
+//! PRD). O `ARCABOOT` pode levar um nome, `ARCA-<texto>`, desde 27/09/2026
+//! (C-16, ADR-0027): a receita nao o cita, e sem nome dois dispositivos
+//! saiam iguais no Explorer.
 //!
 //! A letra que sai daqui serve para montar caminho de arquivo do lado
 //! Windows, e so. Ela muda de uma conexao para outra; o rotulo, nao.
@@ -17,7 +19,18 @@ pub const ARCAVAULT: &str = "ARCAVAULT";
 
 /// A particao FAT32 de onde a maquina boota, com o Clonezilla e o estado do
 /// job.
+///
+/// E o rotulo que o `arca prepare` grava, e o nome do papel da particao. O
+/// rotulo real pode ser outro, `ARCA-<texto>` — quem decide se um rotulo e de
+/// boot e [`e_rotulo_de_boot`], e nao a comparacao com esta constante.
 pub const ARCABOOT: &str = "ARCABOOT";
+
+/// O comeco do rotulo de um `ARCABOOT` com nome (C-16).
+///
+/// Com o hifen, e o hifen e o que separa: o prefixo `ARCA` sozinho casaria o
+/// `ARCAVAULT`, e so o sistema de arquivos distinguiria as duas particoes. O
+/// rotulo FAT32 tem 11 caracteres, e este prefixo ocupa 5 — o nome tem ate 6.
+pub const PREFIXO_DO_NOME: &str = "ARCA-";
 
 /// A pasta de logs do dispositivo, dentro do `ARCAVAULT` (§4 do PRD).
 ///
@@ -55,10 +68,12 @@ pub struct Dispositivo {
     ///
     /// # Nao esta provado que este `ARCABOOT` e do mesmo dispositivo
     ///
-    /// A recusa de C-10 pega rotulo **repetido**, e nao rotulo orfao. Com
+    /// A recusa de C-10 pega volume **a mais**, e nao volume orfao. Com
     /// dois dispositivos meio prontos conectados — um mostrando so o
-    /// `ARCAVAULT`, o outro so o `ARCABOOT` — cada rotulo aparece uma vez, a
+    /// `ARCAVAULT`, o outro so o `ARCABOOT` — cada papel aparece uma vez, a
     /// contagem passa, e este campo traz a particao do dispositivo errado.
+    /// Desde C-16 (27/09/2026) o volume errado pode ser tambem um pendrive
+    /// qualquer rotulado `ARCA-...`.
     ///
     /// Para `arca list` isso e inofensivo, porque ele nao olha aqui. Para
     /// quem arma, nao seria: a receita e o `estado.json` iriam para um
@@ -96,14 +111,20 @@ impl Dispositivo {
 
 /// O dispositivo conectado, ou o motivo de nao haver um.
 ///
-/// Dois `ARCAVAULT` ou dois `ARCABOOT` sao recusa dura (C-10): a receita
-/// resolve o destino por LABEL, e com o rotulo repetido nao ha o que escolher
-/// — o Clonezilla montaria um dos dois, e nao ha como saber qual.
+/// Dois `ARCAVAULT` sao recusa dura (C-10): a receita resolve o destino por
+/// LABEL, e com o rotulo repetido nao ha o que escolher — o Clonezilla
+/// montaria um dos dois, e nao ha como saber qual. Dois volumes de boot
+/// tambem, com rotulos iguais ou diferentes (`ARCABOOT` e `ARCA-<texto>`,
+/// C-16): a receita e o estado do job teriam dois lugares para ir.
 pub fn encontrar(discos: &dyn Discos) -> Resultado<Dispositivo> {
     let volumes = discos.volumes()?;
 
     let vaults = com_rotulo(&volumes, ARCAVAULT);
-    let boots = com_rotulo(&volumes, ARCABOOT);
+    let boots: Vec<Volume> = volumes
+        .iter()
+        .filter(|volume| volume.rotulo.as_deref().is_some_and(e_rotulo_de_boot))
+        .cloned()
+        .collect();
 
     // A recusa **nomeia as letras**, e isso mudou na E10.
     //
@@ -134,6 +155,24 @@ pub fn encontrar(discos: &dyn Discos) -> Resultado<Dispositivo> {
         vault,
         boot: boots.into_iter().next(),
     })
+}
+
+/// Se um rotulo e o de um `ARCABOOT`: `ARCABOOT`, ou comecando com `ARCA-`
+/// (C-16). Sem diferenciar caixa, como o resto do ARCA compara rotulo.
+///
+/// E o casamento que `encontrar`, a contagem de C-10 e o reconhecimento de
+/// dispositivo no `arca prepare` usam — um so, para os tres nao divergirem.
+///
+/// O prefixo e comparado com `str::get`, e nunca com `&rotulo[..5]`: num
+/// rotulo como `ARCAÉ` o `É` ocupa o quinto e o sexto byte, e num como `ARC`
+/// o quinto byte nem existe. A fatia entraria em panico nos dois, e todo
+/// volume desta maquina passa por aqui — um pendrive com acento no nome
+/// derrubaria qualquer comando. `get` responde `None`, e `None` nao e boot.
+pub fn e_rotulo_de_boot(rotulo: &str) -> bool {
+    rotulo.eq_ignore_ascii_case(ARCABOOT)
+        || rotulo
+            .get(..PREFIXO_DO_NOME.len())
+            .is_some_and(|comeco| comeco.eq_ignore_ascii_case(PREFIXO_DO_NOME))
 }
 
 /// Os volumes que carregam um rotulo, sem diferenciar caixa.
@@ -293,6 +332,92 @@ mod testes {
         match encontrar(&discos).unwrap_err() {
             Erro::DispositivosDemais { rotulo, .. } => assert_eq!(rotulo, ARCABOOT),
             outro => panic!("esperava recusa por ambiguidade, veio {outro}"),
+        }
+    }
+
+    #[test]
+    fn o_arcaboot_renomeado_e_o_boot_do_dispositivo() {
+        // C-16: quem tem dois dispositivos renomeia o `ARCABOOT` de cada um no
+        // Explorer, e o renomeado continua sendo onde a receita e o estado do
+        // job moram (ADR-0027).
+        let discos = DiscosDeMentira::com_volumes(vec![
+            volume("Windows", 'C', 1000, 500),
+            volume(ARCAVAULT, 'E', 1000, 500),
+            volume("ARCA-CASA", 'R', 1000, 500),
+        ]);
+
+        let dispositivo = encontrar(&discos).expect("o dispositivo esta conectado");
+        assert_eq!(dispositivo.boot, Some(volume("ARCA-CASA", 'R', 1000, 500)));
+        assert_eq!(
+            dispositivo.caminho_do_grub().unwrap(),
+            PathBuf::from(r"R:\boot\grub\grub.cfg")
+        );
+        assert_eq!(
+            dispositivo.caminho_do_estado().unwrap(),
+            PathBuf::from(r"R:\arca\estado.json")
+        );
+    }
+
+    #[test]
+    fn o_rotulo_de_boot_casa_arcaboot_ou_arca_hifen_em_qualquer_caixa() {
+        // `ARCA-` sem texto e a forma, e conta (suposicao confirmada em
+        // 28/09/2026): recusa-lo pediria uma mensagem nova para um caso sem
+        // uso.
+        for rotulo in ["ARCABOOT", "arcaboot", "ARCA-CASA", "arca-Casa", "ARCA-"] {
+            let discos = DiscosDeMentira::com_volumes(vec![
+                volume(ARCAVAULT, 'E', 1000, 500),
+                volume(rotulo, 'R', 1000, 500),
+            ]);
+
+            let boot = encontrar(&discos).unwrap().boot;
+            assert_eq!(
+                boot.as_ref().and_then(|boot| boot.letra),
+                Some('R'),
+                "{rotulo}"
+            );
+            assert_eq!(boot.and_then(|boot| boot.rotulo).as_deref(), Some(rotulo));
+        }
+    }
+
+    #[test]
+    fn o_que_nao_tem_a_forma_fica_fora_do_arcaboot_sem_panico() {
+        // O hifen e o que separa: sem ele, `ARCACASA` — e o proprio
+        // `ARCAVAULT` — casariam o prefixo. E os dois ultimos sao os que
+        // derrubariam uma fatia de bytes: `ARC` e mais curto que o prefixo, e
+        // em `ARCAÉ` o `É` ocupa o quinto e o sexto byte, entao `&rotulo[..5]`
+        // pararia entre os dois. `ÉRCA-X` nao derrubaria — o quinto byte ali e
+        // fronteira —, e esta aqui porque e o exemplo que a AC 5 nomeia.
+        for rotulo in ["ARCACASA", "ARC", "ÉRCA-X", "ARCAÉ"] {
+            let discos = DiscosDeMentira::com_volumes(vec![
+                volume(ARCAVAULT, 'E', 1000, 500),
+                volume(rotulo, 'R', 1000, 500),
+            ]);
+
+            assert!(encontrar(&discos).unwrap().boot.is_none(), "{rotulo}");
+        }
+    }
+
+    #[test]
+    fn dois_volumes_de_boot_sao_recusa_dura_com_rotulos_iguais_ou_diferentes() {
+        // C-10 conta os volumes de boot pela forma, e nao por um rotulo so:
+        // com dois, a receita e o estado do job teriam dois lugares para ir.
+        for (primeiro, segundo) in [
+            ("ARCABOOT", "ARCA-CASA"),
+            ("ARCA-CASA", "ARCA-ESCRIT"),
+            ("ARCA-CASA", "ARCA-CASA"),
+        ] {
+            let discos = DiscosDeMentira::com_volumes(vec![
+                volume(ARCAVAULT, 'E', 1000, 500),
+                volume(primeiro, 'R', 1000, 500),
+                volume(segundo, 'S', 1000, 500),
+            ]);
+
+            match encontrar(&discos).unwrap_err() {
+                Erro::DispositivosDemais { quantos, .. } => {
+                    assert_eq!(quantos, 2, "{primeiro} + {segundo}");
+                }
+                outro => panic!("{primeiro} + {segundo}: esperava C-10, veio {outro}"),
+            }
         }
     }
 
