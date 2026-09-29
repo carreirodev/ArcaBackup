@@ -1723,15 +1723,55 @@ mod testes {
         // `--iso` não há arquivo ainda, e antecipar o download significaria
         // baixar meio giga para um destino que só existe depois do passo 5.
         //
-        // O que se cobra aqui é que a ausência de `--iso` não invente uma
-        // conferência: o menu tem de aparecer como sempre apareceu.
-        let bancada = Bancada::nova("sem-iso", ConsoleDeMentira::mudo());
+        // Por isso o caminho do pacote é montado como o passo 6 o monta, com a
+        // letra do `ARCAVAULT` que o particionamento devolveu. Um `resumir`
+        // antes do passo 5 não teria como apontar para ele, e a igualdade
+        // exata de `resumidos` pega qualquer um a mais.
+        //
+        // Até 29/09/2026 (WPC-66) este teste rodava em `--dry-run`, que para
+        // no passo 2, antes dos únicos passos que resumem pacote. Ele passava
+        // sem dizer nada sobre a ordem.
+        let no_vault = PathBuf::from(format!(
+            "{}:\\",
+            o_que_o_particionamento_deixou().vault.letra
+        ))
+        .join(pacote::ARQUIVO);
 
-        let _ = executar(&bancada.contexto(true), Some(1), None);
+        let mut bancada = Bancada::nova(
+            "sem-iso",
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        );
+        bancada.sistema =
+            SistemaDeMentira::novo().com_resumo(&no_vault.to_string_lossy(), pacote::SHA256);
 
+        // O resultado é descartado pelo mesmo motivo do teste acima: o comando
+        // morre no `grub.cfg` que o `bsdtar` de mentira não extraiu. A
+        // extração registrada é a prova de que ele atravessou os passos 6 e 7,
+        // e é ela que derruba este teste se o comando morrer antes deles.
+        let _ = executar(&bancada.contexto(false), Some(1), None);
+
+        assert_eq!(
+            bancada
+                .sistema
+                .extraidos
+                .borrow()
+                .first()
+                .map(|(de, _)| de.clone()),
+            Some(no_vault.clone()),
+            "o pacote baixado nao chegou a ser extraido"
+        );
         assert!(
-            bancada.sistema.resumidos().is_empty(),
-            "conferiu um pacote que ninguem apontou"
+            bancada.particionador.particionou(),
+            "sem `--iso` o comando nao chegou a particionar"
+        );
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![pacote::URL.to_string()]
+        );
+        assert_eq!(
+            bancada.sistema.resumidos(),
+            vec![no_vault],
+            "sem `--iso` o pacote tem de ser conferido uma vez so, depois do ponto sem volta"
         );
     }
 
