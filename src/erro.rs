@@ -482,6 +482,20 @@ impl Erro {
         )
     }
 
+    /// O que o sistema respondeu, sem a operacao e o caminho que a mensagem
+    /// inteira de [`Erro::Arquivo`] traz.
+    ///
+    /// Serve as telas que ja nomeiam o caminho e poem o motivo entre
+    /// parenteses: a linha do `arca verify` e a recusa do pre-voo do `arca
+    /// prepare` que dizem "nao deu para saber se ... esta la" (WPC-68). Repetir
+    /// o caminho dentro dos parenteses so alongaria uma linha que ja e longa.
+    pub fn motivo(&self) -> String {
+        match self {
+            Erro::Arquivo { origem, .. } => origem.to_string(),
+            outro => outro.to_string(),
+        }
+    }
+
     /// Codigo de saida do processo. `2` para uso incorreto e recusa de
     /// elevacao — o mesmo que o clap usa —, `1` para o resto.
     pub fn codigo_de_saida(&self) -> u8 {

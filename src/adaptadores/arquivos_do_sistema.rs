@@ -1,9 +1,10 @@
 //! O sistema de arquivos de verdade, por caminho — nunca por dispositivo.
 
 use crate::erro::{Resultado, erro_de_arquivo};
-use crate::portas::{Arquivos, Entrada};
+use crate::portas::{Arquivos, Entrada, OQueHa};
 use chrono::{DateTime, Local};
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -25,8 +26,16 @@ impl Arquivos for ArquivosDoSistema {
         caminho.exists()
     }
 
-    fn e_um_arquivo(&self, caminho: &Path) -> bool {
-        caminho.is_file()
+    fn o_que_ha(&self, caminho: &Path) -> Resultado<OQueHa> {
+        // `fs::metadata`, e nao `Path::is_file`: o `is_file` transforma
+        // qualquer erro dos metadados em `false`, e ate 29/09/2026 (WPC-68)
+        // era esse `false` que virava "nao esta la".
+        match fs::metadata(caminho) {
+            Ok(metadados) if metadados.is_dir() => Ok(OQueHa::Pasta),
+            Ok(_) => Ok(OQueHa::Arquivo),
+            Err(origem) if nada_pode_estar_ali(&origem) => Ok(OQueHa::Nada),
+            Err(origem) => Err(erro_de_arquivo("leitura de metadados", caminho)(origem)),
+        }
     }
 
     fn ler_texto(&self, caminho: &Path) -> Resultado<String> {
@@ -114,6 +123,32 @@ impl Arquivos for ArquivosDoSistema {
     }
 }
 
+/// Se o erro dos metadados e o Windows respondendo que nada existe ali, e nao
+/// deixando de responder.
+///
+/// `NotFound` cobre o arquivo ausente (2) e o caminho ausente (3), que e
+/// tambem o que volta para um drive que nao existe e para um arquivo no meio
+/// do caminho. O `ERROR_INVALID_NAME` (123) entra porque num nome invalido
+/// nada pode existir, e porque e nele que cai um erro de digitacao comum: o
+/// Windows PowerShell 5.1 entrega `--iso "C:\Users\Ana Paula\Downloads\"`
+/// como `C:\Users\Ana Paula\Downloads"`, com a aspa no nome. Tudo medido em
+/// 29/09/2026. Sem o 123, essa aspa perderia a recusa `NaoEstaLa`, que fala
+/// justamente de aspas.
+///
+/// Compara o codigo, e nao `ErrorKind::InvalidFilename`, porque essa variante
+/// e do Rust 1.87 e o `rust-version` do projeto e 1.85.
+#[cfg(windows)]
+fn nada_pode_estar_ali(erro: &io::Error) -> bool {
+    use windows_sys::Win32::Foundation::ERROR_INVALID_NAME;
+
+    erro.kind() == io::ErrorKind::NotFound || erro.raw_os_error() == Some(ERROR_INVALID_NAME as i32)
+}
+
+#[cfg(not(windows))]
+fn nada_pode_estar_ali(erro: &io::Error) -> bool {
+    erro.kind() == io::ErrorKind::NotFound
+}
+
 /// O diretorio ao qual perguntar pelo espaco livre.
 ///
 /// O `GetDiskFreeSpaceExW` exige um **diretorio**: com caminho de arquivo ele
@@ -137,7 +172,6 @@ fn diretorio_para_consulta(caminho: &Path) -> &Path {
 
 #[cfg(windows)]
 fn espaco_livre_do_volume(caminho: &Path) -> Resultado<u64> {
-    use std::io;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
     let diretorio = diretorio_para_consulta(caminho);
@@ -229,24 +263,72 @@ mod testes {
         // pergunta, e os testes dele rodam sobre o duplo, que responde o que
         // lhe ensinaram. Aqui quem responde e o Windows: o `existe` diz sim
         // para a pasta — foi por isso que ela chegava ao `certutil` ate
-        // 28/09/2026 (WPC-64) —, e o `e_um_arquivo` tem de dizer nao.
+        // 28/09/2026 (WPC-64) —, e o `o_que_ha` tem de dizer que e pasta.
         let pasta = std::env::temp_dir().join(format!("arca-pasta-{}", std::process::id()));
         fs::create_dir_all(&pasta).unwrap();
         let pacote = pasta.join("clonezilla-live-3.3.3-15-amd64.zip");
         fs::write(&pacote, b"o zip, de mentira").unwrap();
 
         assert!(ArquivosDoSistema.existe(&pasta));
-        assert!(
-            !ArquivosDoSistema.e_um_arquivo(&pasta),
-            "a pasta respondeu que e arquivo"
+        assert_eq!(ArquivosDoSistema.o_que_ha(&pasta).unwrap(), OQueHa::Pasta);
+        assert_eq!(
+            ArquivosDoSistema.o_que_ha(&pacote).unwrap(),
+            OQueHa::Arquivo
         );
-        assert!(
-            ArquivosDoSistema.e_um_arquivo(&pacote),
-            "o arquivo dentro dela respondeu que nao e"
+        assert_eq!(
+            ArquivosDoSistema
+                .o_que_ha(&pasta.join("nao-existe.zip"))
+                .unwrap(),
+            OQueHa::Nada
         );
-        assert!(!ArquivosDoSistema.e_um_arquivo(&pasta.join("nao-existe.zip")));
+        assert_eq!(
+            ArquivosDoSistema
+                .o_que_ha(&pasta.join(r"nao-existe\clonezilla-live-3.3.3-15-amd64.zip"))
+                .unwrap(),
+            OQueHa::Nada,
+            "a pasta que falta no meio do caminho e o erro 3, e nao o 2"
+        );
 
         let _ = fs::remove_dir_all(&pasta);
+    }
+
+    #[test]
+    fn um_erro_dos_metadados_nao_vira_nada() {
+        // A regra da casa no adaptador: "nao consegui olhar" nunca vira "nao
+        // ha nada la". O `existe` responde `false` para qualquer erro dos
+        // metadados, e ate 29/09/2026 (WPC-68) era assim que o pre-voo e a
+        // conferencia decidiam ausencia.
+        //
+        // Um NUL no nome e o jeito de ter, sem mexer em permissao, um erro que
+        // nao e resposta do Windows: a `std` recusa o caminho antes de chama-lo,
+        // com `InvalidInput` (medido em 29/09/2026).
+        let recusado = std::env::temp_dir().join("arca\0nome.zip");
+
+        assert!(!ArquivosDoSistema.existe(&recusado));
+        let erro = ArquivosDoSistema
+            .o_que_ha(&recusado)
+            .expect_err("um erro dos metadados virou resposta");
+        assert!(
+            !erro.e_arquivo_ausente(),
+            "o erro diz que o arquivo nao esta la: {erro}"
+        );
+    }
+
+    #[test]
+    fn um_nome_que_o_windows_recusa_e_nada() {
+        // O `ERROR_INVALID_NAME` e resposta, e nao falta de uma: num nome
+        // invalido nada pode existir. O primeiro caminho e o que o Windows
+        // PowerShell 5.1 entrega para `--iso "C:\Users\Ana Paula\Downloads\"`
+        // (medido em 29/09/2026), e ele tem de continuar saindo `NaoEstaLa`.
+        let temporario = std::env::temp_dir();
+
+        for nome in ["Downloads\"", "arca<pacote>.zip", "arca?.zip"] {
+            assert_eq!(
+                ArquivosDoSistema.o_que_ha(&temporario.join(nome)).unwrap(),
+                OQueHa::Nada,
+                "{nome}"
+            );
+        }
     }
 
     #[test]

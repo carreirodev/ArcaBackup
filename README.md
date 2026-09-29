@@ -1132,7 +1132,7 @@ Quando alguma coisa não bate, a tela sai inteira antes do erro, com cada falha 
   [3/3] sumido .. AUSENTE · o MD5SUMS o lista e ele nao esta na pasta da imagem
 ```
 
-**`AUSENTE` e `NAO DEU PARA LER` são linhas diferentes**, e a distinção é a regra da casa: *"não consegui olhar" nunca vira "não há nada lá"*. O `certutil` responde `0x80070002` para arquivo ausente, e cair nesse ramo faria as duas chegarem iguais — por isso quem responde sobre existência é o sistema de arquivos, antes de o `certutil` ser chamado. Uma pasta com o nome de um arquivo do `MD5SUMS` sai como `AUSENTE`: o arquivo não está lá, e o `certutil` responderia para ela o mesmo `0x80070002`.
+**`AUSENTE` e `NAO DEU PARA LER` são linhas diferentes**, e a distinção é a regra da casa: *"não consegui olhar" nunca vira "não há nada lá"*. O `certutil` responde `0x80070002` para arquivo ausente, e cair nesse ramo faria as duas chegarem iguais — por isso quem responde sobre existência é o sistema de arquivos, antes de o `certutil` ser chamado. Uma pasta com o nome de um arquivo do `MD5SUMS` sai como `AUSENTE`: o arquivo não está lá, e o `certutil` responderia para ela o mesmo `0x80070002`. E um arquivo que o Windows não deixa nem olhar sai como `NAO DEU PARA LER · nao deu para saber se o arquivo esta la`, com o motivo do Windows entre parênteses: até 29/09/2026 ele saía `AUSENTE`.
 
 #### `--completo`: a verificação armada
 
@@ -1899,7 +1899,7 @@ O `--iso` nomeia o arquivo, e nao a pasta onde ele esta: ele termina em
 de onde o comando foi digitado. Nada foi apagado (PR-2)
 ```
 
-O ARCA procurou exatamente o caminho que recebeu e não achou nada. Confira a pasta, o nome do arquivo e as aspas — um caminho com espaço precisa delas. **Nada foi apagado**: esta recusa acontece no pré-voo, antes do passo 0.
+O ARCA procurou exatamente o caminho que recebeu e não achou nada — um caminho que o Windows não deixou olhar não cai aqui, e sim em `nao deu para saber se ... esta la`. Confira a pasta, o nome do arquivo e as aspas — um caminho com espaço precisa delas. **Nada foi apagado**: esta recusa acontece no pré-voo, antes do passo 0.
 
 ### `... e uma pasta, e o --iso nomeia o arquivo`
 
@@ -1914,6 +1914,16 @@ O `--iso` recebeu a pasta onde o pacote está, e não o pacote. Quando o `clonez
 Quando o pacote não está na pasta, a mensagem diz `Esse arquivo nao esta nesta pasta`, e o que falta é achar o download. O pacote é o **zip**, e não o ISO.
 
 **Nada foi apagado**: esta recusa acontece no pré-voo, antes do passo 0.
+
+### `nao deu para saber se ... esta la`
+
+```
+nao deu para saber se `C:\Users\Ana Paula\Downloads\clonezilla-live-3.3.3-15-amd64.zip`
+esta la (Acesso negado. (os error 5)). Isto NAO e o mesmo que ele nao estar la.
+Nada foi apagado (PR-2)
+```
+
+O Windows não deixou olhar o caminho do `--iso` e respondeu o que está entre parênteses. Quando o `--iso` é uma pasta, o caminho citado é o do `clonezilla-live-3.3.3-15-amd64.zip` dentro dela. O arquivo pode estar lá: o que falta é acesso a ele, ou uma leitura que funcione no disco onde ele está. **Nada foi apagado**: esta recusa acontece no pré-voo, antes do passo 0.
 
 ### `o disco N NAO e mais o que estava no plano`
 

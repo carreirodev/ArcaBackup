@@ -122,6 +122,7 @@ use crate::firmware::{self, Alvo};
 use crate::formato::{linha, tamanho};
 use crate::grub;
 use crate::pacote;
+use crate::portas::OQueHa;
 use crate::portas::particionador::{DiscoParaPreparar, ParticoesFeitas};
 use crate::preparacao::{self, Preparacao};
 use std::path::{Path, PathBuf};
@@ -552,12 +553,13 @@ fn resumir_o_conteudo(disco: &DiscoParaPreparar) -> String {
 /// # Por que as perguntas "o arquivo está lá?" e "é uma pasta?" moram aqui, e
 /// não em [`conferir_o_pacote`]
 ///
-/// Porque [`pacote::RecusaDoPacote::NaoEstaLa`] e
-/// [`pacote::RecusaDoPacote::EUmaPasta`] prometem que *nada foi apagado*, e só
-/// esta função pode fazer essa promessa — ela roda antes do passo 0. A
-/// conferência do passo 7 chama a mesma [`conferir_o_pacote`] com o disco já
-/// particionado, e levantar as mesmas recusas de lá faria o ARCA prometer o
-/// que não é verdade.
+/// Porque [`pacote::RecusaDoPacote::NaoEstaLa`],
+/// [`pacote::RecusaDoPacote::EUmaPasta`] e
+/// [`pacote::RecusaDoPacote::NaoDeuParaOlhar`] prometem que *nada foi
+/// apagado*, e só esta função pode fazer essa promessa — ela roda antes do
+/// passo 0. A conferência do passo 7 chama a mesma [`conferir_o_pacote`] com
+/// o disco já particionado, e levantar as mesmas recusas de lá faria o ARCA
+/// prometer o que não é verdade.
 ///
 /// Um arquivo que existe no pré-voo e some — ou vira pasta — antes do passo 7
 /// continua caindo onde caía: no `certutil`, que responde
@@ -568,24 +570,39 @@ fn conferir_o_pacote_local(
     contexto: &Contexto,
     caminho: &Path,
 ) -> Resultado<crate::resumo::Resumo> {
-    if !contexto.arquivos.existe(caminho) {
-        return Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoEstaLa {
+    match o_que_ha_no_pre_voo(contexto, caminho)? {
+        OQueHa::Arquivo => conferir_o_pacote(contexto, caminho),
+        OQueHa::Nada => Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoEstaLa {
             caminho: caminho.to_path_buf(),
-        }));
-    }
+        })),
 
-    // Uma pasta passa pelo `existe`, e o `certutil` responde para ela o mesmo
-    // `0x80070002` de um arquivo ausente (WPC-64, 28/09/2026). O pacote de
-    // dentro dela só é apontado: ver `EUmaPasta` para por que não é usado.
-    if !contexto.arquivos.e_um_arquivo(caminho) {
-        let dentro = caminho.join(pacote::ARQUIVO);
-        return Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::EUmaPasta {
+        // Uma pasta passava por um "há alguma coisa aqui", e o `certutil`
+        // responde para ela o mesmo `0x80070002` de um arquivo ausente
+        // (WPC-64, 28/09/2026). O pacote de dentro dela só é apontado: ver
+        // `EUmaPasta` para por que não é usado.
+        OQueHa::Pasta => {
+            let dentro = caminho.join(pacote::ARQUIVO);
+            let o_pacote_esta_dentro = o_que_ha_no_pre_voo(contexto, &dentro)? == OQueHa::Arquivo;
+            Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::EUmaPasta {
+                caminho: caminho.to_path_buf(),
+                dentro: o_pacote_esta_dentro.then_some(dentro),
+            }))
+        }
+    }
+}
+
+/// A pergunta do pré-voo sobre um caminho, com o "não sei" virando a recusa
+/// que diz isso.
+///
+/// Até 29/09/2026 (WPC-68) o "não sei" virava `NaoEstaLa`, e, dentro de uma
+/// pasta, `EUmaPasta` sem `dentro`, que diz que o pacote não está nela.
+fn o_que_ha_no_pre_voo(contexto: &Contexto, caminho: &Path) -> Resultado<OQueHa> {
+    contexto.arquivos.o_que_ha(caminho).map_err(|erro| {
+        Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaOlhar {
             caminho: caminho.to_path_buf(),
-            dentro: contexto.arquivos.e_um_arquivo(&dentro).then_some(dentro),
-        }));
-    }
-
-    conferir_o_pacote(contexto, caminho)
+            motivo: erro.motivo(),
+        })
+    })
 }
 
 /// As duas perguntas de PR-1 sobre um arquivo que está lá: o SHA256 bate, e
@@ -1466,9 +1483,9 @@ mod testes {
     use super::*;
     use crate::adaptadores::RelogioDoSistema;
     use crate::duplos::{
-        ArquivosEmMemoria, ConsoleDeMentira, DiscosDeMentira, EntropiaDeMentira, FirmwareDeMentira,
-        ParticionadorDeMentira, RelogioParado, SistemaDeMentira, discos_para_preparar_desta_mesa,
-        o_que_o_particionamento_deixou,
+        ArquivosEmMemoria, ArquivosQueRecusam, ConsoleDeMentira, DiscosDeMentira,
+        EntropiaDeMentira, FirmwareDeMentira, ParticionadorDeMentira, RelogioParado,
+        SistemaDeMentira, discos_para_preparar_desta_mesa, o_que_o_particionamento_deixou,
     };
     use crate::registro::Registro;
 
@@ -2000,6 +2017,84 @@ mod testes {
         assert!(
             !bancada.arquivos.foi_consultado(A_PASTA_DE_DOWNLOADS),
             "o passo 7 perguntou pela pasta"
+        );
+    }
+
+    // ─────────── o `--iso` que o Windows não deixa olhar ───────────
+
+    #[test]
+    fn um_iso_que_nao_se_deixa_olhar_nao_sai_como_ausente() {
+        // "Não consegui olhar" nunca vira "não há nada lá". Até 29/09/2026
+        // (WPC-68) o pré-voo perguntava com `Path::exists`, que responde
+        // `false` quando os metadados não se deixam ler, e a recusa era
+        // `NaoEstaLa`: o ARCA dizia que procurou e não achou nada. O texto é o
+        // que o usuário aprovou em 29/09/2026.
+        let bancada = Bancada::nova("iso-ilegivel", ConsoleDeMentira::mudo());
+        let arquivos = ArquivosQueRecusam::com(
+            NA_PASTA_DE_DOWNLOADS,
+            std::io::ErrorKind::PermissionDenied,
+            "Acesso negado. (os error 5)",
+        );
+        let mut contexto = bancada.contexto(false);
+        contexto.arquivos = &arquivos;
+
+        let erro =
+            executar(&contexto, Some(1), Some(Path::new(NA_PASTA_DE_DOWNLOADS))).unwrap_err();
+
+        match &erro {
+            Erro::PacoteRecusado(recusa @ pacote::RecusaDoPacote::NaoDeuParaOlhar { .. }) => {
+                assert_eq!(
+                    recusa.to_string(),
+                    r"nao deu para saber se `C:\Users\Ana Paula\Downloads\clonezilla-live-3.3.3-15-amd64.zip` esta la (Acesso negado. (os error 5)). Isto NAO e o mesmo que ele nao estar la. Nada foi apagado (PR-2)"
+                );
+            }
+            outro => panic!("o `--iso` que nao se deixou olhar virou {outro}"),
+        }
+        assert!(
+            bancada.sistema.resumidos().is_empty(),
+            "o `--iso` que nao se deixou olhar foi mandado ao certutil"
+        );
+        assert_eq!(bancada.console.lidas.get(), 0, "seguiu para a pergunta");
+        assert!(
+            !bancada.particionador.particionou(),
+            "o `--iso` que nao se deixou olhar apagou o disco"
+        );
+    }
+
+    #[test]
+    fn o_pacote_que_nao_se_deixa_olhar_dentro_da_pasta_nao_sai_como_ausente() {
+        // A mesma regra, na segunda pergunta do pré-voo. Até 29/09/2026
+        // (WPC-68), o pacote de dentro que não se deixava olhar fazia a recusa
+        // da pasta dizer `Esse arquivo nao esta nesta pasta`. Aqui a pasta tem
+        // o pacote, que o Windows não deixa olhar, e o ISO ao lado dele.
+        let dentro = r"C:\Users\Ana Paula\Downloads\clonezilla-live-3.3.3-15-amd64.zip";
+        let bancada = Bancada::nova("iso-pasta-com-pacote-ilegivel", ConsoleDeMentira::mudo());
+        let arquivos = ArquivosQueRecusam::com(
+            dentro,
+            std::io::ErrorKind::PermissionDenied,
+            "Acesso negado. (os error 5)",
+        )
+        .com_arquivo(
+            r"C:\Users\Ana Paula\Downloads\clonezilla-live-3.3.3-15-amd64.iso",
+            "o iso, de mentira",
+        );
+        let mut contexto = bancada.contexto(false);
+        contexto.arquivos = &arquivos;
+
+        let erro = executar(&contexto, Some(1), Some(Path::new(A_PASTA_DE_DOWNLOADS))).unwrap_err();
+
+        match &erro {
+            Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaOlhar { caminho, .. }) => {
+                assert_eq!(caminho, Path::new(dentro));
+            }
+            outro => panic!("o pacote que nao se deixou olhar virou {outro}"),
+        }
+        let dito = erro.to_string();
+        assert!(!dito.contains("nao esta nesta pasta"), "{dito}");
+        assert!(dito.contains("Nada foi apagado"), "{dito}");
+        assert!(
+            !bancada.particionador.particionou(),
+            "o pacote que nao se deixou olhar apagou o disco"
         );
     }
 

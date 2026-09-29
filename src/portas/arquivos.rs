@@ -41,22 +41,43 @@ impl Entrada {
     }
 }
 
+/// O que o sistema de arquivos diz que ha num caminho. Ver
+/// [`Arquivos::o_que_ha`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OQueHa {
+    /// O sistema de arquivos respondeu que nada existe ali. "Nao consegui
+    /// olhar" nunca chega aqui: e erro.
+    Nada,
+    Arquivo,
+    Pasta,
+}
+
 pub trait Arquivos {
+    /// Se ha alguma coisa neste caminho, arquivo ou pasta.
+    ///
+    /// Um `false` daqui nao separa "nao ha nada" de "nao consegui olhar": o
+    /// adaptador responde com `Path::exists`, que transforma qualquer erro dos
+    /// metadados em `false`. Para concluir que alguma coisa esta ausente, a
+    /// pergunta e [`Arquivos::o_que_ha`] (WPC-68).
     fn existe(&self, caminho: &Path) -> bool;
 
-    /// Se o que ha neste caminho e um **arquivo**, e nao uma pasta.
+    /// O que ha neste caminho: nada, um arquivo ou uma pasta. Quando o
+    /// sistema de arquivos nao deixa saber, e erro, e nao [`OQueHa::Nada`].
     ///
     /// # Por que nao basta [`Arquivos::existe`]
     ///
-    /// Porque `existe` responde "ha alguma coisa aqui", arquivo ou pasta, e
-    /// quem o usa conta com isso: a raiz de um volume, a pasta de uma imagem.
-    /// Medido em 28/09/2026 (WPC-64): uma pasta no `--iso` passava pelo
-    /// `existe` do pre-voo do `arca prepare` e chegava ao `certutil`, que
-    /// responde para ela o mesmo `0x80070002` de um arquivo ausente.
+    /// Por duas razoes, e cada uma ja fez o ARCA dizer "nao esta la" do que
+    /// estava.
     ///
-    /// Metadados que nao se deixam ler respondem `false`, como em `existe`:
-    /// "nao consegui olhar" ainda vira "nao e arquivo" aqui (WPC-68).
-    fn e_um_arquivo(&self, caminho: &Path) -> bool;
+    /// `existe` responde "ha alguma coisa aqui", arquivo ou pasta. Medido em
+    /// 28/09/2026 (WPC-64): uma pasta no `--iso` passava pelo `existe` do
+    /// pre-voo do `arca prepare` e chegava ao `certutil`, que responde para
+    /// ela o mesmo `0x80070002` de um arquivo ausente.
+    ///
+    /// E `existe` so tem `bool` para responder, e um `bool` nao diz "nao sei".
+    /// Ate 29/09/2026 (WPC-68), um `--iso` ou um arquivo do `MD5SUMS` que o
+    /// Windows nao deixava olhar saia como ausente.
+    fn o_que_ha(&self, caminho: &Path) -> Resultado<OQueHa>;
 
     fn ler_texto(&self, caminho: &Path) -> Resultado<String>;
 

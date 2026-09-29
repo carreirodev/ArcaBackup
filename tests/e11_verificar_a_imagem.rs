@@ -36,7 +36,7 @@ use arca::adaptadores::windows::volumes::VolumesDoWindows;
 use arca::dispositivo::{self, Dispositivo};
 use arca::imagens::{self, Especie, Veredito};
 use arca::md5sums;
-use arca::portas::{Arquivos, Sistema};
+use arca::portas::{Arquivos, OQueHa, Sistema};
 use arca::resumo::{self, Algoritmo};
 use arca::verificacao;
 use std::path::PathBuf;
@@ -192,9 +192,10 @@ fn nenhum_md5sums_deste_dispositivo_aponta_para_arquivo_ausente() {
         let entradas = md5sums::ler(&texto).expect("MD5SUMS valido");
 
         for entrada in &entradas {
+            let o_que_ha = ArquivosDoSistema.o_que_ha(&caminho.join(&entrada.arquivo));
             assert!(
-                ArquivosDoSistema.e_um_arquivo(&caminho.join(&entrada.arquivo)),
-                "`{nome}`: o MD5SUMS lista `{}` e ele nao esta na pasta",
+                matches!(o_que_ha, Ok(OQueHa::Arquivo)),
+                "`{nome}`: o MD5SUMS lista `{}`, e a pasta responde {o_que_ha:?}",
                 entrada.arquivo
             );
         }

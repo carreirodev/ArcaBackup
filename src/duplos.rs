@@ -7,8 +7,8 @@
 
 use crate::erro::{Erro, Resultado, erro_de_arquivo};
 use crate::portas::{
-    Arquivos, Console, DiscoFisico, Discos, Entrada, Entropia, Firmware, Medida, Privilegios,
-    Relogio, SaidaDeFerramenta, Sistema, TipoDeMidia, Volume,
+    Arquivos, Console, DiscoFisico, Discos, Entrada, Entropia, Firmware, Medida, OQueHa,
+    Privilegios, Relogio, SaidaDeFerramenta, Sistema, TipoDeMidia, Volume,
 };
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use std::cell::{Cell, RefCell};
@@ -629,15 +629,22 @@ impl Arquivos for ArquivosEmMemoria {
                 .any(|diretorio| diretorio.starts_with(caminho))
     }
 
-    fn e_um_arquivo(&self, caminho: &Path) -> bool {
+    fn o_que_ha(&self, caminho: &Path) -> Resultado<OQueHa> {
         // Anotada como a de `existe`: perguntar tambem e olhar, e e o que os
         // testes de C-1 e o do passo 7 do `arca prepare` leem em `consultados`.
         self.anotar_consulta(caminho);
 
         // So o que foi gravado com conteudo e arquivo. O diretorio implicito e
-        // a pasta vazia respondem `false`, como o `Path::is_file` responde para
-        // uma pasta de verdade.
-        self.conteudo.borrow().contains_key(caminho)
+        // a pasta vazia sao pasta, como o `fs::metadata` responde para uma
+        // pasta de verdade. Este duplo sempre sabe responder; o que nao deixa
+        // olhar e o `ArquivosQueRecusam`.
+        Ok(if self.conteudo.borrow().contains_key(caminho) {
+            OQueHa::Arquivo
+        } else if self.existe(caminho) {
+            OQueHa::Pasta
+        } else {
+            OQueHa::Nada
+        })
     }
 
     fn ler_texto(&self, caminho: &Path) -> Resultado<String> {
@@ -1341,10 +1348,16 @@ impl Arquivos for ArquivosQueRecusam {
         caminho == self.recusado || self.dentro.existe(caminho)
     }
 
-    /// `true` para o caminho recusado, pelo mesmo motivo do `existe` daqui: o
-    /// recusado e um arquivo que esta la e nao se deixa lê.
-    fn e_um_arquivo(&self, caminho: &Path) -> bool {
-        caminho == self.recusado || self.dentro.e_um_arquivo(caminho)
+    /// **Erro para o caminho recusado**, que e o que o adaptador de verdade
+    /// responde quando os metadados nao se deixam ler. Ate 29/09/2026 (WPC-68)
+    /// a pergunta daqui respondia "e arquivo", e por isso nenhum teste com
+    /// este duplo via o que o pre-voo do `arca prepare` e a conferencia do
+    /// `arca verify` faziam com o "nao sei".
+    fn o_que_ha(&self, caminho: &Path) -> Resultado<OQueHa> {
+        match self.recusa(caminho) {
+            Some(erro) => Err(erro),
+            None => self.dentro.o_que_ha(caminho),
+        }
     }
 
     fn ler_texto(&self, caminho: &Path) -> Resultado<String> {

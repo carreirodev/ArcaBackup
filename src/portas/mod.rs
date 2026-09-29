@@ -43,7 +43,7 @@ pub mod privilegios;
 pub mod relogio;
 pub mod sistema;
 
-pub use arquivos::{Arquivos, Entrada};
+pub use arquivos::{Arquivos, Entrada, OQueHa};
 pub use console::Console;
 pub use discos::{DiscoFisico, Discos, Medida, TipoDeMidia, Volume};
 pub use entropia::Entropia;

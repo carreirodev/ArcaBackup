@@ -23,11 +23,11 @@
 //! O reinicio e o que separa as duas na pratica, e nao os dois minutos: V-2
 //! desliga a maquina, e quem esta trabalhando nela para de trabalhar.
 //!
-//! # As quatro coisas que se pode achar, e a diferenca entre as duas ultimas
+//! # O que se pode achar, e a diferenca entre ausente e ilegivel
 //!
 //! [`Achado`] separa "o arquivo nao esta la" de "o arquivo esta la e nao se
-//! deixou lê", e a distincao e a mesma que
-//! [`crate::desfecho::Encontrado::NaoDeuParaLer`] paga desde a E5: **"nao
+//! deixou lê" e de "nao deu para saber se ele esta la", e a distincao e a
+//! mesma que [`crate::desfecho::Encontrado::NaoDeuParaLer`] paga desde a E5: **"nao
 //! consegui olhar" nunca vira "nao ha nada la"**. Um `ARCAVAULT` que negou
 //! acesso a um arquivo e uma imagem sobre a qual nao se sabe; um arquivo
 //! ausente e uma imagem quebrada. As duas reprovam, e quem lê precisa saber
@@ -43,7 +43,7 @@
 use crate::erro::Resultado;
 use crate::imagens::Veredito;
 use crate::md5sums::Entrada;
-use crate::portas::{Arquivos, Sistema};
+use crate::portas::{Arquivos, OQueHa, Sistema};
 use crate::resumo::{self, Algoritmo, RecusaDoResumo, Resumo};
 use std::fmt;
 use std::path::Path;
@@ -66,6 +66,14 @@ pub enum Achado {
 
     /// Ele esta la e nao se deixou resumir. **Nao e o mesmo que ausente.**
     NaoDeuParaResumir { motivo: RecusaDoResumo },
+
+    /// O sistema de arquivos nao deixou saber se ele esta la, e `motivo` e o
+    /// que ele respondeu. **Nao e o mesmo que ausente**: ate 29/09/2026
+    /// (WPC-68) a pergunta era `Path::is_file`, que responde `false` quando os
+    /// metadados nao se deixam ler, e a linha saia `AUSENTE`. Quem a lia
+    /// concluia que a imagem perdeu um arquivo, e nao que o volume tem um
+    /// problema de leitura.
+    NaoDeuParaOlhar { motivo: String },
 }
 
 impl Achado {
@@ -94,6 +102,10 @@ impl fmt::Display for Achado {
             Achado::NaoDeuParaResumir { motivo } => write!(
                 f,
                 "NAO DEU PARA LER · o arquivo esta la e nao se deixou resumir ({motivo}). Isto NAO e o mesmo que ele estar ausente"
+            ),
+            Achado::NaoDeuParaOlhar { motivo } => write!(
+                f,
+                "NAO DEU PARA LER · nao deu para saber se o arquivo esta la ({motivo}). Isto NAO e o mesmo que ele estar ausente"
             ),
         }
     }
@@ -261,8 +273,8 @@ pub fn planejar(
 ) -> Resultado<Plano> {
     let na_pasta = arquivos.listar(pasta_da_imagem)?;
 
-    // Sem diferenciar caixa, do mesmo jeito que `Arquivos::e_um_arquivo` acha
-    // o arquivo: quem abre e o Windows, onde `DISK` e `disk` sao o mesmo.
+    // Sem diferenciar caixa, do mesmo jeito que `Arquivos::o_que_ha` acha o
+    // arquivo: quem abre e o Windows, onde `DISK` e `disk` sao o mesmo.
     // Achar o tamanho por um criterio e a existencia por outro faria um
     // arquivo aparecer com zero byte e contar como "fora do MD5SUMS" ao mesmo
     // tempo.
@@ -320,21 +332,26 @@ pub fn conferir(
         // ramo faria "nao esta la" chegar como "nao consegui resumir" — que e
         // exatamente a distincao que este modulo existe para manter.
         //
-        // E a pergunta e `e_um_arquivo`, e nao `existe`: o `existe` responde
-        // sim para pasta, e o `certutil` responde para uma pasta o mesmo
-        // `0x80070002` (medido em 28/09/2026). Ate 29/09/2026 (WPC-67), uma
-        // pasta com o nome de um arquivo do `MD5SUMS` saia `NAO DEU PARA LER`.
-        let achado = if !arquivos.e_um_arquivo(&caminho) {
-            Achado::Ausente
-        } else {
-            match resumo::do_certutil(&sistema.resumir(&caminho, Algoritmo::Md5)?, Algoritmo::Md5) {
+        // E a pergunta separa arquivo de pasta: o `existe` responde sim para
+        // pasta, e o `certutil` responde para uma pasta o mesmo `0x80070002`
+        // (medido em 28/09/2026). Ate 29/09/2026 (WPC-67), uma pasta com o
+        // nome de um arquivo do `MD5SUMS` saia `NAO DEU PARA LER`.
+        let achado = match arquivos.o_que_ha(&caminho) {
+            Ok(OQueHa::Arquivo) => match resumo::do_certutil(
+                &sistema.resumir(&caminho, Algoritmo::Md5)?,
+                Algoritmo::Md5,
+            ) {
                 Ok(encontrado) if encontrado == entrada.soma => Achado::Bate,
                 Ok(encontrado) => Achado::NaoBate {
                     esperado: entrada.soma.clone(),
                     encontrado,
                 },
                 Err(motivo) => Achado::NaoDeuParaResumir { motivo },
-            }
+            },
+            Ok(OQueHa::Nada | OQueHa::Pasta) => Achado::Ausente,
+            Err(erro) => Achado::NaoDeuParaOlhar {
+                motivo: erro.motivo(),
+            },
         };
 
         bytes_lidos += bytes;
@@ -368,8 +385,9 @@ pub fn conferir(
 #[cfg(test)]
 mod testes {
     use super::*;
-    use crate::duplos::{ArquivosEmMemoria, SistemaDeMentira};
+    use crate::duplos::{ArquivosEmMemoria, ArquivosQueRecusam, SistemaDeMentira};
     use crate::md5sums;
+    use std::io::ErrorKind;
     use std::path::PathBuf;
 
     const A: &str = "bf6850d736dc6b480994de0cee9c0f63";
@@ -542,6 +560,43 @@ mod testes {
     }
 
     #[test]
+    fn um_arquivo_que_nao_se_deixa_olhar_nao_sai_ausente() {
+        // V-1 e a regra da casa. Ate 29/09/2026 (WPC-68) a pergunta era
+        // `Path::is_file`, que responde `false` quando os metadados nao se
+        // deixam ler, e a linha saia `AUSENTE`. O texto e o que o usuario
+        // aprovou em 29/09/2026, com o motivo que o Windows da para um erro de
+        // E/S do dispositivo.
+        const E_S: &str = "A solicitação não pôde ser executada devido a um erro de E/S do dispositivo. (os error 1117)";
+        let arquivos = ArquivosQueRecusam::com(r"D:\2026-08-22_Apps\disk", ErrorKind::Other, E_S)
+            .com_arquivo(r"D:\2026-08-22_Apps\parts", "p1 p2");
+        let sistema = SistemaDeMentira::novo().com_resumo(r"D:\2026-08-22_Apps\parts", B);
+        let lista = entradas(&format!("{A}  disk\n{B}  parts\n"));
+
+        let plano = planejar(&arquivos, &pasta(), &lista).expect("plano");
+        let conferencia =
+            conferir(&arquivos, &sistema, &pasta(), &plano, &mut |_| {}).expect("conferencia");
+
+        assert_eq!(
+            conferencia.conferidos[0].achado,
+            Achado::NaoDeuParaOlhar {
+                motivo: E_S.to_string()
+            }
+        );
+        assert_eq!(
+            conferencia.conferidos[0].achado.to_string(),
+            format!(
+                "NAO DEU PARA LER · nao deu para saber se o arquivo esta la ({E_S}). Isto NAO e o mesmo que ele estar ausente"
+            )
+        );
+        assert_eq!(
+            conferencia.conferidos[1].achado,
+            Achado::Bate,
+            "o arquivo seguinte nao foi conferido"
+        );
+        assert_eq!(conferencia.veredito(), Veredito::Reprovada);
+    }
+
+    #[test]
     fn os_arquivos_fora_do_md5sums_sao_contados_e_nao_reprovam() {
         // Medido na imagem de verdade: quatro ficam de fora por construcao —
         // o proprio `MD5SUMS`, o `clonezilla-img` e o `Info-img-id.txt`, que
@@ -656,7 +711,7 @@ mod testes {
     #[test]
     fn a_caixa_do_nome_nao_faz_um_arquivo_sumir() {
         // Quem abre e o Windows: `DISK` e `disk` sao o mesmo arquivo, e o
-        // tamanho tem de ser achado do mesmo jeito que o `e_um_arquivo` acha.
+        // tamanho tem de ser achado do mesmo jeito que o `o_que_ha` acha.
         let arquivos = ArquivosEmMemoria::novo().com(r"D:\2026-08-22_Apps\DISK", "nvme0n1");
         let sistema = SistemaDeMentira::novo().com_resumo(r"D:\2026-08-22_Apps\disk", A);
 

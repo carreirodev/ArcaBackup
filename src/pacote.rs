@@ -178,6 +178,30 @@ pub enum RecusaDoPacote {
         dentro: Option<PathBuf>,
     },
 
+    /// PR-2: o Windows não deixou saber se o arquivo do `--iso` está lá.
+    ///
+    /// # Por que isto não é `NaoEstaLa`
+    ///
+    /// Porque "não consegui olhar" nunca vira "não há nada lá". Até 29/09/2026
+    /// (WPC-68) o pré-voo perguntava com `Path::exists`, que transforma
+    /// qualquer erro dos metadados em `false`, e um caminho que o Windows não
+    /// deixava olhar saía como `NaoEstaLa`: o ARCA dizia que procurou e não
+    /// achou nada.
+    ///
+    /// Vale também para o pacote de dentro de uma pasta. `caminho` é então o
+    /// do zip de dentro, e a recusa deixa de dizer que ele não está na pasta,
+    /// que é o que `EUmaPasta` sem `dentro` diria.
+    ///
+    /// `motivo` é o que o Windows respondeu, e o texto foi aprovado pelo
+    /// usuário em 29/09/2026, no mesmo formato da linha `NAO DEU PARA LER` do
+    /// `arca verify`.
+    ///
+    /// # Por que a mensagem pode prometer que nada foi apagado
+    ///
+    /// Pelo mesmo motivo de `NaoEstaLa`: esta variante nasce só no pré-voo do
+    /// `arca prepare`, que roda antes do passo 0.
+    NaoDeuParaOlhar { caminho: PathBuf, motivo: String },
+
     /// O `certutil` não resumiu o arquivo.
     NaoDeuParaResumir(RecusaDoResumo),
 
@@ -212,6 +236,11 @@ impl fmt::Display for RecusaDoPacote {
             } => write!(
                 f,
                 "`{}` e uma pasta, e o `--iso` nomeia o arquivo, que termina em `{ARQUIVO}`. Esse arquivo nao esta nesta pasta. Nada foi apagado (PR-2)",
+                caminho.display()
+            ),
+            RecusaDoPacote::NaoDeuParaOlhar { caminho, motivo } => write!(
+                f,
+                "nao deu para saber se `{}` esta la ({motivo}). Isto NAO e o mesmo que ele nao estar la. Nada foi apagado (PR-2)",
                 caminho.display()
             ),
             RecusaDoPacote::NaoDeuParaResumir(porque) => write!(
