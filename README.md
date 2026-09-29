@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/ArcaBackup%20Logo.png" alt="Logo do ARCA" width="300">
+</p>
+
 # ARCA
 
 **Automatizador de Clonezilla para backup e restauração de imagem de disco.**
