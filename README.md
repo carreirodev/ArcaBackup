@@ -2203,6 +2203,7 @@ dispositivo ARCA num runner, e o `bcdedit` recusa o `/enum` sem privilégio.
 | `tests/s1_nenhum_acesso_raw.rs` | S-1 como propriedade da arquitetura |
 | `tests/s6_o_tempo_nao_decide.rs` | S-6: nenhum módulo que julga desfecho alcança o tempo |
 | `tests/b10_nada_e_apagado.rs` | B-10 como propriedade do código |
+| `tests/o_build_rs_le_a_copia_ao_rodar.rs` | O `build.rs` não grava o ambiente de quando compilou, que pode ser o de outra cópia com a mesma `target/` |
 
 Os testes que precisam do hardware **se pulam sozinhos**, dizendo por quê.
 

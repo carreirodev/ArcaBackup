@@ -55,7 +55,18 @@ fn embutir_o_manifesto() {
         return;
     }
 
-    let manifesto = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("recursos/arca.manifest");
+    // O caminho vem de quando o script roda, e não de quando ele compilou. O
+    // cargo deu às pastas do script o mesmo hash em cópias do repositório
+    // guardadas em lugares diferentes, e com a `target/` compartilhada uma
+    // cópia roda o script que outra compilou. Com `env!` aqui, o linker recebia
+    // o manifesto dessa outra cópia (medido em 29/09/2026, na WPC-82). A
+    // pergunta nasceu em 28/09/2026, quando uma worktree já apagada fez o link
+    // reprovar com `LNK1327`. Isto não cobre o caso em que o cargo nem roda o
+    // script e reaproveita a saída que a outra cópia deixou: ali nenhum código
+    // deste arquivo roda, e o `LNK1327` pode voltar.
+    let raiz = std::env::var_os("CARGO_MANIFEST_DIR")
+        .expect("o cargo define CARGO_MANIFEST_DIR para todo script de build que roda");
+    let manifesto = std::path::Path::new(&raiz).join("recursos/arca.manifest");
     println!("cargo:rustc-link-arg-bin=arca=/MANIFEST:EMBED");
     println!(
         "cargo:rustc-link-arg-bin=arca=/MANIFESTINPUT:{}",
