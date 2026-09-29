@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Camada_1" xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1920 1920">
+  <!-- Generator: Adobe Illustrator 30.8.2, SVG Export Plug-In . SVG Version: 2.1.4 Build 7)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #00cbb4;
+      }
+
+      .st0, .st1, .st2, .st3, .st4, .st5, .st6, .st7, .st8, .st9, .st10, .st11, .st12 {
+        stroke-linejoin: round;
+      }
+
+      .st0, .st1, .st3, .st13, .st4, .st7, .st8, .st14, .st10, .st15, .st11, .st12 {
+        stroke-linecap: round;
+      }
+
+      .st0, .st1, .st3, .st4, .st7, .st10, .st11, .st12 {
+        stroke: #1d1d1b;
+        stroke-width: 36px;
+      }
+
+      .st16 {
+        fill: #006170;
+      }
+
+      .st1 {
+        fill: #007f76;
+      }
+
+      .st2, .st13, .st8, .st14, .st15 {
+        fill: none;
+      }
+
+      .st2, .st5, .st6, .st8, .st14, .st9, .st15, .st17 {
+        stroke: #032535;
+      }
+
+      .st2, .st8, .st14 {
+        stroke-width: 25.31px;
+      }
+
+      .st18 {
+        fill: #5cf2d6;
+      }
+
+      .st3 {
+        fill: #004f5b;
+      }
+
+      .st19 {
+        fill: url(#Gradiente_sem_nome);
+      }
+
+      .st13 {
+        stroke: url(#Gradiente_sem_nome_2);
+      }
+
+      .st13, .st14, .st15, .st17 {
+        stroke-miterlimit: 8.44;
+      }
+
+      .st13, .st17 {
+        stroke-width: 16.88px;
+      }
+
+      .st4 {
+        fill: #007685;
+      }
+
+      .st5 {
+        stroke-width: 12.66px;
+      }
+
+      .st5, .st20 {
+        fill: #032535;
+      }
+
+      .st21 {
+        fill: #00b4a4;
+      }
+
+      .st6 {
+        fill: #00838f;
+      }
+
+      .st6, .st9 {
+        stroke-width: 21.09px;
+      }
+
+      .st7 {
+        fill: #003e48;
+      }
+
+      .st9, .st17 {
+        fill: #00e5c0;
+      }
+
+      .st10 {
+        fill: #00998c;
+      }
+
+      .st22 {
+        fill: url(#Gradiente_sem_nome_3);
+      }
+
+      .st15 {
+        stroke-width: 29.53px;
+      }
+
+      .st11 {
+        fill: #00b2a1;
+      }
+
+      .st12 {
+        fill: #00616f;
+      }
+    </style>
+    <linearGradient id="Gradiente_sem_nome" data-name="Gradiente sem nome" x1="-.72" y1="1501.51" x2="1.22" y2="1499.57" gradientTransform="translate(813.5683 487744.6875) scale(146.4317 -324.8438)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2ce8c5"/>
+      <stop offset=".6" stop-color="#00a896"/>
+      <stop offset="1" stop-color="#028090"/>
+    </linearGradient>
+    <linearGradient id="Gradiente_sem_nome_2" data-name="Gradiente sem nome 2" x1="-.08" y1="1501.48" x2="-.08" y2="1500.43" gradientTransform="translate(838.7739 310578.2812) scale(108.5698 -206.7188)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#80ffea"/>
+      <stop offset="1" stop-color="#02c39a"/>
+    </linearGradient>
+    <linearGradient id="Gradiente_sem_nome_3" data-name="Gradiente sem nome 3" x1="-.12" y1="1501.17" x2="1.82" y2="1499.23" gradientTransform="translate(960 487744.6875) scale(146.4316 -324.8438)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#028090"/>
+      <stop offset="1" stop-color="#004e5d"/>
+    </linearGradient>
+  </defs>
+  <line class="st15" x1="141.33" y1="1672.88" x2="1777.63" y2="1672.88"/>
+  <g>
+    <path class="st8" d="M493.14,339.3v90l106.36,106.36"/>
+    <path class="st8" d="M231.33,486.56h122.72l122.72,122.72"/>
+    <path class="st8" d="M206.79,813.82h188.17v253.63"/>
+    <path class="st8" d="M1654.91,208.39l-220.9,220.9v90"/>
+    <path class="st8" d="M1761.27,494.75l-155.45,155.45h-196.36"/>
+    <path class="st8" d="M1761.27,813.82l-179.99,179.99v73.63"/>
+  </g>
+  <g>
+    <circle class="st17" cx="493.14" cy="339.3" r="45"/>
+    <circle class="st17" cx="231.33" cy="486.56" r="45"/>
+    <circle class="st17" cx="206.79" cy="813.82" r="45"/>
+    <circle class="st17" cx="1654.91" cy="208.39" r="45"/>
+    <circle class="st17" cx="1761.27" cy="494.75" r="45"/>
+    <circle class="st17" cx="1761.27" cy="813.82" r="45"/>
+  </g>
+  <path class="st5" d="M959.48,12.04c-147.27,24.54-290.44,81.81-327.26,147.27-32.73,155.45-16.36,319.08,81.81,458.16l245.44,147.27,245.44-147.27c98.18-139.09,114.54-302.72,81.81-458.16-36.82-65.45-179.99-122.72-327.26-147.27Z"/>
+  <path class="st19" d="M959.48,61.13c-122.72,20.45-237.26,73.63-269.99,122.72-28.64,130.9-16.36,261.81,65.45,376.35l204.54,130.9V61.13Z"/>
+  <path class="st13" d="M934.94,102.03c-90,24.54-179.99,65.45-204.54,106.36-16.36,106.36,0,204.54,57.27,294.53"/>
+  <path class="st22" d="M959.48,61.13c122.72,20.45,237.26,73.63,269.99,122.72,28.64,130.9,16.36,261.81-65.45,376.35l-204.54,130.9V61.13Z"/>
+  <polygon class="st20" points="959.48 535.65 427.69 789.28 493.14 789.28 959.48 592.92 1425.83 789.28 1491.28 789.28 959.48 535.65"/>
+  <path class="st21" d="M534.04,781.1l425.44-188.17v458.16h-425.44v-269.99Z"/>
+  <path class="st16" d="M959.48,592.92l425.44,188.17v269.99h-425.44v-458.16Z"/>
+  <path class="st2" d="M534.04,781.1l425.44-188.17,425.44,188.17"/>
+  <rect class="st20" x="681.31" y="772.92" width="65.45" height="220.9" rx="6.33" ry="6.33"/>
+  <rect class="st20" x="1172.2" y="772.92" width="65.45" height="220.9" rx="6.33" ry="6.33"/>
+  <g>
+    <path class="st0" d="M231.33,1206.54l674.97-257.72v204.54l-634.07,192.26-40.91-139.09Z"/>
+    <path class="st11" d="M272.24,1345.62l634.07-192.26v245.44l-544.07,143.18-90-196.36Z"/>
+    <path class="st10" d="M362.23,1541.98l544.07-143.18v233.17l-388.62,98.18-155.45-188.17Z"/>
+    <path class="st1" d="M517.68,1730.15l388.62-98.18v269.99l-388.62-171.81Z"/>
+    <polygon class="st18" points="264.06 1222.9 873.58 989.73 812.22 1034.72 313.14 1263.81 264.06 1222.9"/>
+    <path class="st4" d="M1687.63,1206.54l-674.97-257.72v204.54l634.07,192.26,40.91-139.09Z"/>
+    <path class="st12" d="M1646.73,1345.62l-634.07-192.26v245.44l544.07,143.18,90-196.36Z"/>
+    <path class="st3" d="M1556.73,1541.98l-544.07-143.18v233.17l388.62,98.18,155.45-188.17Z"/>
+    <path class="st7" d="M1401.28,1730.15l-388.62-98.18v269.99l388.62-171.81Z"/>
+  </g>
+  <g>
+    <path class="st9" d="M906.3,854.73h53.18v1039.05l-53.18-32.73v-1006.32Z"/>
+    <path class="st6" d="M959.48,854.73h53.18v1006.32l-53.18,32.73V854.73Z"/>
+  </g>
+  <g>
+    <line class="st14" x1="354.05" y1="1803.78" x2="607.68" y2="1803.78"/>
+    <line class="st14" x1="1311.29" y1="1803.78" x2="1564.91" y2="1803.78"/>
+  </g>
+</svg>
