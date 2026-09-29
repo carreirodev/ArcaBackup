@@ -81,7 +81,9 @@ O ARCA transforma um SSD externo qualquer num **dispositivo** autocontido — Cl
 
 ### Não suporta
 
-BIOS legada · BitLocker · RAID · Storage Spaces.
+BIOS legada · BitLocker · RAID · Storage Spaces · rede.
+
+**O ARCA é só para discos locais.** NAS, compartilhamento de rede (`\\servidor\...`) e unidade mapeada ficam de fora, inclusive como origem do `--iso` do `arca prepare`. Um caminho de rede que o Windows não encontra sai como `o arquivo ... nao esta la`, e isso não é defeito a corrigir.
 
 ---
 
