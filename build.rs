@@ -80,11 +80,22 @@ fn embutir_o_manifesto() {
 // ------------------------------------------------------------------ carimbo
 
 fn carimbar_a_versao() {
-    // Sem isto o `cargo` só reexecutaria este script quando um fonte mudasse, e
-    // um `git commit` que não toca fonte nenhum — o caso comum de commitar
+    // Um `git commit` que não toca fonte nenhum — o caso comum de commitar
     // documentação — deixaria o carimbo apontando para o commit anterior.
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/index");
+
+    // E uma edição que ainda não passou pelo git deixaria o carimbo dizendo
+    // árvore limpa. Até 29/09/2026 este comentário supunha que o cargo já
+    // rodava o script quando um fonte mudava, e ele não rodava: qualquer
+    // `rerun-if-changed` desliga o padrão de olhar o pacote inteiro, e o `main`
+    // declara dois antes de chegar aqui. A WPC-92 mediu um `arca.exe` com o
+    // `src/main.rs` editado saindo com carimbo de árvore limpa. `src` é uma
+    // pasta, e o cargo confere a pasta inteira; `Cargo.toml` e `Cargo.lock`
+    // decidem quais dependências entram no binário.
+    println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed=Cargo.lock");
 
     let pacote = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "?".into());
 

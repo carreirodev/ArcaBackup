@@ -201,7 +201,7 @@ O carimbo resolve isso:
 
 > **`arvore suja` conta arquivos não rastreados também.** Um fonte novo que ainda não entrou no git muda o que o binário faz tanto quanto um fonte editado. E o carimbo **nunca derruba um build**: um carimbo ausente é informação a menos, e parar a compilação por causa dele seria pior do que o problema que ele resolve.
 
-O `build.rs` declara `rerun-if-changed` sobre `.git/HEAD` e `.git/index` justamente para que um commit que só toca documentação não deixe o carimbo apontando para o commit anterior.
+O `build.rs` declara `rerun-if-changed` sobre `.git/HEAD` e `.git/index` justamente para que um commit que só toca documentação não deixe o carimbo apontando para o commit anterior. E declara também `src`, `Cargo.toml` e `Cargo.lock`, para que uma edição ainda não commitada saia como `arvore suja` mesmo sem nenhum comando git entre a edição e o build. Até 29/09/2026 não saía (WPC-92).
 
 ### 3.4 — Rodar a suíte de testes
 
@@ -2204,6 +2204,7 @@ dispositivo ARCA num runner, e o `bcdedit` recusa o `/enum` sem privilégio.
 | `tests/s6_o_tempo_nao_decide.rs` | S-6: nenhum módulo que julga desfecho alcança o tempo |
 | `tests/b10_nada_e_apagado.rs` | B-10 como propriedade do código |
 | `tests/o_build_rs_le_a_copia_ao_rodar.rs` | O `build.rs` não grava o ambiente de quando compilou, que pode ser o de outra cópia com a mesma `target/` |
+| `tests/o_carimbo_ve_o_fonte_editado.rs` | O carimbo do `--version` é refeito quando muda o commit ou o que entra no binário |
 
 Os testes que precisam do hardware **se pulam sozinhos**, dizendo por quê.
 
