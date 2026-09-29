@@ -1132,7 +1132,7 @@ Quando alguma coisa não bate, a tela sai inteira antes do erro, com cada falha 
   [3/3] sumido .. AUSENTE · o MD5SUMS o lista e ele nao esta na pasta da imagem
 ```
 
-**`AUSENTE` e `NAO DEU PARA LER` são linhas diferentes**, e a distinção é a regra da casa: *"não consegui olhar" nunca vira "não há nada lá"*. O `certutil` responde `0x80070002` para arquivo ausente, e cair nesse ramo faria as duas chegarem iguais — por isso quem responde sobre existência é o sistema de arquivos, antes de o `certutil` ser chamado.
+**`AUSENTE` e `NAO DEU PARA LER` são linhas diferentes**, e a distinção é a regra da casa: *"não consegui olhar" nunca vira "não há nada lá"*. O `certutil` responde `0x80070002` para arquivo ausente, e cair nesse ramo faria as duas chegarem iguais — por isso quem responde sobre existência é o sistema de arquivos, antes de o `certutil` ser chamado. Uma pasta com o nome de um arquivo do `MD5SUMS` sai como `AUSENTE`: o arquivo não está lá, e o `certutil` responderia para ela o mesmo `0x80070002`.
 
 #### `--completo`: a verificação armada
 

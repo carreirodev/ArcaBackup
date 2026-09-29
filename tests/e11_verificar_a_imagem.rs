@@ -193,7 +193,7 @@ fn nenhum_md5sums_deste_dispositivo_aponta_para_arquivo_ausente() {
 
         for entrada in &entradas {
             assert!(
-                ArquivosDoSistema.existe(&caminho.join(&entrada.arquivo)),
+                ArquivosDoSistema.e_um_arquivo(&caminho.join(&entrada.arquivo)),
                 "`{nome}`: o MD5SUMS lista `{}` e ele nao esta na pasta",
                 entrada.arquivo
             );

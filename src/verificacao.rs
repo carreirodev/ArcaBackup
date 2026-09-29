@@ -60,7 +60,8 @@ pub enum Achado {
         encontrado: Resumo,
     },
 
-    /// O `MD5SUMS` o lista e ele nao esta na pasta.
+    /// O `MD5SUMS` o lista e ele nao esta na pasta. Uma pasta com o nome dele
+    /// tambem sai aqui: o arquivo nao esta la (WPC-67).
     Ausente,
 
     /// Ele esta la e nao se deixou resumir. **Nao e o mesmo que ausente.**
@@ -260,10 +261,11 @@ pub fn planejar(
 ) -> Resultado<Plano> {
     let na_pasta = arquivos.listar(pasta_da_imagem)?;
 
-    // Sem diferenciar caixa, do mesmo jeito que `Arquivos::existe` acha o
-    // arquivo: quem abre e o Windows, onde `DISK` e `disk` sao o mesmo. Achar
-    // o tamanho por um criterio e a existencia por outro faria um arquivo
-    // aparecer com zero byte e contar como "fora do MD5SUMS" ao mesmo tempo.
+    // Sem diferenciar caixa, do mesmo jeito que `Arquivos::e_um_arquivo` acha
+    // o arquivo: quem abre e o Windows, onde `DISK` e `disk` sao o mesmo.
+    // Achar o tamanho por um criterio e a existencia por outro faria um
+    // arquivo aparecer com zero byte e contar como "fora do MD5SUMS" ao mesmo
+    // tempo.
     let tamanho_de = |procurado: &str| -> u64 {
         na_pasta
             .iter()
@@ -317,7 +319,12 @@ pub fn conferir(
         // Ele responde `0x80070002` para arquivo que nao existe, e cair nesse
         // ramo faria "nao esta la" chegar como "nao consegui resumir" — que e
         // exatamente a distincao que este modulo existe para manter.
-        let achado = if !arquivos.existe(&caminho) {
+        //
+        // E a pergunta e `e_um_arquivo`, e nao `existe`: o `existe` responde
+        // sim para pasta, e o `certutil` responde para uma pasta o mesmo
+        // `0x80070002` (medido em 28/09/2026). Ate 29/09/2026 (WPC-67), uma
+        // pasta com o nome de um arquivo do `MD5SUMS` saia `NAO DEU PARA LER`.
+        let achado = if !arquivos.e_um_arquivo(&caminho) {
             Achado::Ausente
         } else {
             match resumo::do_certutil(&sistema.resumir(&caminho, Algoritmo::Md5)?, Algoritmo::Md5) {
@@ -504,6 +511,37 @@ mod testes {
     }
 
     #[test]
+    fn uma_pasta_com_o_nome_do_arquivo_sai_ausente_e_nao_vai_ao_certutil() {
+        // V-1. O `existe` responde sim para pasta, e ate 29/09/2026 (WPC-67)
+        // uma pasta com o nome de um arquivo do `MD5SUMS` chegava ao
+        // `certutil`, que responde para ela o mesmo `0x80070002` de um arquivo
+        // ausente (medido em 28/09/2026). A linha saia `NAO DEU PARA LER`,
+        // dizendo que o arquivo estava la. O duplo responde esse mesmo
+        // `0x80070002` para o caminho que ninguem ensinou, e as duas formas de
+        // pasta estao aqui: a vazia e a que tem alguma coisa dentro.
+        let arquivos = ArquivosEmMemoria::novo()
+            .com_pasta_vazia(r"D:\2026-08-22_Apps\disk")
+            .com(r"D:\2026-08-22_Apps\parts\esquecido.txt", "x")
+            .com(r"D:\2026-08-22_Apps\blkdev.list", "y");
+        let sistema = SistemaDeMentira::novo().com_resumo(r"D:\2026-08-22_Apps\blkdev.list", A);
+
+        let conferencia = conferir_sem_avisar(
+            &arquivos,
+            &sistema,
+            &entradas(&format!("{A}  disk\n{B}  parts\n{A}  blkdev.list\n")),
+        );
+
+        assert_eq!(conferencia.conferidos[0].achado, Achado::Ausente);
+        assert_eq!(conferencia.conferidos[1].achado, Achado::Ausente);
+        assert_eq!(conferencia.conferidos[2].achado, Achado::Bate);
+        assert_eq!(
+            sistema.resumidos(),
+            vec![PathBuf::from(r"D:\2026-08-22_Apps\blkdev.list")],
+            "uma pasta nao devia ter ido ao certutil"
+        );
+    }
+
+    #[test]
     fn os_arquivos_fora_do_md5sums_sao_contados_e_nao_reprovam() {
         // Medido na imagem de verdade: quatro ficam de fora por construcao —
         // o proprio `MD5SUMS`, o `clonezilla-img` e o `Info-img-id.txt`, que
@@ -618,7 +656,7 @@ mod testes {
     #[test]
     fn a_caixa_do_nome_nao_faz_um_arquivo_sumir() {
         // Quem abre e o Windows: `DISK` e `disk` sao o mesmo arquivo, e o
-        // tamanho tem de ser achado do mesmo jeito que o `existe` acha.
+        // tamanho tem de ser achado do mesmo jeito que o `e_um_arquivo` acha.
         let arquivos = ArquivosEmMemoria::novo().com(r"D:\2026-08-22_Apps\DISK", "nvme0n1");
         let sistema = SistemaDeMentira::novo().com_resumo(r"D:\2026-08-22_Apps\disk", A);
 
