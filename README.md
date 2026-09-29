@@ -164,7 +164,7 @@ cargo build                    # → target\debug\arca.exe
 
 ### 3.3 — O que o `build.rs` faz, e por que você deve se importar
 
-O `build.rs` faz **duas** coisas que nenhum outro lugar do projeto poderia fazer.
+O `build.rs` faz o que nenhum outro lugar do projeto poderia fazer: embute o manifesto, carimba o commit e põe o ícone de `docs/Icon.ico` no `arca.exe`.
 
 #### a) Embute o manifesto `requireAdministrator`
 

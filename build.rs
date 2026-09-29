@@ -1,5 +1,5 @@
-//! Duas coisas que só o build sabe fazer: o manifesto de elevação e o carimbo
-//! de qual commit este binário é.
+//! O que só o build sabe fazer: o manifesto de elevação, o ícone e o carimbo de
+//! qual commit este binário é.
 //!
 //! # O manifesto `requireAdministrator` (PRD 10.4)
 //!
@@ -8,6 +8,20 @@
 //! passa por nenhuma serializacao nossa. A reelevacao explicita do modulo
 //! `adaptadores::windows::privilegios` continua existindo para o caso de o
 //! binario rodar sem o manifesto em vigor.
+//!
+//! # O ícone (29/09/2026, WPC-89)
+//!
+//! O linker só aceita um ícone dentro de um recurso compilado, o `.res`. O
+//! caminho de sempre é o `rc.exe` do Windows SDK, chamado por um crate que o
+//! procure (`winresource`, `embed-resource`), porque ele não está no `PATH`
+//! fora do prompt de desenvolvedor. Ficou de fora pela razão do ADR-0006: um
+//! `.res` que só leva ícone são dois tipos de registro, e escrevê-lo aqui custa
+//! menos do que uma dependência de build e a caça a um executável do SDK.
+//!
+//! Ao contrário do carimbo, o ícone derruba o build quando falta ou vem
+//! quebrado. O `docs/Icon.ico` é versionado como o manifesto; se ele some, o
+//! erro é do repositório, e um aviso deixaria sair um `arca.exe` sem ícone que
+//! ninguém lê.
 //!
 //! # O carimbo do commit (24/08/2026)
 //!
@@ -38,6 +52,7 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=recursos/arca.manifest");
+    println!("cargo:rerun-if-changed=docs/Icon.ico");
     println!("cargo:rerun-if-changed=build.rs");
 
     // O carimbo vem antes do manifesto porque o manifesto sai cedo fora do
@@ -45,6 +60,7 @@ fn main() {
     // o segundo falha na cara de quem roda, o primeiro mente calado.
     carimbar_a_versao();
     embutir_o_manifesto();
+    embutir_o_icone();
 }
 
 // ---------------------------------------------------------------- manifesto
@@ -75,6 +91,104 @@ fn embutir_o_manifesto() {
     println!(
         "cargo:rustc-link-arg-bin=arca=/MANIFESTUAC:level='requireAdministrator' uiAccess='false'"
     );
+}
+
+// -------------------------------------------------------------------- ícone
+
+fn embutir_o_icone() {
+    let alvo = std::env::var("TARGET").unwrap_or_default();
+    if !alvo.contains("windows-msvc") {
+        return;
+    }
+
+    // Os dois caminhos vêm de quando o script roda, pela mesma razão do
+    // manifesto (WPC-82).
+    let raiz = std::env::var_os("CARGO_MANIFEST_DIR")
+        .expect("o cargo define CARGO_MANIFEST_DIR para todo script de build que roda");
+    let saida = std::env::var_os("OUT_DIR")
+        .expect("o cargo define OUT_DIR para todo script de build que roda");
+
+    let icone = std::path::Path::new(&raiz).join("docs/Icon.ico");
+    let ico = std::fs::read(&icone)
+        .unwrap_or_else(|erro| panic!("não consegui ler {}: {erro}", icone.display()));
+    let res = montar_o_res(&ico)
+        .unwrap_or_else(|motivo| panic!("{} não serve de ícone: {motivo}", icone.display()));
+
+    let destino = std::path::Path::new(&saida).join("icone.res");
+    std::fs::write(&destino, res)
+        .unwrap_or_else(|erro| panic!("não consegui escrever {}: {erro}", destino.display()));
+
+    // O `link.exe` aceita um `.res` como entrada e o converte sozinho.
+    println!("cargo:rustc-link-arg-bin=arca={}", destino.display());
+}
+
+/// O `.res` que o `rc.exe` compilaria de `1 ICON "docs/Icon.ico"`: um
+/// `RT_ICON` por imagem do `.ico`, com ids de 1 em diante, e um
+/// `RT_GROUP_ICON` de id 1 que os lista. O grupo é o que o Explorer mostra.
+fn montar_o_res(ico: &[u8]) -> Result<Vec<u8>, String> {
+    const RT_ICON: u16 = 3;
+    const RT_GROUP_ICON: u16 = 14;
+
+    let u16_em = |i: usize| ico.get(i..i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+    let u32_em = |i: usize| {
+        ico.get(i..i + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+
+    if u16_em(0) != Some(0) || u16_em(2) != Some(1) {
+        return Err("o cabeçalho não é o de um .ico".into());
+    }
+    let quantas = u16_em(4)
+        .filter(|&n| n > 0)
+        .ok_or("o .ico não traz imagem nenhuma")?;
+
+    let mut res = Vec::new();
+    // Todo `.res` de 32 bits abre com um registro vazio: é por ele que o
+    // linker o distingue do formato de 16 bits.
+    anexar_registro(&mut res, 0, 0, &[]);
+
+    let mut grupo = Vec::new();
+    grupo.extend_from_slice(&ico[..6]);
+    for id in 1..=quantas {
+        let entrada = 6 + 16 * usize::from(id - 1);
+        let (Some(tamanho), Some(inicio)) = (u32_em(entrada + 8), u32_em(entrada + 12)) else {
+            return Err(format!("a entrada {id} passa do fim do arquivo"));
+        };
+        let imagem = usize::try_from(inicio)
+            .ok()
+            .zip(usize::try_from(tamanho).ok())
+            .and_then(|(inicio, tamanho)| ico.get(inicio..inicio.checked_add(tamanho)?))
+            .ok_or_else(|| format!("a imagem {id} passa do fim do arquivo"))?;
+        anexar_registro(&mut res, RT_ICON, id, imagem);
+
+        // Largura, altura, cores, reservado, planos e bits por pixel vão como
+        // estão no `.ico`. Copiar em vez de recalcular preserva o 0 que quer
+        // dizer 256 na imagem grande.
+        grupo.extend_from_slice(&ico[entrada..entrada + 8]);
+        grupo.extend_from_slice(&tamanho.to_le_bytes());
+        grupo.extend_from_slice(&id.to_le_bytes());
+    }
+    anexar_registro(&mut res, RT_GROUP_ICON, 1, &grupo);
+
+    Ok(res)
+}
+
+/// Um registro do `.res`: cabeçalho de 32 bytes, com tipo e nome numéricos, e
+/// os dados completados até múltiplo de 4.
+fn anexar_registro(res: &mut Vec<u8>, tipo: u16, id: u16, dados: &[u8]) {
+    let tamanho = u32::try_from(dados.len()).expect("um recurso de ícone cabe em 4 GB");
+    res.extend_from_slice(&tamanho.to_le_bytes());
+    res.extend_from_slice(&32u32.to_le_bytes());
+    res.extend_from_slice(&[0xFF, 0xFF]);
+    res.extend_from_slice(&tipo.to_le_bytes());
+    res.extend_from_slice(&[0xFF, 0xFF]);
+    res.extend_from_slice(&id.to_le_bytes());
+    // Versão dos dados, flags de memória, idioma, versão e características. O
+    // Win32 ignora as flags, e o idioma neutro faz o Windows achar o ícone em
+    // qualquer idioma de interface.
+    res.extend_from_slice(&[0; 16]);
+    res.extend_from_slice(dados);
+    res.resize(res.len().next_multiple_of(4), 0);
 }
 
 // ------------------------------------------------------------------ carimbo
