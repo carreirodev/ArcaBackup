@@ -1291,7 +1291,8 @@ Dispositivo pronto.
 > promete o boot sem ter lido a ordem é a mesma coisa que a linha `Ordem de
 > boot` do `arca status` deixou de fazer no ADR-0009.
 
-> **Esta tela é execução real**, de 23/08/2026, e é a montagem de **duas**: a
+> **Esta tela é execução real**, de 23/08/2026, menos as linhas do pacote que a
+> nota acima descreve, e é a montagem de **duas**: a
 > primeira execução do comando produziu tudo, e a linha `Entrada de firmware`
 > dela dizia `reusada e reapontada`, porque esta máquina já tinha uma entrada
 > `ARCA`. A forma `criada` acima é da segunda execução, feita depois de apagar
@@ -1404,9 +1405,11 @@ inerte deste dispositivo, a menos das duas diferenças de origem. Ver
 
 **A armadilha do `tar`, e ela é cara.** `tar` no `PATH` pode não ser o `bsdtar`:
 com o Git para Windows instalado, ele resolve para o **GNU tar 1.35**, que não
-abre zip. O ARCA chama `curl` e `bsdtar` por **caminho absoluto** no `System32`
-— e o modo de falha de não fazer isso é falhar na extração **depois** de o disco
-já ter sido apagado.
+abre zip. O ARCA chama `curl` e `bsdtar` por **caminho absoluto** no `System32`.
+Até PR-7, o modo de falha de não fazer isso era falhar na extração **depois** de o
+disco já ter sido apagado; desde 04/10/2026 o pré-voo lista o pacote com o mesmo
+`tar` antes do passo 0, e um `tar` que não abre zip faria o pré-voo recusar um
+pacote bom, com o disco intacto.
 
 ## 8. Comandos
 
@@ -2126,7 +2129,7 @@ Cada uma custou uma execução real para aparecer.
 | ~~Restaurar em disco diferente é permitido, recusado só se menor~~ **Só o disco de origem é destino válido** | Quem troca o disco reinstala o Windows, e o caso de uso não existe. R-7 troca de função: de `≥` (cabe?) para `=` (é ele mesmo?) — mais duro sem custar código ([ADR-0015](../docs/adr/0015-a-restauracao-so-restaura-no-disco-de-origem.md), pago no código na E10) |
 | **A entrada de firmware nasce de `bcdedit /copy {bootmgr}`, e sai da ordem permanente** | A entrada `ARCA` desta máquina é uma cópia do `{bootmgr}` com três campos trocados — o original estava nela mesma. E o `/copy` a põe no `displayorder` sozinho, que é o perigo de C-5: tirar é uma escrita de alvo fixo, sobre a entrada que o próprio comando acabou de criar ([ADR-0017](../docs/adr/0017-a-entrada-de-firmware-nasce-de-uma-copia-do-bootmgr.md)) |
 | **O `arca prepare` instala o zip, e desarma o `grub.cfg` que ele entrega** | O zip vem com `set default="0"`, que é "um estado que parece inerte" (ADR-0005). Desarmar o do zip produz exatamente o `grub.cfg` inerte deste dispositivo, a menos do `noeject` e de seis segundos de carimbo — a mesma build, artefatos diferentes ([ADR-0018](../docs/adr/0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md)) |
-| **O `curl` e o `bsdtar` são chamados por caminho absoluto** | `tar` no `PATH` é o GNU tar numa máquina com Git instalado, e ele não abre zip. O modo de falha é falhar na extração **depois** de o disco ter sido apagado (ADR-0018) |
+| **O `curl` e o `bsdtar` são chamados por caminho absoluto** | `tar` no `PATH` é o GNU tar numa máquina com Git instalado, e ele não abre zip. Até PR-7, o modo de falha era falhar na extração **depois** de o disco ter sido apagado (ADR-0018); desde 04/10/2026 o pré-voo lista o pacote com o mesmo `tar`, e a falha viria ali, com o disco intacto ([ADR-0028](../docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md)) |
 | A recusa de R-7 fica, e a razão é **onde** ela acontece — não "senão corrompe" | O Clonezilla já confere e desiste por padrão. A recusa dele custa um reinício de uma operação destrutiva; a do ARCA custa zero ([ADR-0010](../docs/adr/0010-r7-recusa-por-medicao-e-a-regua-e-o-msft-disk.md)) |
 | O tamanho do destino sai do `MSFT_Disk`, e a comparação sai em setores | É a única régua que casa com a GPT de dentro da imagem. O `Win32_DiskDrive` é o CHS legado truncado, e faria um disco não caber em si mesmo (ADR-0010) |
 | O próprio dispositivo ARCA nunca é destino, e nenhuma confirmação libera | Apagaria o Clonezilla que está executando a receita e a imagem que ela lê (R-8) |
