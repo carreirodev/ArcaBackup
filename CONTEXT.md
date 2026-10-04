@@ -14,6 +14,12 @@ _Evitar_: pendrive, mídia, unidade, drive
 Transformar um disco num dispositivo: apagar a tabela de partição, criar as duas, rotulá-las, instalar o Clonezilla e criar a entrada de boot. É a **única** operação do ARCA que destrói dados sem reiniciar a máquina, e a única que roda antes de existirem os rótulos pelos quais todas as outras se localizam.
 _Evitar_: formatar, instalar, inicializar
 
+**Pacote guardado**:
+A cópia conferida do zip do Clonezilla neste PC, em `%LOCALAPPDATA%\ARCA\`, na mesma pasta do `arca.log`, nomeada pela versão: `clonezilla-live-3.3.3-15-amd64.zip`. É de onde o `arca prepare` sem `--iso` tira o Clonezilla desde PR-7, e só existe com esse nome depois de passar no SHA256 compilado — o download em andamento mora ao lado, num `.parcial`, que se retoma. Guardado não é confiado: o SHA256 é conferido a cada uso, no pré-voo e de novo no passo 7.
+
+**Não é a cópia de PR-3.** Aquela mora no dispositivo, no `ARCAVAULT`, para o dispositivo se reconstruir sozinho, e o passo 5 do próximo preparo a apaga junto com o resto. O pacote guardado mora fora do dispositivo justamente por isso: o que o leva embora é uma restauração do `C:`, e ela custa um download, nada mais ([ADR-0028](docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md)).
+_Evitar_: cache, cópia local, pacote baixado, ISO
+
 **ARCABOOT**:
 A partição FAT32 do dispositivo, de onde a máquina boota. Guarda o Clonezilla, o `grub.cfg` e o estado do job. Está sempre fora da imagem. **O nome é o papel, e o rótulo pode ser outro**: o `arca prepare` grava `ARCABOOT`, e o usuário pode renomeá-lo no Explorer para `ARCA-<texto>`, com até 6 caracteres depois do hífen (C-16). Um volume cujo rótulo tem uma dessas duas formas é um **volume de boot**. Ele só é o `ARCABOOT` do dispositivo quando é o único na mesa e está no mesmo disco físico do `ARCAVAULT`. Um pendrive rotulado `ARCA-...` é um volume de boot, e não é o `ARCABOOT` de ninguém (C-10).
 _Evitar_: partição de boot, EFI

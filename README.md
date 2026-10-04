@@ -112,7 +112,7 @@ BIOS legada · BitLocker · RAID · Storage Spaces · rede.
 | **Privilégio administrativo** | **Todos** os comandos exigem. O manifesto embutido faz o Windows pedir o UAC sozinho |
 | Ferramentas do próprio Windows | `bcdedit`, `powershell.exe`, `chkdsk`, `certutil`, `shutdown`, e — só no `prepare` — `C:\Windows\System32\curl.exe` e `C:\Windows\System32\tar.exe` (que é o `bsdtar`) |
 | **Um disco externo** | **17,6 GB** no mínimo — 1,6 GB do `ARCABOOT` mais os 16 GB mínimos do `ARCAVAULT`, contados em base 1024. Na prática, grande o bastante para caber as imagens |
-| Conexão de rede | Só no `arca prepare` sem `--iso`, para baixar 535,5 MB do Clonezilla |
+| Conexão de rede | Só no primeiro `arca prepare` sem `--iso` de cada versão do Clonezilla, para baixar 535,5 MB no pré-voo, antes do menu de discos. Os seguintes usam o pacote guardado neste PC, sem rede, enquanto ele estiver lá e bater com o SHA256 |
 
 > **Os caminhos do `curl` e do `tar` são fixos em `C:\Windows\System32\`, e não vêm do `PATH`.** O Git Bash traz homônimos — um `tar` que não entende zip falharia **depois** de o `prepare` já ter apagado o disco.
 
@@ -538,7 +538,7 @@ Com `--dispositivo` na linha, o menu **não aparece** — é o atalho de quem j�
 
 | # | Passo | Parando aqui, o que fica |
 |---|---|---|
-| pré-voo | Conferir o pacote do `--iso`, quando ele veio | nada tocado |
+| pré-voo | Obter e conferir o pacote: o do `--iso`, ou o pacote guardado neste PC — reusado ou baixado (PR-7) | nada tocado — um download pela metade fica no `.parcial`, para a próxima vez |
 | 0 | Listar os discos e perguntar o número — **só sem `--dispositivo`** | nada tocado |
 | 1 | Descrever o disco e julgar as sete defesas | nada tocado |
 | 1b | **Ler o firmware** — a ordem permanente e a entrada a reusar, com o firmware ainda coerente (PR-6). Sem conseguir ler, o `prepare` recusa aqui | nada tocado |
@@ -546,7 +546,7 @@ Com `--dispositivo` na linha, o menu **não aparece** — é o atalho de quem j�
 | 3 | Perguntar `(s/N)` e **reler o disco** | nada tocado |
 | 4 | Confirmação digitada: o **modelo** do disco | nada tocado |
 | 5 | **Particionar e formatar** ← ponto sem volta | disco apagado, duas partições vazias |
-| 6 | Baixar o pacote, ou usar o `--iso` | dispositivo vazio, sem Clonezilla |
+| 6 | O pacote já é local: o do `--iso` ou o pacote guardado, obtido no pré-voo. Nenhum download depois do passo 5 (PR-7) | dispositivo vazio, sem Clonezilla |
 | 7 | Conferir o SHA256 | idem — e **nada foi extraído** |
 | 8 | Extrair | `ARCABOOT` com o Clonezilla e `set default="0"` |
 | 9 | Devolver o `grub.cfg` ao estado inerte | dispositivo bootável e inerte |
@@ -555,7 +555,7 @@ Com `--dispositivo` na linha, o menu **não aparece** — é o atalho de quem j�
 
 Nenhum desses estados é pior do que o anterior, e todos são reversíveis rodando o comando de novo — ele começa apagando. Do passo 8 em diante o dispositivo **já boota**: um `prepare` interrompido ali deixa um Clonezilla utilizável pelo menu.
 
-O **pré-voo não tem número** porque não é um estado em que se possa parar: ele é a recusa que acontece antes de o comando começar. O `--iso` é a única entrada deste comando que dá para julgar inteira sem tocar em disco nenhum — o arquivo está lá, o SHA256 é o do pacote fixado, e dentro dele estão os quatro caminhos que fazem um dispositivo bootar —, e as três perguntas são feitas ali. O passo 7 continua conferindo a mesma coisa: entre um e outro há uma pessoa lendo o plano e digitando o modelo do disco, que é o mesmo intervalo que o passo 3 cobre relendo o disco.
+O **pré-voo não tem número** porque não é um estado em que se possa parar: ele é a recusa que acontece antes de o comando começar. É ali que o pacote é obtido e julgado inteiro sem tocar em disco nenhum — o arquivo está lá, o SHA256 é o do pacote fixado, e dentro dele estão os quatro caminhos que fazem um dispositivo bootar —, venha ele do `--iso`, do pacote guardado neste PC ou de um download. Nenhum download acontece depois do ponto sem volta (PR-7): um preparo que não consegue o pacote recusa com o disco intacto. O passo 7 continua conferindo a mesma coisa: entre um e outro há uma pessoa lendo o plano e digitando o modelo do disco, que é o mesmo intervalo que o passo 3 cobre relendo o disco.
 
 #### O pacote do Clonezilla
 
@@ -563,10 +563,13 @@ O **pré-voo não tem número** porque não é um estado em que se possa parar: 
 |---|---|
 | Versão | **3.3.3-15** — a que está bootando neste projeto, lida do `hostname=cl-3.3.3-15` do `grub.cfg` |
 | Arquivo | `clonezilla-live-3.3.3-15-amd64.zip`, 561.478.648 bytes |
-| URL | `https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_stable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip` |
+| Fontes | Tentadas nesta ordem, uma vez cada: `https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip`, `https://free.nchc.org.tw/clonezilla-live/stable/clonezilla-live-3.3.3-15-amd64.zip` e `https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_stable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip` |
+| Guardado em | `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip`, a mesma pasta do `arca.log`. O download em andamento fica ao lado, com `.parcial` no fim do nome |
 | SHA256 | `00cee7700433e63017e2ea9eb40519108829710132364a8028a6c039a6046304` |
 
 O SHA256 é **constante de código, compilada no binário** — nunca baixada junto do arquivo, o que não verificaria nada: quem pudesse trocar um trocaria o outro. Ele tem duas fontes independentes — o `CHECKSUMS.TXT` do mirror do projeto e o `certutil` sobre o arquivo baixado do SourceForge, servidores diferentes e o mesmo número — e a conferência acontece **antes de extrair**.
+
+**O pacote fica guardado neste PC.** O primeiro `arca prepare` de cada versão o baixa no pré-voo, antes do menu de discos; os seguintes o conferem de novo e não usam a rede. Uma fonte que não conecta em 30 s, ou que fica 60 s sem entregar nada, é abandonada, e a próxima continua do byte em que ela parou. Um download interrompido fica no `.parcial`, e a próxima execução o retoma. Nenhuma fonte é confiável, e por isso elas são intercambiáveis: quem diz se o que veio é o pacote é o SHA256 ([ADR-0028](docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md)).
 
 #### Instalar sem rede
 
@@ -594,13 +597,15 @@ Para **antes** da pergunta, não escreve nada, e não diz que escreveu.
 
 Sem `--dispositivo`, o ensaio ainda passa pelo menu — ele pergunta o número, imprime o plano daquele disco e para ali. É a mesma coisa que `arca restore --dry-run` faz sem nome.
 
-#### Exemplo real — a execução de 23/08/2026
+#### Exemplo real — a execução de 23/08/2026, com o pré-voo de PR-7 no lugar do download do passo 6
 
-*Captura preservada em `recursos/capturas/arca-prepare-2026-08-23-marco.txt`, abreviada nos comentários mais longos.*
+*Captura preservada em `recursos/capturas/arca-prepare-2026-08-23-marco.txt`, abreviada nos comentários mais longos. **As linhas do pacote não são as da captura**: em 23/08/2026 o download acontecia no passo 6, depois do particionamento. As duas primeiras linhas, a do Clonezilla no plano e a do SHA256 conferido no passo 7 são as que o código escreve hoje para um primeiro preparo, baixando da primeira fonte; o caminho é o de um usuário de exemplo. A linha do download é reescrita no lugar enquanto ele corre, e aparece aqui como fica no fim. Nenhum teste compara esta tela inteira.*
 
 ```
 > arca prepare --dispositivo 1
 
+  Baixando Clonezilla ............. 3.3.3-15 · 535,5 MB de 535,5 MB · free.nchc.org.tw (oldstable)
+  Pacote conferido ................ ok · 00cee7700433 · guardado neste PC em C:\Users\Ana Paula\AppData\Local\ARCA\clonezilla-live-3.3.3-15-amd64.zip · nada tocado ainda (PR-7)
   Disco 1 ......................... JMicron Generic · USB · 447,1 GB
   Tipo de midia ................... External hard disk media · nao e disco fixo (PR-5)
   Sistema ......................... IsSystem false · IsBoot false · nao carrega o C:
@@ -619,8 +624,8 @@ O QUE VAI FICAR NO LUGAR:
        2  FAT32    1,6 GB  ARCABOOT    o Clonezilla e o ARCA moram aqui
 
 E O QUE MAIS VAI ACONTECER:
-  Clonezilla 3.3.3-15 · baixado (535,5 MB), com o SHA256 conferido contra
-     o valor compilado neste ARCA — e nao contra um baixado junto (PR-1)
+  Clonezilla 3.3.3-15 · do pacote guardado neste PC, conferido contra o valor
+     compilado neste ARCA (PR-1)
   Uma copia do pacote fica no ARCAVAULT, para o dispositivo se reconstruir
      sozinho (PR-3)
   Uma entrada de boot chamada `ARCA` e criada no firmware, apontando para o
@@ -638,8 +643,7 @@ Digite o modelo do disco para confirmar: JMicron Generic
   Particionando ................... ok · GPT, 2 particoes de dados basicos ({ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}) · sem a MSR
   Formatando e rotulando .......... ok · ARCAVAULT (NTFS) em E: · ARCABOOT (FAT32) em F:
   Conferido apos escrever ......... ok · relido do disco · nenhuma particao ativa, unidade 4096 (C-3)
-  Baixando Clonezilla ............. 3.3.3-15 · 535,5 MB · pode levar minutos
-  SHA256 conferido ................ ok · 00cee7700433 · de https://downloads.sourceforge.net/...
+  SHA256 conferido ................ ok · 00cee7700433 · de C:\Users\Ana Paula\AppData\Local\ARCA\clonezilla-live-3.3.3-15-amd64.zip
   Copia do pacote em ARCAVAULT .... ok · E:\clonezilla-live-3.3.3-15-amd64.zip (PR-3)
   Extraindo ....................... ok · F:\
   Estado inerte ................... ok · o `set default` do pacote era "0", e voltou para `live-default`
@@ -1770,6 +1774,8 @@ O `estado.json` é um JSON escrito e lido à mão, sem dependência nova:
 |---|---|
 | `%LOCALAPPDATA%\ARCA\arca.log` | O registro local. **Descartável** |
 | `%LOCALAPPDATA%\ARCA\arca.log.anterior` | A geração anterior, rotacionada a 1 MB |
+| `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip` | O **pacote guardado** do `arca prepare`: o zip do Clonezilla, que só existe com este nome depois de passar no SHA256 e é conferido de novo a cada uso (PR-7). Uma restauração o leva embora, e isso custa um download |
+| `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip.parcial` | O download em andamento, que a próxima execução retoma. Fica depois de um download interrompido, e depois de um que chegou e não bateu com o SHA256 |
 
 O registro anota a linha de comando **bruta** de cada invocação — que é o que denuncia um argumento perdido na elevação. Trecho real do `arca.log` de 22/08/2026, preservado em `recursos/capturas/arca-log-windows-2026-08-23-pos-restauracao.txt` (a palavra `suposto` é daquela versão do código, de antes de o oráculo do §4.5 existir):
 
@@ -1779,7 +1785,7 @@ O registro anota a linha de comando **bruta** de cada invocação — que é o q
 2026-08-22 15:42:24.996 INFO  [16744] ensaio de backup `2026-08-22_Apps` · disco nvme0n1 (suposto) · receita de 813 caracteres · validada por C-2
 ```
 
-Nenhuma falha de escrita aqui interrompe uma operação: perder o registro é ruim, parar um backup por causa dele seria pior. Sem `%LOCALAPPDATA%`, ele cai no diretório temporário.
+Nenhuma falha de escrita no registro interrompe uma operação: perder o registro é ruim, parar um backup por causa dele seria pior. Sem `%LOCALAPPDATA%`, ele cai no diretório temporário, e o pacote guardado vai junto. Com o pacote guardado é diferente: sem onde guardá-lo, o `arca prepare` sem `--iso` recusa no pré-voo, com o disco intacto.
 
 ### O que o ARCA nunca escreve
 
@@ -1895,7 +1901,9 @@ binario e nao veio junto do download.
 
 Ou o download veio corrompido — rode de novo —, ou o arquivo do outro lado não é o que este ARCA conhece. A causa mais comum com `--iso` é baixar **o Clonezilla de hoje** em vez da versão que este ARCA fixa: o SourceForge publica versões novas, e `3.3.3-15` é a que este binário conhece.
 
-**Com `--iso`, nada foi apagado** — a recusa vem do pré-voo. Sem `--iso` o disco já foi apagado quando ela chega: o dispositivo fica vazio, com as duas partições prontas e sem Clonezilla, e rodar o `prepare` de novo resolve.
+**Nada foi apagado**: com ou sem `--iso`, a recusa vem do pré-voo, antes do passo 0. Sem `--iso`, o arquivo que não bateu é o recém-baixado, e ele fica no `.parcial`, em `%LOCALAPPDATA%\ARCA\` — o pacote guardado não é substituído por ele. Um download que chegou inteiro e corrompido tem o tamanho do pacote, e por isso a próxima execução recomeça do zero, em vez de retomá-lo. Um pacote guardado que deixou de bater não chega a esta recusa: o pré-voo diz `nao bate com o SHA256 deste ARCA · baixando de novo, do zero` e baixa outro.
+
+Ela só aparece depois do passo 5 se o arquivo mudar entre o pré-voo e o passo 7, que é o intervalo em que alguém lê o plano e digita o modelo do disco. Aí o disco já foi apagado: o dispositivo fica vazio, com as duas partições prontas e sem Clonezilla, e rodar o `prepare` de novo resolve.
 
 ### `o arquivo ... nao esta la, e e o caminho que o --iso deu`
 
@@ -1930,6 +1938,45 @@ Nada foi apagado (PR-2)
 ```
 
 O Windows não deixou olhar o caminho do `--iso` e respondeu o que está entre parênteses. Quando o `--iso` é uma pasta, o caminho citado é o do `clonezilla-live-3.3.3-15-amd64.zip` dentro dela. O arquivo pode estar lá: o que falta é acesso a ele, ou uma leitura que funcione no disco onde ele está. **Nada foi apagado**: esta recusa acontece no pré-voo, antes do passo 0.
+
+### `nao deu para baixar o Clonezilla ... de nenhuma das N fontes`
+
+```
+erro: nao deu para baixar o Clonezilla 3.3.3-15 de nenhuma das 3 fontes:
+  free.nchc.org.tw (oldstable) — nao respondeu em 30 s
+  free.nchc.org.tw (stable) — parou de mandar por 60 s, com 120,0 MB de 535,5 MB
+  downloads.sourceforge.net — HTTP 404
+O que ja veio fica guardado, e a proxima tentativa continua de onde parou. Para nao depender do download do ARCA, baixe pelo navegador
+  https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip
+e passe o arquivo com --iso. Nada foi apagado (PR-7)
+```
+
+Nenhuma das fontes entregou o pacote, e cada linha diz o que uma delas respondeu: `nao respondeu em 30 s` é uma fonte que não conectou; `parou de mandar por 60 s` é uma que conectou e parou de entregar; `HTTP <codigo>` é o servidor respondendo com erro — um 404 pode ser o arquivo que mudou de pasta no mirror —; e qualquer outra falha, como estar sem rede, aparece com o texto do próprio `curl`. **Nada foi apagado**: o pacote é obtido no pré-voo, antes do passo 0, e nenhum disco chegou a ser listado.
+
+Há dois caminhos:
+
+1. **Rode o mesmo comando de novo.** O que já veio fica no `.parcial`, em `%LOCALAPPDATA%\ARCA\`, e a próxima tentativa continua de onde parou, em vez de começar do zero.
+2. **Baixe pelo navegador** a URL que a mensagem dá — a da primeira fonte — e passe o arquivo com `--iso`. O SHA256 é conferido do mesmo jeito. O `--iso` não lê nem escreve o pacote guardado (PR-2), e por isso o próximo `arca prepare` sem `--iso` volta a baixar.
+
+### `nao deu para guardar o pacote em ...`
+
+```
+erro: nao deu para guardar o pacote em C:\Users\Ana Paula\AppData\Local\ARCA (Acesso negado. (os error 5)). Nada foi apagado (PR-7)
+```
+
+A pasta do pacote guardado — `%LOCALAPPDATA%\ARCA\`, a mesma do `arca.log` — não aceitou escrita, e o que está entre parênteses é o que o Windows respondeu. Acontece quando a pasta não se deixa criar, quando o `.parcial` não se deixa criar nem zerar, ou quando já existe nela uma **pasta** com o nome do pacote, e aí o parêntese diz isso. **Nada foi apagado**: a recusa vem do pré-voo, antes de qualquer download e antes do passo 0.
+
+Abra a pasta no Explorador — `%LOCALAPPDATA%\ARCA` na barra de endereço —, confira o que há nela e as permissões dela, e rode de novo. Para preparar sem depender dessa pasta, passe o pacote com `--iso`, que não a usa.
+
+### `faltam N MB para baixar o pacote, e ... tem M MB livres`
+
+```
+erro: faltam 536 MB para baixar o pacote, e C:\Users\Ana Paula\AppData\Local\ARCA tem 100 MB livres. Nada foi apagado (PR-7)
+```
+
+O volume onde mora a pasta do pacote guardado — o `C:`, quase sempre — não tem espaço livre para o que falta baixar. A conta é do que **falta**: com parte do pacote já no `.parcial`, o que já veio não entra nela. **Nada foi apagado**: a recusa vem do pré-voo, antes de qualquer download e antes do passo 0.
+
+Libere espaço nesse volume — pelo menos os MB que a mensagem diz que faltam — e rode de novo. Ou baixe o pacote pelo navegador para outro disco e passe-o com `--iso`, que não usa essa pasta.
 
 ### `o disco N NAO e mais o que estava no plano`
 
@@ -2058,6 +2105,18 @@ Cada uma custou uma execução real para existir. Elas têm identificadores no c
 | **S-4** | Veredito e desfecho sempre gravados **em arquivo**, nunca só em tela |
 | **S-5** | **Falha parcial é falha total** |
 | **S-6** | **Nunca comparar uma data escrita pelo Windows com outra escrita pelo Linux.** O que liga um job ao desfecho é o selo |
+
+### Preparação
+
+| ID | Regra |
+|---|---|
+| **PR-1** | Versão do Clonezilla **fixada**, com o SHA256 **compilado no binário** — nunca baixado junto do arquivo. Não batendo, recusar antes de extrair |
+| **PR-2** | `--iso <caminho>` instala de um arquivo local, conferido pelo mesmo SHA256, sem passar pelo `curl` |
+| **PR-3** | Guardar no `ARCAVAULT` uma cópia do pacote usado, **depois** de o SHA256 passar |
+| **PR-4** | Imprimir o **plano inteiro** antes de agir, perguntar, **reler o disco** e só escrever depois da confirmação digitada |
+| **PR-5** | Criar e rotular as duas partições atrás de **sete defesas**, nenhuma opcional. Disco fixo é recusa dura, sem opção de forçar |
+| **PR-6** | **Ler o firmware antes do ponto sem volta**, e fazer do `/set device` a primeira escrita depois dele |
+| **PR-7** | **Nenhum download depois do ponto sem volta.** Sem `--iso`, o pacote é obtido e conferido no pré-voo — do pacote guardado no PC ou baixando-o —, e uma fonte que não conecta em 30 s ou fica 60 s sem entregar nada é abandonada |
 
 ### Armadilhas conhecidas, e quem as defende
 
