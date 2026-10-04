@@ -876,13 +876,45 @@ fn baixar_o_pacote_guardado(
 
         if resposta == pacote::Resposta::Entregou {
             // PR-1 antes do nome: o `.parcial` só vira o pacote guardado
-            // depois de passar. O que não passa fica onde está, e a próxima
-            // execução recomeça do zero, porque ele tem o tamanho do pacote.
-            let resumo = conferir_o_pacote(contexto, &parcial)?;
+            // depois de passar.
+            let resumo = match conferir_o_pacote(contexto, &parcial) {
+                Ok(resumo) => resumo,
+
+                // O que não bate é zerado, e a próxima execução baixa do
+                // zero. Deixá-lo prenderia o ARCA nele: uma página de login
+                // de Wi-Fi entregue no lugar do zip é menor que o pacote, e
+                // seria retomada para sempre. Decidido pelo usuário em
+                // 04/10/2026 (WPC-134). "Não consegui medir" não cai aqui, e
+                // não zera nada.
+                Err(
+                    divergente @ Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente {
+                        ..
+                    }),
+                ) => {
+                    if let Err(nao_zerou) = zerar() {
+                        contexto.registro.aviso(format!(
+                            "o .parcial que nao bate nao foi zerado: {nao_zerou}"
+                        ));
+                    }
+                    return Err(divergente);
+                }
+                Err(outro) => return Err(outro),
+            };
             contexto
                 .arquivos
                 .renomear(&parcial, &pacote::guardado_em(pasta))?;
             return Ok(resumo);
+        }
+
+        // Uma escrita que falhou não é resposta da fonte: as outras cairiam
+        // no mesmo `.parcial` (decidido pelo usuário em 04/10/2026).
+        if let pacote::Resposta::NaoConseguiuEscrever(frase) = resposta {
+            return Err(Erro::PacoteRecusado(
+                pacote::RecusaDoPacote::NaoDeuParaGuardar {
+                    pasta: pasta.to_path_buf(),
+                    motivo: frase,
+                },
+            ));
         }
 
         tela(&linha(
@@ -2498,11 +2530,19 @@ mod testes {
 
     #[test]
     fn um_pacote_recem_baixado_que_nao_bate_recusa_antes_dos_discos() {
+        // Até 04/10/2026 o `.parcial` que não bate ficava; o usuário decidiu
+        // que ele é zerado ("Zerar o que não bate", WPC-134). O `.parcial`
+        // começa com o que veio da última vez, para que a única escrita nele
+        // seja a de depois da conferência.
         let mut bancada =
             Bancada::nova("baixado-divergente", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let parcial = bancada.parcial();
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com_tamanho(&parcial, "o que veio", CENTO_E_VINTE_MB);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
         let outra_versao = "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10";
         bancada.sistema =
-            SistemaDeMentira::novo().com_resumo(&bancada.parcial().to_string_lossy(), outra_versao);
+            SistemaDeMentira::novo().com_resumo(&parcial.to_string_lossy(), outra_versao);
 
         let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
 
@@ -2515,8 +2555,136 @@ mod testes {
         );
         assert_eq!(bancada.particionador.enumeracoes.get(), 0);
         assert!(!bancada.particionador.particionou());
-        assert!(bancada.arquivos.conteudo_de(bancada.parcial()).is_some());
+        assert_eq!(bancada.sistema.resumidos(), vec![parcial.clone()]);
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&parcial).as_deref(),
+            Some(""),
+            "o `.parcial` que nao bate nao foi zerado"
+        );
+        assert_eq!(
+            bancada.arquivos.escritos(),
+            vec![bancada.registro.pasta().to_path_buf(), parcial]
+        );
         assert_eq!(bancada.arquivos.conteudo_de(bancada.guardado()), None);
+    }
+
+    #[test]
+    fn uma_pagina_no_lugar_do_pacote_e_zerada_e_a_proxima_execucao_baixa_do_zero() {
+        // O caso que o Verifier achou: uma página de login de Wi-Fi entregue
+        // com sucesso no lugar do zip é menor que o pacote, e sem o zero ela
+        // seria retomada em toda execução seguinte. O `.parcial` começa com a
+        // página — o que o `curl` teria escrito —, e a fonte diz que entregou.
+        let mut bancada =
+            Bancada::nova("pagina-de-login", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let parcial = bancada.parcial();
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com_tamanho(&parcial, "<html>entre no Wi-Fi</html>", 4096);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        let pagina = "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae";
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&parcial.to_string_lossy(), pagina)
+            .baixando_de(
+                pacote::FONTES[0].url,
+                crate::portas::Transferencia {
+                    tamanho_no_destino: 8192,
+                    ..crate::duplos::entregou()
+                },
+                &[],
+            );
+
+        let (primeira, _) = bancada.pre_voo(false, None);
+        assert!(
+            matches!(
+                primeira,
+                Err(Erro::PacoteRecusado(
+                    pacote::RecusaDoPacote::ResumoDivergente { .. }
+                ))
+            ),
+            "{primeira:?}"
+        );
+
+        let (_, tela) = bancada.pre_voo(false, None);
+        assert!(
+            tela.starts_with(
+                "  Baixando Clonezilla ............. 3.3.3-15 · 0 B de 535,5 MB · free.nchc.org.tw (oldstable)"
+            ),
+            "a execucao seguinte retomou a pagina: {tela}"
+        );
+    }
+
+    #[test]
+    fn um_parcial_que_nao_se_deixou_medir_nao_e_zerado() {
+        // "Não consegui olhar" nunca vira "não bate": sem resumo, o `certutil`
+        // do duplo responde o arquivo ausente, e o `.parcial` fica como está.
+        let mut bancada =
+            Bancada::nova("parcial-sem-medida", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let parcial = bancada.parcial();
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com_tamanho(&parcial, "o que veio", CENTO_E_VINTE_MB);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        bancada.sistema = SistemaDeMentira::novo();
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+
+        assert!(
+            matches!(
+                pacote,
+                Err(Erro::PacoteRecusado(
+                    pacote::RecusaDoPacote::NaoDeuParaResumir(_)
+                ))
+            ),
+            "{pacote:?}"
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&parcial).as_deref(),
+            Some("o que veio")
+        );
+        assert_eq!(
+            bancada.arquivos.escritos(),
+            vec![bancada.registro.pasta().to_path_buf()],
+            "o `.parcial` que nao se deixou medir foi escrito"
+        );
+    }
+
+    #[test]
+    fn um_parcial_que_o_curl_nao_consegue_escrever_recusa_na_primeira_fonte() {
+        // Decidido pelo usuário em 04/10/2026 ("Reconhecer a falha de
+        // escrita"). A resposta do `curl` é a medida nesse dia contra um
+        // `.parcial` somente-leitura.
+        let mut bancada =
+            Bancada::nova("curl-nao-escreve", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let parcial = bancada.parcial();
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com_tamanho(&parcial, "o que veio", CENTO_E_VINTE_MB);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        bancada.sistema = SistemaDeMentira::novo().baixando_de(
+            pacote::FONTES[0].url,
+            crate::portas::Transferencia {
+                codigo: 23,
+                texto: "curl: cannot open \r\ncurl: 'C:\\ARCA\\clonezilla\r\ncurl: .parcial'\r\ncurl: (23) Failed writing received data to disk/application\r\n".to_string(),
+                http: None,
+                parou: false,
+                tamanho_no_destino: CENTO_E_VINTE_MB,
+            },
+            &[],
+        );
+
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
+
+        assert_eq!(
+            erro.to_string(),
+            format!(
+                "nao deu para guardar o pacote em {} (curl: (23) Failed writing received data to disk/application). Nada foi apagado (PR-7)",
+                bancada.registro.pasta().display()
+            )
+        );
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![pacote::FONTES[0].url],
+            "outra fonte foi tentada sobre o mesmo arquivo"
+        );
+        assert_eq!(bancada.particionador.enumeracoes.get(), 0);
+        assert!(!bancada.particionador.particionou());
     }
 
     #[test]

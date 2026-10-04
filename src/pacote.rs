@@ -202,6 +202,13 @@ pub fn como_comecar(tamanho_do_parcial: Option<u64>) -> Comeco {
 /// depois de um redirecionamento, quando o `http_code` vem `302`.
 const CURL_TEMPO_ESGOTADO: i32 = 28;
 
+/// O codigo de saida do `curl` para a escrita que falhou.
+///
+/// Medido em 04/10/2026, com o `.parcial` somente-leitura: com bytes para
+/// retomar, o `curl` abre o destino **antes de conectar** e sai com 23 sem ter
+/// pedido nada a fonte; vazio, ele conecta e sai com 23 no primeiro byte.
+const CURL_NAO_ESCREVEU: i32 = 23;
+
 /// O que uma fonte respondeu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resposta {
@@ -211,6 +218,11 @@ pub enum Resposta {
         recebido: u64,
     },
     Http(u16),
+
+    /// O `curl` nao conseguiu escrever no `.parcial`. Nao e uma resposta da
+    /// fonte, e por isso nenhuma outra fonte e tentada: todas cairiam no
+    /// mesmo arquivo (WPC-134, decidido pelo usuario em 04/10/2026).
+    NaoConseguiuEscrever(String),
 
     /// O texto do `curl`, para qualquer outra falha: sem rede, nome que nao
     /// resolve, servidor que nao aceita retomada.
@@ -232,7 +244,7 @@ impl fmt::Display for Resposta {
                 tamanho(TAMANHO_BYTES)
             ),
             Resposta::Http(codigo) => write!(f, "HTTP {codigo}"),
-            Resposta::Outra(texto) => f.write_str(texto),
+            Resposta::NaoConseguiuEscrever(texto) | Resposta::Outra(texto) => f.write_str(texto),
         }
     }
 }
@@ -256,16 +268,33 @@ pub fn o_que_a_fonte_respondeu(transferencia: &Transferencia) -> Resposta {
     if let Some(codigo) = transferencia.http.filter(|codigo| *codigo >= 400) {
         return Resposta::Http(codigo);
     }
+    if transferencia.codigo == CURL_NAO_ESCREVEU {
+        return Resposta::NaoConseguiuEscrever(frase_do_curl(transferencia));
+    }
+    Resposta::Outra(frase_do_curl(transferencia))
+}
 
-    let frase = transferencia
+/// A frase do `curl` sobre a falha: a linha `curl: (N) ...`, que e a que diz
+/// o que houve.
+///
+/// A ultima, e nao a primeira: medido em 04/10/2026, com o destino
+/// somente-leitura o `curl` escreve antes dela o caminho do arquivo quebrado em
+/// tres linhas, e a primeira e `curl: cannot open`.
+fn frase_do_curl(transferencia: &Transferencia) -> String {
+    let linhas: Vec<&str> = transferencia
         .texto
         .lines()
         .map(str::trim)
-        .find(|linha| !linha.is_empty());
-    Resposta::Outra(match frase {
-        Some(frase) => frase.to_string(),
-        None => format!("o curl saiu com codigo {}", transferencia.codigo),
-    })
+        .filter(|linha| !linha.is_empty())
+        .collect();
+
+    linhas
+        .iter()
+        .rev()
+        .find(|linha| linha.starts_with("curl: ("))
+        .or(linhas.first())
+        .map(|frase| frase.to_string())
+        .unwrap_or_else(|| format!("o curl saiu com codigo {}", transferencia.codigo))
 }
 
 /// O SHA256 esperado, **compilado no binário** (PR-1).
@@ -702,6 +731,21 @@ mod testes {
             assert_eq!(o_que_a_fonte_respondeu(&transferencia), resposta);
             assert_eq!(resposta.to_string(), dita);
         }
+
+        // A escrita que falhou, com o stderr medido em 04/10/2026 contra um
+        // `.parcial` somente-leitura: o caminho vem quebrado em tres linhas
+        // antes da frase que importa, que e a ultima.
+        let nao_escreveu = transferencia(
+            23,
+            None,
+            "curl: cannot open \r\ncurl: 'C:\\Users\\Eduardo\\AppData\\Local\\Temp\\arca-medir-curl-3\\somente-leitura-10\r\ncurl: 0.parcial'\r\ncurl: (23) Failed writing received data to disk/application\r\n",
+        );
+        assert_eq!(
+            o_que_a_fonte_respondeu(&nao_escreveu),
+            Resposta::NaoConseguiuEscrever(
+                "curl: (23) Failed writing received data to disk/application".to_string()
+            )
+        );
 
         // Parada e do adaptador, e vale mais do que o codigo: quem encerrou o
         // `curl` foi ele.

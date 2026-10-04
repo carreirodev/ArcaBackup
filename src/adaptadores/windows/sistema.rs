@@ -710,6 +710,37 @@ mod testes {
     }
 
     #[test]
+    fn um_parcial_somente_leitura_volta_com_o_codigo_23_sem_conectar() {
+        // Medido em 04/10/2026: com bytes para retomar, o `curl` abre o
+        // destino antes de conectar, e a falha de escrita sai sem nenhum
+        // pedido à fonte — é o que faz a recusa do critério 8 nascer antes de
+        // qualquer download.
+        let (url, pedidos) = servir(Servidor::Retomar);
+        let destino = parcial("somente-leitura");
+        std::fs::write(&destino, &corpo()[..100]).unwrap();
+        let mut permissoes = std::fs::metadata(&destino).unwrap().permissions();
+        permissoes.set_readonly(true);
+        std::fs::set_permissions(&destino, permissoes.clone()).unwrap();
+
+        let transferencia = SistemaDoWindows
+            .baixar(&url, &destino, CURTOS, &mut |_| {})
+            .expect("o curl roda");
+
+        assert_eq!(transferencia.codigo, 23, "{transferencia:?}");
+        assert_eq!(transferencia.http, None);
+        assert!(
+            pedidos.recv_timeout(Duration::from_millis(500)).is_err(),
+            "o curl pediu o pacote a fonte antes de falhar"
+        );
+        assert_eq!(transferencia.tamanho_no_destino, 100);
+
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissoes.set_readonly(false);
+        let _ = std::fs::set_permissions(&destino, permissoes);
+        let _ = std::fs::remove_dir_all(destino.parent().unwrap());
+    }
+
+    #[test]
     fn um_erro_http_volta_com_o_codigo() {
         let (url, _pedidos) = servir(Servidor::NaoAchou);
         let destino = parcial("404");
