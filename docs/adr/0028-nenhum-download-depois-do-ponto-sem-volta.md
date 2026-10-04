@@ -1,6 +1,6 @@
 # Nenhum download depois do ponto sem volta, e o pacote fica guardado no PC
 
-Decidido em 04/10/2026 (WPC-134). Nasce PR-7; PR-1, PR-2 e PR-3 ficam como estão.
+Decidido em 04/10/2026 (WPC-134). Nasce PR-7; PR-1, PR-2 e PR-3 ficam como estão. Revisto no mesmo dia, depois da verificação, em dois casos que tinham ficado de fora: ver [as duas lacunas](#duas-lacunas-nomeadas-e-decididas-no-mesmo-dia).
 
 ## O que aconteceu
 
@@ -35,8 +35,9 @@ A documentação do `curl` (`--connect-timeout`, `--speed-time`, `-C -`, `--fail
 | `-C -` sem arquivo, ou com um de 0 bytes | o pedido vai sem `Range`, e o destino termina com 1000 bytes |
 | Servidor que ignora o `Range` | código 33, destino intocado |
 | Porta fechada | código 7 |
+| `.parcial` somente leitura, com bytes para retomar | código 23, sem ter pedido nada à fonte: com o que retomar, o `curl` abre o destino antes de conectar. Vazio, ele conecta e sai com 23 no primeiro byte. O stderr traz o caminho do arquivo quebrado em três linhas, começando por `curl: cannot open`, antes da frase `curl: (23) Failed writing received data to disk/application` |
 
-Parte disso volta a ser medida a cada `cargo test`, contra servidores locais que os próprios testes do adaptador sobem: a fonte parada que deixa o `.parcial` com o que veio (`uma_fonte_parada_e_abandonada_e_o_parcial_fica_com_o_que_veio`), a retomada com `Range` (`o_curl_retoma_do_byte_em_que_o_parcial_termina`), o 404 com código 22 (`um_erro_http_volta_com_o_codigo`) e o andamento (`o_andamento_chega_ao_menos_a_cada_2_s`).
+Parte disso volta a ser medida a cada `cargo test`, contra servidores locais que os próprios testes do adaptador sobem: a fonte parada que deixa o `.parcial` com o que veio (`uma_fonte_parada_e_abandonada_e_o_parcial_fica_com_o_que_veio`), a retomada com `Range` (`o_curl_retoma_do_byte_em_que_o_parcial_termina`), o 404 com código 22 (`um_erro_http_volta_com_o_codigo`), o andamento (`o_andamento_chega_ao_menos_a_cada_2_s`) e o `.parcial` somente leitura (`um_parcial_somente_leitura_volta_com_o_codigo_23_sem_conectar`).
 
 Duas linhas da tabela mudaram o mecanismo, e não a decisão:
 
@@ -71,11 +72,11 @@ Nenhuma fonte é confiável, e por isso elas são intercambiáveis: quem diz se 
 
 O download em andamento mora em `clonezilla-live-3.3.3-15-amd64.zip.parcial`, ao lado do pacote guardado, e é ele que se retoma. Só depois de passar na conferência — o SHA256 e os quatro caminhos obrigatórios — o `.parcial` é renomeado para o pacote guardado.
 
-O tamanho compilado, 561.478.648 bytes, decide entre retomar e recomeçar. Um `.parcial` menor que isso é um download interrompido, e se retoma do byte em que termina. Um do tamanho do pacote, ou maior, já veio inteiro e não bateu, ou não é o pacote, e recomeça do zero: retomá-lo pediria um byte que o pacote não tem.
+O tamanho compilado, 561.478.648 bytes, decide entre retomar e recomeçar. Um `.parcial` menor que isso é um download interrompido, e se retoma do byte em que termina. Um do tamanho do pacote, ou maior, já veio inteiro e não bateu, ou não é o pacote, e recomeça do zero: retomá-lo pediria um byte que o pacote não tem. E desde a revisão do mesmo dia, o `.parcial` que chega e não bate é zerado na hora, qualquer que seja o tamanho dele ("Zerar o que não bate", abaixo).
 
 ### 5. O ARCA nunca apaga um pacote guardado (B-10)
 
-Nem o de uma versão antiga: quem limpa a pasta é uma pessoa, olhando. Os únicos arquivos substituídos são o pacote guardado que não bateu com o SHA256 — um arquivo que não bate não é o pacote, e é a mesma exceção que a escrita atômica já tem — e o `.parcial` que recomeça do zero.
+Nem o de uma versão antiga: quem limpa a pasta é uma pessoa, olhando. Os únicos arquivos substituídos são o pacote guardado que não bateu com o SHA256 — um arquivo que não bate não é o pacote, e é a mesma exceção que a escrita atômica já tem — e o `.parcial` que recomeça do zero ou que chegou e não bateu.
 
 A porta `Arquivos` ganha `renomear`, que substitui o destino, e continua sem método de exclusão.
 
@@ -106,7 +107,7 @@ São as escolhas desta decisão que custam caro desfazer, porque o resto do cód
 | A porta `Arquivos` ganha `renomear` | `fn renomear(&self, origem: &Path, destino: &Path) -> Resultado<()>`, substituindo o destino se ele existir (`fs::rename`, que no Windows é `MoveFileEx` com `MOVEFILE_REPLACE_EXISTING`). A porta continua sem método de exclusão | **Um nome só, com o tamanho decidindo entre parcial e completo.** Um download pela metade ficaria com o nome do pacote, e quem o visse na pasta o tomaria por um |
 | O contrato de `Sistema::baixar` | `fn baixar(&self, url: &str, destino: &Path, limites: Limites, andamento: &mut dyn FnMut(u64)) -> Resultado<Transferencia>`. Sempre continua do fim do destino (`-C -`); o `curl` cuida da conexão (`--connect-timeout`); o adaptador lê o tamanho do destino (com `-N`), chama `andamento` ao menos a cada segundo e encerra o `curl` depois de `parado` sem o destino crescer, devolvendo `parou: true`. Quem julga o que a fonte respondeu é código puro, pelo código de saída e pelo `http_code`, e nunca pela frase | **`--speed-limit 1 --speed-time 60`**, que era o que o issue supunha: medido, o `curl` abandona `T + 6 s` depois do último byte — 66 s —, e sem `-N` o tamanho lido do destino fica em 0 enquanto os bytes chegam. E **ler o andamento da barra de progresso do `curl` no stderr**: é texto sem contrato, e a porta inteira foi desenhada para não julgar texto |
 | O pacote guardado e o `.parcial` moram na pasta do registro | `Registro::pasta()`, a mesma pasta de `arca.log`; `pacote::guardado_em(pasta)` e `pacote::parcial_em(pasta)` dão os dois caminhos | **Um campo novo no `Contexto`**, em nove construções: duas fontes para a mesma pasta, que só precisariam divergir uma vez — e a pasta é, por definição, a do `arca.log`, inclusive sem `LOCALAPPDATA` |
-| Recomeçar do zero é zerar o `.parcial` antes do `curl` | `escrever_atomico(parcial, "")` quando o `.parcial` não existe, tem o tamanho do pacote ou mais, ou o pacote guardado não bateu. Essa escrita é também a prova de que a pasta aceita escrita, antes de qualquer download | **Chamar o `curl` sem `-C -`**, que trunca sozinho: a falta de escrita só apareceria durante o download, com o texto do `curl` em cada uma das três fontes |
+| Recomeçar do zero é zerar o `.parcial` antes do `curl` | `escrever_atomico(parcial, "")` quando o `.parcial` não existe, tem o tamanho do pacote ou mais, ou o pacote guardado não bateu — e, desde a revisão, depois de um `.parcial` entregue que não bateu. Essa escrita é também a prova de que a pasta aceita escrita, antes de qualquer download; quando não há o que zerar, quem descobre a falta de escrita é o `curl`, com o código 23 | **Chamar o `curl` sem `-C -`**, que trunca sozinho: a falta de escrita só apareceria durante o download, com o texto do `curl` em cada uma das três fontes |
 
 ## Um teste mudou de premissa, e não para ficar verde
 
@@ -128,16 +129,30 @@ Ele foi reescrito como `sem_iso_o_pacote_guardado_e_conferido_antes_do_menu_e_de
 - O passo 7, PR-4 e as sete defesas de PR-5.
 - Usar automaticamente uma versão mais nova do Clonezilla, ou avisar que ela existe, continua fora: instalaria um Clonezilla que nunca rodou as receitas do ARCA, e revogaria PR-1.
 
-## O que fica nomeado, e não foi resolvido
+## Duas lacunas nomeadas, e decididas no mesmo dia
 
-- **Um `.parcial` menor que o pacote, entregue com código 0 e que não bate** — um servidor que responde `200` com uma página no lugar do zip — seria retomado na execução seguinte, e não recomeçado do zero. O caminho comum, um download que chegou inteiro e corrompido, tem o tamanho do pacote e recomeça do zero.
-- **Uma pasta que já tem um `.parcial` e passou a recusar escrita** não é pega antes do download: o pré-voo só escreve nela quando o `.parcial` não existe ou recomeça do zero. Nesse caso o `curl` falha em cada fonte, e a recusa traz o texto dele.
+Quando este ADR foi escrito, dois casos ficaram nomeados aqui como lacunas: o checklist da construção os tinha deixado fora do escopo. A verificação da feature mostrou, em 04/10/2026, que isso estreitava os critérios 7 e 8 do issue sem que o usuário tivesse decidido, e ele decidiu os dois no mesmo dia, com as palavras que dão título a cada um. Os dois estão resolvidos no código desde então.
+
+### "Zerar o que não bate"
+
+**A lacuna:** um `.parcial` menor que o pacote, entregue com código 0 e que não bate — um servidor que responde `200` com uma página no lugar do zip, como o Wi-Fi de um hotel que devolve a página de login — seria retomado na execução seguinte, e não recomeçado do zero. A decisão 4 só cobria o caminho comum: um download que chega inteiro e corrompido tem o tamanho do pacote, e recomeça do zero sozinho. A página seria retomada em toda execução, e o ARCA nunca mais sairia dela sem alguém apagar o arquivo à mão.
+
+**Como foi resolvida:** o `.parcial` que chega e não bate com o SHA256 é **zerado na hora**, e a próxima execução baixa do zero, qualquer que seja o tamanho dele. Zerar é a mesma substituição do recomeço, e por isso B-10 continua valendo. "Não consegui medir" não zera: um `.parcial` que o `certutil` não conseguiu resumir fica como está, porque não ter conseguido medir não é o mesmo que não bater.
+
+### "Reconhecer a falha de escrita"
+
+**A lacuna:** uma pasta que já tem um `.parcial` e passou a recusar escrita não era pega no pré-voo, que só escreve nela para zerar. O `curl` falhava em cada uma das três fontes, e a recusa era a de nenhuma fonte ter entregado, dizendo que o que já veio fica guardado e que a próxima tentativa continua de onde parou — o que ali não era verdade.
+
+**Como foi resolvida:** o código 23 do `curl`, a escrita no destino que falhou, deixou de ser uma resposta da fonte. Ele vira a recusa `nao deu para guardar o pacote em <pasta> (curl: (23) ...)` já na primeira fonte, e as outras não são tentadas, porque cairiam no mesmo `.parcial`. A frase entre parênteses é a última linha `curl: (N) ...` do stderr, e não a primeira, pelo que a medição desse dia mostrou: antes dela o `curl` escreve o caminho do arquivo quebrado em três linhas.
+
+A recusa não fica "antes de qualquer download" ao pé da letra, porque uma tentativa começa. Mas, com bytes para retomar, o `curl` falha antes de conectar, o disco continua intacto, e a mensagem diz o que houve.
 
 ## Consequências
 
 - **PR-7 entra no §9.6 do PRD e no §13 do README**, que ganha a tabela de preparação inteira, de PR-1 a PR-7.
 - O `CONTEXT.md` ganha **Pacote guardado**, distinto da cópia de PR-3.
 - `pacote::URL` vira `pacote::FONTES`, e `pacote::LIMITES` guarda os 30 s e os 60 s.
-- Três recusas novas, todas no pré-voo e todas terminando em `Nada foi apagado (PR-7)`: nenhuma fonte entregou, a pasta não aceita escrita, e falta espaço para o que falta baixar. Elas saem sem o prefixo `o pacote do Clonezilla foi recusado: ` das outras recusas do pacote: "recusado" seria falso para "nenhuma fonte entregou".
+- Três recusas novas, todas no pré-voo e todas terminando em `Nada foi apagado (PR-7)`: nenhuma fonte entregou, a pasta não aceita escrita — inclusive quando quem descobre é o `curl`, com o código 23 —, e falta espaço para o que falta baixar. Elas saem sem o prefixo `o pacote do Clonezilla foi recusado: ` das outras recusas do pacote: "recusado" seria falso para "nenhuma fonte entregou".
 - O `arca.log` ganha uma linha por fonte tentada — a URL, o que ela respondeu e quantos bytes vieram dela — e uma quando o pacote guardado é usado sem rede.
+- O `.parcial` que chega e não bate com o SHA256 é zerado na hora, antes de a recusa de divergência aparecer.
 - O passo 6 da tabela de passos deixa de baixar: o pacote já é local.

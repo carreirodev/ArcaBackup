@@ -114,7 +114,7 @@ BIOS legada · BitLocker · RAID · Storage Spaces · rede.
 | **Um disco externo** | **17,6 GB** no mínimo — 1,6 GB do `ARCABOOT` mais os 16 GB mínimos do `ARCAVAULT`, contados em base 1024. Na prática, grande o bastante para caber as imagens |
 | Conexão de rede | Só no primeiro `arca prepare` sem `--iso` de cada versão do Clonezilla, para baixar 535,5 MB no pré-voo, antes do menu de discos. Os seguintes usam o pacote guardado neste PC, sem rede, enquanto ele estiver lá e bater com o SHA256 |
 
-> **Os caminhos do `curl` e do `tar` são fixos em `C:\Windows\System32\`, e não vêm do `PATH`.** O Git Bash traz homônimos — um `tar` que não entende zip falharia **depois** de o `prepare` já ter apagado o disco.
+> **Os caminhos do `curl` e do `tar` são fixos em `C:\Windows\System32\`, e não vêm do `PATH`.** O Git Bash traz homônimos — um `tar` que não entende zip faria o pré-voo do `prepare` recusar um pacote bom, dizendo que faltam nele os quatro caminhos que fazem um dispositivo bootar.
 
 ---
 
@@ -471,7 +471,7 @@ arca prepare [--dispositivo <INDICE>] [--iso <CAMINHO>] [--dry-run]
 | Argumento | Obrigatório | O que é |
 |---|---|---|
 | `--dispositivo <INDICE>` | não | O índice do disco **no Windows** — o número que o `Get-Disk` mostra. Não aceita letra, rótulo nem `sda`. **Omitido, o comando lista os discos e pergunta o número** |
-| `--iso <CAMINHO>` | não | Instala de um arquivo local em vez de baixar. Apesar do nome, o arquivo é o **zip** do Clonezilla |
+| `--iso <CAMINHO>` | não | Instala de um arquivo local, sem baixar e sem ler nem escrever o pacote guardado deste PC. Apesar do nome, o arquivo é o **zip** do Clonezilla |
 
 #### O menu, quando você não passa `--dispositivo`
 
@@ -1491,7 +1491,7 @@ Number FriendlyName        Size BusType IsSystem IsBoot
 arca prepare --dispositivo 1 --dry-run
 ```
 
-Leia a tela inteira. Ela diz o que existe no disco hoje, o que vai ficar no lugar, e o que mais vai acontecer — o download, a entrada de firmware, o `arca.exe`.
+Leia a tela inteira. Ela diz o que existe no disco hoje, o que vai ficar no lugar, e o que mais vai acontecer — de onde vem o Clonezilla, a entrada de firmware, o `arca.exe`. O ensaio não baixa nada: sem o pacote guardado neste PC, ele diz que o preparo de verdade vai baixar 535,5 MB antes de qualquer pergunta.
 
 ### Passo 3 — Preparar o dispositivo
 
@@ -1501,7 +1501,7 @@ arca prepare --dispositivo 1
 
 Ou `arca prepare` e o número da lista — dá no mesmo, e os dois caminhos passam pelo que vem a seguir.
 
-Responde `s`, depois digita o **modelo do disco**. Leva alguns minutos — a maior parte é o download de 535,5 MB. No fim, o dispositivo está pronto e **inerte**.
+O primeiro preparo de cada versão do Clonezilla começa baixando 535,5 MB no pré-voo, antes do plano, com o andamento na tela — são alguns minutos —, e guarda o pacote neste PC. Os seguintes usam o pacote guardado, sem rede. Depois do plano, responde `s` e digita o **modelo do disco**. No fim, o dispositivo está pronto e **inerte**.
 
 > Se você já tinha outro dispositivo ARCA conectado, **desconecte um dos dois agora**. O ARCA opera um por vez.
 
@@ -1775,7 +1775,7 @@ O `estado.json` é um JSON escrito e lido à mão, sem dependência nova:
 | `%LOCALAPPDATA%\ARCA\arca.log` | O registro local. **Descartável** |
 | `%LOCALAPPDATA%\ARCA\arca.log.anterior` | A geração anterior, rotacionada a 1 MB |
 | `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip` | O **pacote guardado** do `arca prepare`: o zip do Clonezilla, que só existe com este nome depois de passar no SHA256 e é conferido de novo a cada uso (PR-7). Uma restauração o leva embora, e isso custa um download |
-| `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip.parcial` | O download em andamento, que a próxima execução retoma. Fica depois de um download interrompido, e depois de um que chegou e não bateu com o SHA256 |
+| `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip.parcial` | O download em andamento, que a próxima execução retoma. Fica depois de um download interrompido. O que chegou e não bateu com o SHA256 é zerado na hora, e a próxima execução baixa do zero |
 
 O registro anota a linha de comando **bruta** de cada invocação — que é o que denuncia um argumento perdido na elevação. Trecho real do `arca.log` de 22/08/2026, preservado em `recursos/capturas/arca-log-windows-2026-08-23-pos-restauracao.txt` (a palavra `suposto` é daquela versão do código, de antes de o oráculo do §4.5 existir):
 
@@ -1901,7 +1901,7 @@ binario e nao veio junto do download.
 
 Ou o download veio corrompido — rode de novo —, ou o arquivo do outro lado não é o que este ARCA conhece. A causa mais comum com `--iso` é baixar **o Clonezilla de hoje** em vez da versão que este ARCA fixa: o SourceForge publica versões novas, e `3.3.3-15` é a que este binário conhece.
 
-**Nada foi apagado**: com ou sem `--iso`, a recusa vem do pré-voo, antes do passo 0. Sem `--iso`, o arquivo que não bateu é o recém-baixado, e ele fica no `.parcial`, em `%LOCALAPPDATA%\ARCA\` — o pacote guardado não é substituído por ele. Um download que chegou inteiro e corrompido tem o tamanho do pacote, e por isso a próxima execução recomeça do zero, em vez de retomá-lo. Um pacote guardado que deixou de bater não chega a esta recusa: o pré-voo diz `nao bate com o SHA256 deste ARCA · baixando de novo, do zero` e baixa outro.
+**Nada foi apagado**: com ou sem `--iso`, a recusa vem do pré-voo, antes do passo 0. Sem `--iso`, o arquivo que não bateu é o recém-baixado, no `.parcial`, em `%LOCALAPPDATA%\ARCA\`: ele é **zerado** na hora, o pacote guardado não é substituído por ele, e a próxima execução baixa do zero, em vez de retomá-lo. Isso vale também para o que não é o pacote — uma página de login de Wi-Fi entregue no lugar do zip —, que de outro modo seria retomado em toda execução seguinte. Quando o `certutil` não consegue medir o `.parcial`, a recusa é outra, e ele não é zerado: não ter conseguido medir não é o mesmo que não bater. Um pacote guardado que deixou de bater não chega a esta recusa: o pré-voo diz `nao bate com o SHA256 deste ARCA · baixando de novo, do zero` e baixa outro.
 
 Ela só aparece depois do passo 5 se o arquivo mudar entre o pré-voo e o passo 7, que é o intervalo em que alguém lê o plano e digita o modelo do disco. Aí o disco já foi apagado: o dispositivo fica vazio, com as duas partições prontas e sem Clonezilla, e rodar o `prepare` de novo resolve.
 
@@ -1964,9 +1964,19 @@ Há dois caminhos:
 erro: nao deu para guardar o pacote em C:\Users\Ana Paula\AppData\Local\ARCA (Acesso negado. (os error 5)). Nada foi apagado (PR-7)
 ```
 
-A pasta do pacote guardado — `%LOCALAPPDATA%\ARCA\`, a mesma do `arca.log` — não aceitou escrita, e o que está entre parênteses é o que o Windows respondeu. Acontece quando a pasta não se deixa criar, quando o `.parcial` não se deixa criar nem zerar, ou quando já existe nela uma **pasta** com o nome do pacote, e aí o parêntese diz isso. **Nada foi apagado**: a recusa vem do pré-voo, antes de qualquer download e antes do passo 0.
+A pasta do pacote guardado — `%LOCALAPPDATA%\ARCA\`, a mesma do `arca.log` — não aceitou escrita, e o que está entre parênteses diz por quê. Acontece quando:
 
-Abra a pasta no Explorador — `%LOCALAPPDATA%\ARCA` na barra de endereço —, confira o que há nela e as permissões dela, e rode de novo. Para preparar sem depender dessa pasta, passe o pacote com `--iso`, que não a usa.
+- a pasta não se deixa criar, ou o `.parcial` não se deixa criar nem zerar — o parêntese traz o que o Windows respondeu, como acima;
+- já existe nela uma **pasta** com o nome do pacote — o parêntese diz isso;
+- o `.parcial` de uma execução anterior está lá e passou a recusar escrita, como um arquivo somente leitura. Quem descobre é o `curl`, na primeira fonte, e o parêntese traz a linha dele:
+
+```
+erro: nao deu para guardar o pacote em C:\Users\Ana Paula\AppData\Local\ARCA (curl: (23) Failed writing received data to disk/application). Nada foi apagado (PR-7)
+```
+
+**Nada foi apagado**: a recusa vem do pré-voo, antes do passo 0. Nos dois primeiros casos, ela vem antes de qualquer download. No do `curl`, ele chega a ser chamado na primeira fonte — com bytes para retomar, ele falha antes de conectar, medido em 04/10/2026 —, e as outras fontes não são tentadas, porque cairiam no mesmo arquivo.
+
+Abra a pasta no Explorador — `%LOCALAPPDATA%\ARCA` na barra de endereço —, confira o que há nela e as permissões dela, inclusive se o `.parcial` está marcado como somente leitura, e rode de novo. Para preparar sem depender dessa pasta, passe o pacote com `--iso`, que não a usa.
 
 ### `faltam N MB para baixar o pacote, e ... tem M MB livres`
 
@@ -2194,7 +2204,7 @@ src/
 |---|---|---|
 | `Firmware` | `bcdedit /enum`, `/set`, `/copy`, `/deletevalue` | `Bcdedit` |
 | `Discos` | volumes por rótulo, discos físicos, `MediaType` | WMI/CIM via PowerShell |
-| `Arquivos` | ler, escrever **atomicamente**, listar, criar diretório | `ArquivosDoSistema` |
+| `Arquivos` | ler, escrever **atomicamente**, listar, criar diretório, `copiar`, `renomear` substituindo o destino, espaço livre — e nenhum método de exclusão | `ArquivosDoSistema` |
 | `Sistema` | Inicialização Rápida (registro), `chkdsk`, `certutil`, `curl`, `bsdtar`, `shutdown` | `SistemaDoWindows` |
 | `Particionador` | `Clear-Disk`, `New-Partition`, `Format-Volume` | `ParticionadorDoWindows` |
 | `Entropia` | `BCryptGenRandom` | `EntropiaDoWindows` |
@@ -2306,7 +2316,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | **`PRD/PRD-ARCA-v5_1.md`** | O documento de requisitos, com as telas de execução real, as medições e os requisitos identificados (`C-*`, `B-*`, `R-*`, `S-*`, `L-*`, `V-*`, `PR-*`, `SD-*`) |
 | **`PRD/implementation_stages.md`** | O plano de etapas — E0 a E12 —, o que cada uma entregou e o que aprendeu |
 | **`PRD/o-que-falta-para-fechar.md`** | As pendências abertas |
-| **`docs/adr/`** | 25 decisões de arquitetura, cada uma com o contexto que a forçou |
+| **`docs/adr/`** | As decisões de arquitetura, uma por arquivo, cada uma com o contexto que a forçou. A tabela abaixo as lista |
 | **`recursos/capturas/`** | **A evidência.** Saídas reais de ferramentas, `grub.cfg` preservados, logs de execução, o `estado.json` de cada marco. Ver `PROVENIENCIA.md` |
 | **`docs/agents/`** | Convenções para agentes que trabalham neste repositório: issue tracker, labels de triagem, docs de domínio |
 | `cargo doc --open` | A documentação interna — densa, e onde as razões estão |
@@ -2342,6 +2352,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | 0025 | **O ARCA particiona em GPT**, e o marco em hardware aconteceu |
 | 0026 | **A recusa do `bcdedit` não apaga o que ele listou** — e o `prepare` lê o firmware antes de apagar |
 | 0027 | O `ARCABOOT` **pode levar um nome**, e o `ARCAVAULT` não |
+| 0028 | **Nenhum download depois do ponto sem volta**, e o pacote fica guardado no PC |
 
 ---
 
@@ -2351,6 +2362,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 |---|---|---|
 | **Dispositivo** | O SSD externo que carrega o Clonezilla e as imagens juntos, com as partições `ARCABOOT` e `ARCAVAULT`. O que separa um disco de um dispositivo é o `arca prepare` — e não haver sido comprado como tal | pendrive, mídia, unidade, drive |
 | **Preparar** | Transformar um disco num dispositivo. É a **única** operação que destrói dados sem reiniciar | formatar, instalar, inicializar |
+| **Pacote guardado** | A cópia conferida do zip do Clonezilla neste PC, em `%LOCALAPPDATA%\ARCA\`, de onde o `arca prepare` sem `--iso` tira o Clonezilla. É conferida pelo SHA256 a cada uso. **Não é a cópia de PR-3**, que mora no `ARCAVAULT` do dispositivo e que o passo 5 do próximo preparo apaga | cache, cópia local, pacote baixado, ISO |
 | **`ARCABOOT`** | A partição FAT32 de onde a máquina boota. Guarda o Clonezilla, o `grub.cfg` e o estado do job. **Sempre fora da imagem**. O rótulo é `ARCABOOT`, ou `ARCA-<texto>` quando o dispositivo tem nome (C-16) | partição de boot, EFI |
 | **`ARCAVAULT`** | A partição NTFS onde as imagens e os logs ficam. É o que o Clonezilla monta como `/home/partimag` | repositório, storage, cofre |
 | **Imagem** | Uma pasta no `ARCAVAULT` com o resultado de um `savedisk`. Nomeada por você, **nunca sobrescrita** | backup, snapshot, ponto de restauração |

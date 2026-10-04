@@ -1142,6 +1142,8 @@ usariam para se defender.
 ```
 > arca prepare --dispositivo 1
 
+  Baixando Clonezilla ............. 3.3.3-15 · 535,5 MB de 535,5 MB · free.nchc.org.tw (oldstable)
+  Pacote conferido ................ ok · 00cee7700433 · guardado neste PC em C:\Users\Ana Paula\AppData\Local\ARCA\clonezilla-live-3.3.3-15-amd64.zip · nada tocado ainda (PR-7)
   Disco 1 ......................... JMicron Generic · USB · 447,1 GB
   Tipo de midia ................... External hard disk media · nao e disco fixo (PR-5)
   Sistema ......................... IsSystem false · IsBoot false · nao carrega o C:
@@ -1167,8 +1169,8 @@ O QUE VAI FICAR NO LUGAR:
  que so se descobre depois de o Windows ja ter sido apagado (ADR-0014).
 
 E O QUE MAIS VAI ACONTECER:
-  Clonezilla 3.3.3-15 · baixado (535,5 MB), com o SHA256 conferido contra
-     o valor compilado neste ARCA — e nao contra um baixado junto (PR-1)
+  Clonezilla 3.3.3-15 · do pacote guardado neste PC, conferido contra o valor
+     compilado neste ARCA (PR-1)
   Uma copia do pacote fica no ARCAVAULT, para o dispositivo se reconstruir
      sozinho (PR-3)
   Uma entrada de boot chamada `ARCA` e criada no firmware, apontando para o
@@ -1188,8 +1190,7 @@ Digite o modelo do disco para confirmar: JMicron Generic
   Particionando ................... ok · MBR, 2 particoes · MbrType 7 e 12
   Formatando e rotulando .......... ok · ARCAVAULT (NTFS) em E: · ARCABOOT (FAT32) em F:
   Conferido apos escrever ......... ok · relido do disco · nenhuma particao ativa, unidade 4096 (C-3)
-  Baixando Clonezilla ............. 3.3.3-15 · 535,5 MB · pode levar minutos
-  SHA256 conferido ................ ok · 00cee7700433 · de https://downloads.sourceforge.net/…
+  SHA256 conferido ................ ok · 00cee7700433 · de C:\Users\Ana Paula\AppData\Local\ARCA\clonezilla-live-3.3.3-15-amd64.zip
   Copia do pacote em ARCAVAULT .... ok · E:\clonezilla-live-3.3.3-15-amd64.zip (PR-3)
   Extraindo ....................... ok · F:\
   Estado inerte ................... ok · o `set default` do pacote era "0", e voltou para `live-default`
@@ -1258,6 +1259,17 @@ Dispositivo pronto.
 > As duas capturas em `recursos/capturas/` são de antes das correções e ficam
 > como estão: elas são o que a tela imprimiu, e reescrevê-las seria confundir o
 > que rodou com o que se quis.
+
+> **E o pacote mudou de lugar na tela em 04/10/2026, com PR-7.** Em 23/08/2026
+> o download acontecia no passo 6, depois do particionamento, e o plano
+> prometia baixar. Desde PR-7 o pacote é obtido no pré-voo, antes de os discos
+> serem listados, e guardado no PC
+> ([ADR-0028](../docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md)).
+> As duas primeiras linhas, a do Clonezilla no plano e a do SHA256 conferido
+> são as que o código escreve hoje para um primeiro preparo, que baixa da
+> primeira fonte. O caminho é o de um usuário de exemplo, e a linha do
+> download, reescrita no lugar enquanto ele corre, aparece como fica no fim.
+> Nenhum teste compara esta tela inteira, e as capturas continuam como estão.
 
 > **O segundo parágrafo tem uma outra forma desde 24/08/2026, e ela sai quando
 > a ordem permanente tem entrada que não diz para onde aponta** (P-28,
@@ -1365,7 +1377,7 @@ sobre a qual rodaram os quatro marcos em hardware deste projeto.
 |---|---|
 | Arquivo | `clonezilla-live-3.3.3-15-amd64.zip` · 561.478.648 bytes |
 | SHA256 | `00cee7700433e63017e2ea9eb40519108829710132364a8028a6c039a6046304` |
-| De onde vem | SourceForge, o canal que o site do Clonezilla aponta |
+| De onde vem | Desde 04/10/2026 (PR-7), de três fontes tentadas em ordem: o mirror do projeto em `free.nchc.org.tw`, em `oldstable/3.3.3-15/` e depois em `stable/`, e o SourceForge, o canal que o site do Clonezilla aponta e que era a única fonte até então. O pacote baixado fica guardado no PC |
 | De onde vem o **número** | `CHECKSUMS.TXT` do mirror do projeto em `free.nchc.org.tw`, **e** o `certutil` sobre o arquivo baixado — dois servidores, o mesmo número |
 | Como se extrai | `C:\Windows\System32\tar.exe`, que é o `bsdtar 3.8.8` |
 
