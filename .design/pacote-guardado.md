@@ -81,6 +81,7 @@ Derivable from the repository, left to the plan: o texto da tela em ASCII sem ac
 | `--dry-run`, nada guardado | não baixa | uma linha dizendo que o preparo de verdade baixa 535,5 MB antes de qualquer pergunta, e que o ensaio não baixa |
 | `--dry-run`, guardado | confere o SHA256, que é leitura | `Pacote conferido`, como no preparo de verdade |
 | Plano (PR-4), sem `--iso` | o Clonezilla aparece como vindo do pacote guardado, já conferido | a linha do Clonezilla em "E O QUE MAIS VAI ACONTECER" deixa de prometer download |
+| Plano (PR-4), `--dry-run` sem pacote guardado | o Clonezilla aparece como o que o preparo de verdade vai baixar antes do menu e guardar neste PC | a linha do Clonezilla diz isso, com o tamanho |
 | Passos 6 e 7 | o passo 7 confere de novo, e a cópia de PR-3 sai do pacote guardado depois disso | como hoje com o `--iso` |
 
 ```mermaid
