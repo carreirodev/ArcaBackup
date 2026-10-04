@@ -5,7 +5,7 @@ Plan: o issue [WPC-134](https://linear.app/wpcsolutions/issue/WPC-134/o-arca-pre
 
 Base da feature: `378143b`. Os comandos rodam no Git Bash, a partir da raiz do repositório.
 
-26 checks in 3 slices · 4 one-way doors · 0 open
+27 checks in 3 slices · 4 one-way doors · 0 open (C27 entrou em 04/10/2026, por decisão do usuário)
 
 Sources:
 
@@ -30,8 +30,7 @@ Sources:
 - O `--iso` alimentar o pacote guardado - PR-2 fica como está (C12)
 - A velocidade dos servidores
 - A tela de exemplo do §7.1 do PRD, que também mostra o download depois do particionamento - o critério 25 nomeia o README, e o PRD só ganha a linha PR-7 (C22). Fica como achado no relatório final
-- Uma pasta que **já tem** um `.parcial` e passou a recusar escrita: o pré-voo só escreve nela quando o `.parcial` não existe ou recomeça do zero (ver Landing, linha 3), e nesse caso o `curl` falha em cada fonte com o texto dele (critério 6). C8 cobre a pasta que não se deixa criar e o `.parcial` que não se deixa criar nem zerar
-- Um `.parcial` menor que o pacote, entregue com código 0 e que não bate (um servidor que responde `200` com uma página no lugar do zip): a execução seguinte o retomaria, e não recomeçaria do zero. O critério 7 fala do pacote recém-baixado, que o `curl` só dá por entregue quando chega o `Content-Length` inteiro; o caso menor fica como achado no relatório final
+- ~~Uma pasta que já tem um `.parcial` e passou a recusar escrita~~ e ~~um `.parcial` menor que o pacote, entregue com código 0 e que não bate~~: os dois estavam aqui, o Verifier mostrou que estreitavam os critérios 8 e 7, e o usuário decidiu em 04/10/2026 que entram (C7 e C8, renegociados)
 
 ## Landing
 
@@ -74,13 +73,18 @@ Proof: `cargo test --lib comandos::prepare::testes::um_parcial_do_tamanho_do_pac
 Proof: `cargo test --lib pacote::testes::a_recusa_de_nenhuma_fonte_e_o_texto_aprovado -- --exact`
 Proof: `cargo test --lib comandos::prepare::testes::nenhuma_fonte_entregou_recusa_antes_dos_discos_e_guarda_o_que_veio -- --exact`
 
-**C7** (critério 7) - WHEN a fonte entrega e o `.parcial` não bate com o SHA256 THEN `executar` devolve `PacoteRecusado(ResumoDivergente)`, com `enumeracoes == 0`, `particionou()` falso, o `.parcial` ainda lá e o guardado ausente. A execução seguinte recomeçar do zero é C5: o `curl` só sai com 0 depois do `Content-Length` inteiro, e o `.parcial` tem então o tamanho do pacote
+**C7** (critério 7, **renegociado pelo usuário em 04/10/2026**: "Zerar o que não bate" — antes dizia que o `.parcial` ficava) - WHEN a fonte entrega e o `.parcial` não bate com o SHA256 THEN `executar` devolve `PacoteRecusado(ResumoDivergente)`, com `enumeracoes == 0`, `particionou()` falso, o guardado ausente e o `.parcial` **zerado** (conteúdo vazio, e a última escrita é a dele, depois da conferência); WHEN o `.parcial` entregue é menor que o pacote — uma página no lugar do zip — THEN a execução seguinte começa do zero: a primeira linha `Baixando Clonezilla` dela não diz `retomando`; e WHEN o `certutil` não consegue medir o `.parcial` THEN ele **não** é zerado ("não consegui olhar" nunca vira "não bate")
 Proof: `cargo test --lib comandos::prepare::testes::um_pacote_recem_baixado_que_nao_bate_recusa_antes_dos_discos -- --exact`
+Proof: `cargo test --lib comandos::prepare::testes::uma_pagina_no_lugar_do_pacote_e_zerada_e_a_proxima_execucao_baixa_do_zero -- --exact`
+Proof: `cargo test --lib comandos::prepare::testes::um_parcial_que_nao_se_deixou_medir_nao_e_zerado -- --exact`
 
-**C8** (critério 8) - Os dois textos são, byte a byte, `nao deu para guardar o pacote em C:\Users\Ana Paula\AppData\Local\ARCA (Acesso negado. (os error 5)). Nada foi apagado (PR-7)` e `faltam 536 MB para baixar o pacote, e C:\Users\Ana Paula\AppData\Local\ARCA tem 100 MB livres. Nada foi apagado (PR-7)`; WHEN a pasta não se deixa criar, e WHEN o `.parcial` não se deixa criar THEN `NaoDeuParaGuardar`, com `sistema.baixados` vazio; WHEN o volume tem 100 MB livres e nada baixado THEN `FaltaEspaco` com 536 e 100, e `baixados` vazio; e WHEN há 500 MB no `.parcial` e 40 MB livres THEN não há recusa — o que conta é o que falta baixar
+**C8** (critério 8) - Os dois textos são, byte a byte, `nao deu para guardar o pacote em C:\Users\Ana Paula\AppData\Local\ARCA (Acesso negado. (os error 5)). Nada foi apagado (PR-7)` e `faltam 536 MB para baixar o pacote, e C:\Users\Ana Paula\AppData\Local\ARCA tem 100 MB livres. Nada foi apagado (PR-7)`; WHEN a pasta não se deixa criar, e WHEN o `.parcial` não se deixa criar THEN `NaoDeuParaGuardar`, com `sistema.baixados` vazio; WHEN o volume tem 100 MB livres e nada baixado THEN `FaltaEspaco` com 536 e 100, e `baixados` vazio; e WHEN há 500 MB no `.parcial` e 40 MB livres THEN não há recusa — o que conta é o que falta baixar. **E, renegociado pelo usuário em 04/10/2026** ("Reconhecer a falha de escrita"): o código 23 do `curl` é julgado como falta de escrita, com a linha `curl: (23) …` dele como motivo; WHEN o `curl` sai com 23 na primeira fonte THEN a recusa é `NaoDeuParaGuardar` com esse motivo, e nenhuma outra fonte é tentada (`baixados == [oldstable]`); e o adaptador, contra um `.parcial` somente-leitura de 100 bytes, devolve 23 sem ter conectado — medido em 04/10/2026, o `curl` abre o destino antes de conectar quando há o que retomar
 Proof: `cargo test --lib pacote::testes::as_recusas_de_onde_guardar_sao_o_texto_aprovado -- --exact`
 Proof: `cargo test --lib comandos::prepare::testes::uma_pasta_que_nao_aceita_escrita_recusa_antes_de_baixar -- --exact`
 Proof: `cargo test --lib comandos::prepare::testes::sem_espaco_para_o_que_falta_recusa_antes_de_baixar -- --exact`
+Proof: `cargo test --lib pacote::testes::o_que_cada_fonte_respondeu_e_julgado_pelo_codigo -- --exact`
+Proof: `cargo test --lib comandos::prepare::testes::um_parcial_que_o_curl_nao_consegue_escrever_recusa_na_primeira_fonte -- --exact`
+Proof: `cargo test --lib adaptadores::windows::sistema::testes::um_parcial_somente_leitura_volta_com_o_codigo_23_sem_conectar -- --exact`
 
 **C9** (critério 9) - WHEN `--dry-run` e nenhum pacote guardado THEN `baixados` fica vazio, nada é escrito na pasta (nem o `.parcial`), a tela do pré-voo é exatamente `  Pacote .......................... nao esta neste PC · o preparo de verdade baixa 535,5 MB antes de qualquer pergunta; o ensaio nao baixa\n`, e a linha do Clonezilla no plano é exatamente `  Clonezilla 3.3.3-15 · o preparo de verdade o baixa antes do menu (535,5 MB) e o guarda\n     neste PC, com o SHA256 conferido contra o valor compilado neste ARCA (PR-1)\n`
 Proof: `cargo test --lib comandos::prepare::testes::o_ensaio_sem_pacote_guardado_nao_baixa_e_diz_que_o_preparo_baixa -- --exact`
@@ -102,7 +106,7 @@ Proof: `cargo test --lib comandos::prepare::testes::um_pacote_guardado_que_muda_
 Proof: `cargo test --test b10_nada_e_apagado`
 Proof: `cargo test --lib comandos::prepare::testes::o_download_nao_mexe_nos_outros_arquivos_da_pasta -- --exact`
 
-**C15** (critério 15) - WHEN o download é interrompido (o `baixar` devolve erro, que é o que sobra de um `curl` morto para quem o chamou) THEN `executar` devolve o erro com `enumeracoes == 0`, `particionou()` falso e o `.parcial` ainda lá; e um `curl` encerrado no meio deixa o destino com os bytes que chegaram (C18, primeira prova). Que um Ctrl+C mata os dois processos do console é do Windows, e não tem prova automática aqui
+**C15** (critério 15; **redação corrigida em 04/10/2026**, sem mudar a régua — o Verifier mostrou que um `curl` encerrado não faz o `baixar` devolver erro, e sim uma transferência com código) - O critério é garantido pela **ordem**: o pacote é obtido no pré-voo, antes de qualquer `enumerar` e de qualquer `particionar`, então um Ctrl+C durante o download encerra o ARCA (e o `curl`, que divide o console com ele) antes de o comando chegar aos discos. WHEN o `baixar` devolve erro — o `curl` que nem chega a rodar — THEN `executar` devolve o erro com `enumeracoes == 0`, `particionou()` falso e o `.parcial` ainda lá; e um `curl` encerrado no meio deixa o destino com os bytes que chegaram (C18, primeira prova). Que um Ctrl+C mata os dois processos do console é do Windows, e não tem prova automática aqui
 Proof: `cargo test --lib comandos::prepare::testes::um_download_interrompido_nao_chega_ao_particionador -- --exact`
 Proof: `cargo test --lib adaptadores::windows::sistema::testes::uma_fonte_parada_e_abandonada_e_o_parcial_fica_com_o_que_veio -- --exact`
 
@@ -156,6 +160,18 @@ Proof: `sed -n '/^### No `C:`/,/^### O que o ARCA nunca escreve/p' README.md | g
 
 **C26** (critério 26) - O §12 do README tem uma entrada para cada recusa nova — `nao deu para baixar o Clonezilla`, `nao deu para guardar o pacote em` e `faltam ... MB para baixar o pacote` —, cada uma com a mensagem num bloco de código e um parágrafo que diz o que fazer em seguida (o `--iso`, a pasta, o espaço)
 Proof: `for h in 'nao deu para baixar o Clonezilla' 'nao deu para guardar o pacote em' 'MB para baixar o pacote'; do E=$(awk -v h="$h" '/^### /{dentro = index($0, h) > 0} dentro' README.md); [ -n "$E" ] || { echo "sem entrada: $h"; exit 1; }; printf '%s\n' "$E" | grep -q '^```' || { echo "sem bloco: $h"; exit 1; }; printf '%s\n' "$E" | grep -qF 'Nada foi apagado' || { echo "sem a promessa: $h"; exit 1; }; done; awk '/^### /{d = index($0, "nao deu para baixar o Clonezilla") > 0} d' README.md | grep -qF -- '--iso' && awk '/^### /{d = index($0, "MB para baixar o pacote") > 0} d' README.md | grep -qiF 'espaço'`
+
+**C27** (decisão do usuário de 04/10/2026, "Corrigir junto": as frases que ficaram falsas fora dos lugares de C25, achadas pelo agente de S3; e a documentação de C7 e C8 renegociados) - No README: a nota dos caminhos do `curl` e do `tar` (§2) deixa de dizer que o `tar` falharia depois de o disco ser apagado e passa a falar do pré-voo; a linha do `--iso` na tabela de argumentos (§6.1) diz que ele não usa o pacote guardado; os passos 2 e 3 do §8 deixam de pôr o download no plano e depois do `s`, e falam do pacote guardado; a linha da porta `Arquivos` no §14 cita `copiar` e `renomear`; o §16 deixa de contar os ADRs (`25 decisões`) e a tabela ganha a `0028`; o glossário (§17) tem **Pacote guardado**; o diagnóstico `o SHA256 do pacote NAO bate` diz que o `.parcial` que não bate é zerado. No PRD: a tela do §7.1 deixa de baixar depois do particionamento e de prometer download no plano, e passa a mostrar o `Pacote conferido` antes do `Podemos continuar?`; e o `De onde vem` do §7.2 deixa de ser só o SourceForge e cita o mirror do projeto. No ADR-0028: as duas decisões de 04/10/2026, com as palavras do usuário
+Proof: `L=$(grep -F '**Os caminhos do `curl` e do `tar`' README.md); [ -n "$L" ] && ! printf '%s' "$L" | grep -qF 'já ter apagado o disco' && printf '%s' "$L" | grep -qF 'pré-voo'`
+Proof: `grep '^| `--iso <CAMINHO>` |' README.md | grep -qF 'pacote guardado'`
+Proof: `S=$(sed -n '/^### Passo 2 — /,/^### Passo 3 — /p' README.md); ! printf '%s\n' "$S" | grep -qF 'o download, a entrada de firmware' && S=$(sed -n '/^### Passo 3 — /,/^### Passo 4 — /p' README.md) && ! printf '%s\n' "$S" | grep -qF 'a maior parte é o download' && printf '%s\n' "$S" | grep -qF 'pacote guardado'`
+Proof: `L=$(grep '^| `Arquivos` |' README.md); printf '%s' "$L" | grep -qF 'renomear' && printf '%s' "$L" | grep -qF 'copiar'`
+Proof: `! grep -qE '[0-9]+ decisões de arquitetura' README.md && sed -n '/^### As decisões de arquitetura$/,/^## 17\./p' README.md | grep -q '^| 0028 |'`
+Proof: `sed -n '/^## 17\. Glossário/,/^## Licença/p' README.md | grep -qF 'Pacote guardado'`
+Proof: `D=$(sed -n '/^### `o SHA256 do pacote NAO bate`$/,/^### `o arquivo/p' README.md); printf '%s\n' "$D" | grep -qF 'zerado'`
+Proof: `T=$(sed -n '/^### 7.1 — /,/^### 7.2 — /p' PRD/PRD-ARCA-v5_1.md); ! printf '%s\n' "$T" | grep -qF 'pode levar minutos' && ! printf '%s\n' "$T" | grep -qF 'Clonezilla 3.3.3-15 · baixado (535,5 MB)' && ! printf '%s\n' "$T" | grep -qF 'de https://downloads.sourceforge.net' && c=$(printf '%s\n' "$T" | grep -n 'Pacote conferido' | head -1 | cut -d: -f1) && q=$(printf '%s\n' "$T" | grep -n 'Podemos continuar?' | head -1 | cut -d: -f1) && [ -n "$c" ] && [ "$c" -lt "$q" ]`
+Proof: `L=$(grep '^| De onde vem |' PRD/PRD-ARCA-v5_1.md); [ -n "$L" ] && printf '%s' "$L" | grep -qF 'free.nchc.org.tw' && ! printf '%s' "$L" | grep -qxF '| De onde vem | SourceForge, o canal que o site do Clonezilla aponta |'`
+Proof: `A=docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md; grep -qF 'Zerar o que não bate' "$A" && grep -qF 'Reconhecer a falha de escrita' "$A" && grep -qF 'código 23' "$A"`
 
 ## Swept
 
