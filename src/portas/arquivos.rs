@@ -121,6 +121,21 @@ pub trait Arquivos {
     /// [ADR-0008]: ../../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md
     fn copiar(&self, origem: &Path, destino: &Path) -> Resultado<()>;
 
+    /// Renomeia `origem` para `destino`, substituindo o destino se ele existir.
+    ///
+    /// # Por que existe, e por que isto nao fura B-10
+    ///
+    /// O pacote guardado so existe sob o nome final depois de passar no
+    /// SHA256 (PR-7): o download mora num `.parcial`, e e ele que vira o
+    /// pacote. Com um nome so, decidido pelo tamanho, um download pela metade
+    /// ficaria com o nome do pacote, e quem o visse na pasta o tomaria por um
+    /// (WPC-134, 04/10/2026).
+    ///
+    /// Substituir nao e apagar, pelo mesmo argumento de [`Arquivos::copiar`]:
+    /// o unico destino substituido e um pacote guardado que nao bateu com o
+    /// SHA256 — um arquivo que nao bate nao e o pacote.
+    fn renomear(&self, origem: &Path, destino: &Path) -> Resultado<()>;
+
     /// Espaco livre no volume que contem `caminho`.
     fn espaco_livre(&self, caminho: &Path) -> Resultado<u64>;
 }

@@ -59,7 +59,7 @@
 //!
 //! | # | Passo | Parando aqui, o que fica |
 //! |---|---|---|
-//! | pré-voo | Conferir o pacote do `--iso`, quando ele veio (PR-1, PR-2) | nada tocado |
+//! | pré-voo | Obter e conferir o pacote: o do `--iso`, ou o pacote guardado neste PC — reusado ou baixado (PR-1, PR-2, PR-7) | nada tocado — e o download pela metade fica no `.parcial`, para a próxima vez |
 //! | 0 | Listar os discos e perguntar o número — só sem `--dispositivo` (ADR-0024) | nada tocado |
 //! | 1 | Descrever o disco e julgar (PR-5) | nada tocado |
 //! | 1b | **Ler o firmware** — a ordem permanente e a entrada a reusar (PR-6, C-15) | nada tocado |
@@ -67,7 +67,7 @@
 //! | 3 | Perguntar, e **reler o disco** (PR-4, 3º tempo) | nada tocado |
 //! | 4 | Confirmação digitada (S-2) | nada tocado |
 //! | 5 | **Particionar e formatar** | disco apagado, duas partições vazias — e a entrada de firmware, se apontava para ele, **pendurada** |
-//! | 6 | Baixar o pacote (ou `--iso`) | dispositivo vazio, sem Clonezilla |
+//! | 6 | O pacote já é local: o do `--iso` ou o guardado (PR-7) | dispositivo vazio, sem Clonezilla |
 //! | 7 | Conferir o SHA256 (PR-1) | idem — e **nada foi extraído** |
 //! | 8 | Extrair | `ARCABOOT` com o Clonezilla e `set default="0"` |
 //! | 9 | Devolver o `grub.cfg` ao estado inerte | dispositivo bootável e inerte |
@@ -113,6 +113,19 @@
 //! desperdício: entre o pré-voo e ele há uma pessoa lendo o plano e digitando
 //! o modelo do disco, e é exatamente o intervalo em que o terceiro tempo de
 //! PR-4 relê o disco. O que vale para o disco vale para o arquivo.
+//!
+//! ## E desde 04/10/2026 o pré-voo vale sem `--iso` também (PR-7)
+//!
+//! Sem `--iso`, o pacote era baixado no passo 6, com o disco já apagado, e o
+//! download não tinha limite para uma transferência parada. Em 03/10 e
+//! 04/10/2026 ele ficou parado calado até o usuário cancelar, e cada
+//! tentativa custou o disco antes de falhar.
+//!
+//! Agora o pré-voo obtém o pacote antes do passo 0 — do pacote guardado no
+//! PC, conferido de novo a cada uso, ou baixando-o das [`pacote::FONTES`] —,
+//! e dali em diante o comando segue o caminho que o `--iso` já seguia. Nenhum
+//! download acontece depois do ponto sem volta. Ver o
+//! [ADR-0028](../../docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md).
 
 use crate::app::Contexto;
 use crate::confirmacao;
@@ -151,24 +164,11 @@ pub fn executar(
     dispositivo: Option<u32>,
     iso: Option<&Path>,
 ) -> Resultado<()> {
-    // ─────────── pré-voo: o pacote do `--iso`, com o disco ainda intacto ───────────
+    // ─────────── pré-voo: o pacote, com o disco ainda intacto (PR-2, PR-7) ───────────
 
     // Antes do passo 0, e não junto do passo 6: ver a seção sobre o pré-voo no
     // cabeçalho deste módulo para o que essa ordem custou.
-    if let Some(caminho) = iso {
-        let resumo = conferir_o_pacote_local(contexto, caminho)?;
-        print!(
-            "{}",
-            linha(
-                "Pacote conferido",
-                &format!(
-                    "ok · {} · {} · nada tocado ainda (PR-2)",
-                    resumo.abreviado(),
-                    caminho.display()
-                ),
-            )
-        );
-    }
+    let pacote = obter_o_pacote_no_pre_voo(contexto, iso, &mut escrever_na_tela)?;
 
     // ─────────── 0. de onde sai o índice, quando ele não veio na linha ───────────
 
@@ -199,12 +199,18 @@ pub fn executar(
 
     // ─────────── 2. o plano inteiro na tela (PR-4, 1º tempo) ───────────
 
-    print!("{}", montar_o_plano(&preparacao, iso, &firmware_antes));
+    print!("{}", montar_o_plano(&preparacao, &pacote, &firmware_antes));
 
     if contexto.dry_run {
         print!("{}", montar_o_ensaio(&preparacao));
         return Ok(());
     }
+
+    // O pré-voo só volta sem pacote no ensaio, que acabou de parar acima.
+    let origem = pacote
+        .local()
+        .expect("fora do ensaio, o pre-voo so volta com o pacote local")
+        .to_path_buf();
 
     // ─────────── 3. a pergunta, e a conferência do ARCA (PR-4, 2º e 3º tempos) ───────────
 
@@ -267,7 +273,7 @@ pub fn executar(
 
     // ─────────── 6 e 7. o pacote, e a conferência antes de extrair ───────────
 
-    let pacote_local = obter_o_pacote(contexto, iso, &raiz_do_vault)?;
+    let pacote_local = obter_o_pacote(contexto, &origem, &raiz_do_vault)?;
 
     // ─────────── 8. extrair ───────────
 
@@ -632,9 +638,329 @@ fn conferir_o_pacote(contexto: &Contexto, local: &Path) -> Resultado<crate::resu
     Ok(resumo)
 }
 
-/// Baixa (ou usa o `--iso`), confere o SHA256 e guarda a cópia de PR-3.
+/// De onde vem o pacote, decidido no pré-voo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PacoteDoPreVoo {
+    /// O arquivo do `--iso`, conferido (PR-2).
+    DoIso(PathBuf),
+
+    /// O pacote guardado neste PC, conferido — reusado ou recém-baixado
+    /// (PR-7).
+    Guardado(PathBuf),
+
+    /// Nada guardado, e o ensaio não baixa. Só o `--dry-run` chega aqui.
+    PorBaixar,
+}
+
+impl PacoteDoPreVoo {
+    /// O arquivo que os passos 6 e 7 usam, quando já há um.
+    pub fn local(&self) -> Option<&Path> {
+        match self {
+            PacoteDoPreVoo::DoIso(caminho) | PacoteDoPreVoo::Guardado(caminho) => Some(caminho),
+            PacoteDoPreVoo::PorBaixar => None,
+        }
+    }
+}
+
+/// A tela do `arca prepare`, para quem não é teste: escreve e descarrega na
+/// hora, porque a linha do andamento é reescrita no lugar e não termina em
+/// quebra de linha.
+fn escrever_na_tela(texto: &str) {
+    use std::io::Write;
+
+    print!("{texto}");
+    let _ = std::io::stdout().flush();
+}
+
+/// O pré-voo do pacote: o do `--iso`, ou o pacote guardado neste PC — e o
+/// guardado ou se reusa, ou se baixa (PR-1, PR-2, PR-7).
 ///
-/// # A ordem é baixar, conferir, e só então usar
+/// Escreve na `tela` em vez de imprimir, para que o texto que alguém lê
+/// durante um download de minutos seja o que os testes leem.
+///
+/// # Por que o guardado é conferido a cada uso
+///
+/// Guardado não é confiado. Um arquivo que ficou meses no `%LOCALAPPDATA%`
+/// pode ter sido trocado, truncado por um disco cheio ou restaurado de outro
+/// lugar, e o SHA256 compilado custa segundos. É a mesma razão pela qual o
+/// `--iso` é conferido de novo no passo 7.
+fn obter_o_pacote_no_pre_voo(
+    contexto: &Contexto,
+    iso: Option<&Path>,
+    tela: &mut dyn FnMut(&str),
+) -> Resultado<PacoteDoPreVoo> {
+    if let Some(caminho) = iso {
+        // PR-2 fica como estava: o `--iso` não lê nem escreve o pacote
+        // guardado, e a tela é a de antes de PR-7.
+        let resumo = conferir_o_pacote_local(contexto, caminho)?;
+        tela(&linha(
+            "Pacote conferido",
+            &format!(
+                "ok · {} · {} · nada tocado ainda (PR-2)",
+                resumo.abreviado(),
+                caminho.display()
+            ),
+        ));
+        return Ok(PacoteDoPreVoo::DoIso(caminho.to_path_buf()));
+    }
+
+    let pasta = contexto.registro.pasta();
+    let guardado = pacote::guardado_em(pasta);
+
+    let o_guardado_nao_bateu = match contexto.arquivos.o_que_ha(&guardado)? {
+        OQueHa::Nada => false,
+        OQueHa::Arquivo => match conferir_o_pacote(contexto, &guardado) {
+            Ok(resumo) => {
+                contexto.registro.info(format!(
+                    "pacote guardado usado sem rede · {}",
+                    guardado.display()
+                ));
+                tela(&montar_o_pacote_guardado(&resumo, &guardado));
+                return Ok(PacoteDoPreVoo::Guardado(guardado));
+            }
+            // Só a divergência vira download: "não consegui medir" continua
+            // sendo a recusa dele, e não um motivo para baixar meio giga.
+            Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente { .. })) => true,
+            Err(outro) => return Err(outro),
+        },
+        // Uma pasta com o nome do pacote faria o `renomear` falhar depois de
+        // um download inteiro. Melhor dizer agora.
+        OQueHa::Pasta => {
+            return Err(Erro::PacoteRecusado(
+                pacote::RecusaDoPacote::NaoDeuParaGuardar {
+                    pasta: pasta.to_path_buf(),
+                    motivo: format!("`{}` e uma pasta", pacote::ARQUIVO),
+                },
+            ));
+        }
+    };
+
+    // O ensaio não baixa: ele diz o que o preparo de verdade faria. Nada é
+    // escrito na pasta, nem o `.parcial`.
+    if contexto.dry_run {
+        tela(&if o_guardado_nao_bateu {
+            linha(
+                "Pacote guardado",
+                "nao bate com o SHA256 deste ARCA · o preparo de verdade baixa de novo, do zero; o ensaio nao baixa",
+            )
+        } else {
+            linha(
+                "Pacote",
+                &format!(
+                    "nao esta neste PC · o preparo de verdade baixa {} antes de qualquer pergunta; o ensaio nao baixa",
+                    tamanho(pacote::TAMANHO_BYTES)
+                ),
+            )
+        });
+        return Ok(PacoteDoPreVoo::PorBaixar);
+    }
+
+    if o_guardado_nao_bateu {
+        tela(&linha(
+            "Pacote guardado",
+            "nao bate com o SHA256 deste ARCA · baixando de novo, do zero",
+        ));
+    }
+
+    let resumo = baixar_o_pacote_guardado(contexto, pasta, o_guardado_nao_bateu, tela)?;
+    tela(&montar_o_pacote_guardado(&resumo, &guardado));
+    Ok(PacoteDoPreVoo::Guardado(guardado))
+}
+
+/// Baixa o pacote para o `.parcial`, confere e o renomeia para o pacote
+/// guardado (PR-7).
+///
+/// # A ordem das recusas, e por que todas vêm antes do `curl`
+///
+/// A pasta tem de se deixar criar, o `.parcial` tem de se deixar criar ou
+/// zerar, e o volume tem de ter o que falta baixar. As três perguntas custam
+/// milissegundos, e cada uma, respondida depois, custaria um download de
+/// minutos que não teria onde ficar.
+///
+/// # Nenhuma fonte é confiável, e por isso elas são intercambiáveis
+///
+/// Cada fonte é tentada uma vez, em ordem, e a seguinte continua do byte em
+/// que a anterior parou: o `.parcial` é um só. Quem decide se o que veio é o
+/// pacote é o SHA256 compilado, depois da última fonte que entregou.
+fn baixar_o_pacote_guardado(
+    contexto: &Contexto,
+    pasta: &Path,
+    do_zero: bool,
+    tela: &mut dyn FnMut(&str),
+) -> Resultado<crate::resumo::Resumo> {
+    let parcial = pacote::parcial_em(pasta);
+    let nao_deu_para_guardar = |erro: Erro| {
+        Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaGuardar {
+            pasta: pasta.to_path_buf(),
+            motivo: erro.motivo(),
+        })
+    };
+
+    contexto
+        .arquivos
+        .criar_diretorio(pasta)
+        .map_err(nao_deu_para_guardar)?;
+
+    // Zerar é escrever o `.parcial` vazio por cima. É a única substituição que
+    // o download faz, e é também a prova de que a pasta aceita escrita.
+    let zerar = || {
+        contexto
+            .arquivos
+            .escrever_atomico(&parcial, "")
+            .map_err(nao_deu_para_guardar)
+    };
+
+    let mut ja_veio = match (
+        do_zero,
+        pacote::como_comecar(tamanho_do_parcial(contexto, pasta, &parcial)?),
+    ) {
+        (false, pacote::Comeco::Retomando(bytes)) => bytes,
+        _ => {
+            zerar()?;
+            0
+        }
+    };
+
+    let falta = pacote::TAMANHO_BYTES.saturating_sub(ja_veio);
+    let livre = contexto.arquivos.espaco_livre(pasta)?;
+    if livre < falta {
+        return Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::FaltaEspaco {
+            pasta: pasta.to_path_buf(),
+            falta_bytes: falta,
+            livre_bytes: livre,
+        }));
+    }
+
+    let mut tentativas = Vec::new();
+    for fonte in pacote::FONTES {
+        // Uma fonte que deixou o `.parcial` do tamanho do pacote ou maior e
+        // não entregou deixou um arquivo que não se retoma: retomar pediria
+        // um byte que o pacote não tem.
+        if pacote::como_comecar(Some(ja_veio)) == pacote::Comeco::DoZero {
+            zerar()?;
+            ja_veio = 0;
+        }
+
+        let antes = ja_veio;
+        let mut linha_viva = LinhaViva::default();
+        linha_viva.escrever(
+            tela,
+            &if antes > 0 {
+                format!(
+                    "{} · retomando de {} · {}",
+                    pacote::VERSAO,
+                    tamanho(antes),
+                    fonte.rotulo
+                )
+            } else {
+                montar_o_andamento(0, fonte.rotulo)
+            },
+        );
+
+        let transferencia =
+            contexto
+                .sistema
+                .baixar(fonte.url, &parcial, pacote::LIMITES, &mut |bytes| {
+                    linha_viva.escrever(tela, &montar_o_andamento(bytes, fonte.rotulo))
+                });
+        tela("\n");
+        let transferencia = transferencia?;
+
+        let resposta = pacote::o_que_a_fonte_respondeu(&transferencia);
+        ja_veio = transferencia.tamanho_no_destino;
+        contexto.registro.info(format!(
+            "fonte {} · {resposta} · {} bytes desta fonte",
+            fonte.url,
+            ja_veio.saturating_sub(antes)
+        ));
+
+        if resposta == pacote::Resposta::Entregou {
+            // PR-1 antes do nome: o `.parcial` só vira o pacote guardado
+            // depois de passar. O que não passa fica onde está, e a próxima
+            // execução recomeça do zero, porque ele tem o tamanho do pacote.
+            let resumo = conferir_o_pacote(contexto, &parcial)?;
+            contexto
+                .arquivos
+                .renomear(&parcial, &pacote::guardado_em(pasta))?;
+            return Ok(resumo);
+        }
+
+        tela(&linha(
+            "Fonte abandonada",
+            &format!("{} · {resposta}", fonte.rotulo),
+        ));
+        tentativas.push((fonte.rotulo, resposta));
+    }
+
+    Err(Erro::PacoteRecusado(
+        pacote::RecusaDoPacote::NenhumaFonteEntregou { tentativas },
+    ))
+}
+
+/// O tamanho do `.parcial`, ou `None` quando ele não está lá.
+fn tamanho_do_parcial(contexto: &Contexto, pasta: &Path, parcial: &Path) -> Resultado<Option<u64>> {
+    Ok(contexto
+        .arquivos
+        .listar(pasta)?
+        .into_iter()
+        .find(|entrada| entrada.caminho == parcial && !entrada.diretorio)
+        .map(|entrada| entrada.tamanho_bytes))
+}
+
+/// A linha `Baixando Clonezilla`, que o andamento reescreve no lugar.
+///
+/// Reescrever é voltar ao começo da linha com `\r` e escrever por cima — e o
+/// que sobrar da escrita anterior, se ela foi mais comprida, é coberto com
+/// espaços. Por isso a linha cabe em 120 colunas: uma linha que quebra não se
+/// reescreve, ela se repete.
+#[derive(Default)]
+struct LinhaViva {
+    largura: usize,
+}
+
+impl LinhaViva {
+    fn escrever(&mut self, tela: &mut dyn FnMut(&str), valor: &str) {
+        let texto = linha("Baixando Clonezilla", valor);
+        let texto = texto.trim_end_matches('\n');
+        let largura = texto.chars().count();
+
+        // A primeira escrita começa a linha; as seguintes voltam ao começo dela.
+        let volta = if self.largura == 0 { "" } else { "\r" };
+        let sobra = self.largura.saturating_sub(largura);
+        self.largura = self.largura.max(largura);
+
+        tela(&format!("{volta}{texto}{}", " ".repeat(sobra)));
+    }
+}
+
+/// O valor da linha do andamento: quanto já veio, de quanto, e de onde (PR-7).
+pub fn montar_o_andamento(recebido: u64, rotulo: &str) -> String {
+    format!(
+        "{} · {} de {} · {rotulo}",
+        pacote::VERSAO,
+        tamanho(recebido),
+        tamanho(pacote::TAMANHO_BYTES)
+    )
+}
+
+/// A linha do pacote guardado que passou na conferência (PR-7).
+pub fn montar_o_pacote_guardado(resumo: &crate::resumo::Resumo, guardado: &Path) -> String {
+    linha(
+        "Pacote conferido",
+        &format!(
+            "ok · {} · guardado neste PC em {} · nada tocado ainda (PR-7)",
+            resumo.abreviado(),
+            guardado.display()
+        ),
+    )
+}
+
+/// Confere o pacote de novo e guarda a cópia de PR-3 — os passos 6 e 7.
+///
+/// O pacote já é local desde o pré-voo: o do `--iso` ou o guardado neste PC
+/// (PR-7). Nenhum download acontece aqui, depois do ponto sem volta.
+///
+/// # A ordem é conferir, e só então usar
 ///
 /// PR-1 é sobre isto: um pacote que não se conferiu é um pacote que não se sabe
 /// o que é, e extrair antes de conferir tornaria a conferência decorativa.
@@ -642,63 +968,26 @@ fn conferir_o_pacote(contexto: &Contexto, local: &Path) -> Resultado<crate::resu
 /// A cópia de PR-3 fica no `ARCAVAULT` **depois** de conferida, pelo mesmo
 /// motivo: guardar um pacote que não passou seria guardar lixo com cara de
 /// fonte confiável.
-fn obter_o_pacote(
-    contexto: &Contexto,
-    iso: Option<&Path>,
-    raiz_do_vault: &Path,
-) -> Resultado<PathBuf> {
-    let (local, de_onde) = match iso {
-        // PR-2: instala de arquivo local. É o que salva quando a máquina que
-        // precisa preparar o dispositivo é justamente a que está sem Windows —
-        // e nesse caso não há rede.
-        Some(caminho) => (caminho.to_path_buf(), format!("{}", caminho.display())),
-        None => {
-            let destino = raiz_do_vault.join(pacote::ARQUIVO);
-            print!(
-                "{}",
-                linha(
-                    "Baixando Clonezilla",
-                    &format!(
-                        "{} · {} · pode levar minutos",
-                        pacote::VERSAO,
-                        tamanho(pacote::TAMANHO_BYTES)
-                    ),
-                )
-            );
-
-            let saida = contexto.sistema.baixar(pacote::URL, &destino)?;
-            if saida.codigo != 0 {
-                return Err(Erro::FerramentaRecusou {
-                    ferramenta: "curl",
-                    codigo: saida.codigo,
-                    saida: saida.resumo(3),
-                });
-            }
-            (destino, pacote::URL.to_string())
-        }
-    };
-
-    // PR-1, e a conferência acontece antes de qualquer uso do arquivo. Quando
-    // o pacote veio de `--iso`, esta é a **segunda** vez: a primeira foi o
-    // pré-voo, e o que separa as duas é uma pessoa lendo o plano e digitando o
-    // modelo do disco. É o mesmo intervalo que o terceiro tempo de PR-4 cobre
-    // relendo o disco.
-    let resumo = conferir_o_pacote(contexto, &local)?;
+fn obter_o_pacote(contexto: &Contexto, local: &Path, raiz_do_vault: &Path) -> Resultado<PathBuf> {
+    // PR-1, e esta é a **segunda** conferência: a primeira foi o pré-voo, e o
+    // que separa as duas é uma pessoa lendo o plano e digitando o modelo do
+    // disco. É o mesmo intervalo que o terceiro tempo de PR-4 cobre relendo o
+    // disco.
+    let resumo = conferir_o_pacote(contexto, local)?;
 
     print!(
         "{}",
         linha(
             "SHA256 conferido",
-            &format!("ok · {} · de {de_onde}", resumo.abreviado()),
+            &format!("ok · {} · de {}", resumo.abreviado(), local.display()),
         )
     );
 
     // PR-3: a cópia no `ARCAVAULT`, para que o dispositivo se reconstrua
-    // sozinho. Quando o pacote veio de `--iso`, ele ainda não está lá.
+    // sozinho. O pacote mora fora dele — no `--iso` ou no PC —, e o passo 5
+    // acabou de apagar o que havia lá.
     let copia = raiz_do_vault.join(pacote::ARQUIVO);
-    if copia != local {
-        contexto.arquivos.copiar(&local, &copia)?;
-    }
+    contexto.arquivos.copiar(local, &copia)?;
     print!(
         "{}",
         linha(
@@ -707,7 +996,7 @@ fn obter_o_pacote(
         )
     );
 
-    Ok(local)
+    Ok(local.to_path_buf())
 }
 
 /// Põe o binário do ARCA no `ARCABOOT` (§4.1).
@@ -1132,7 +1421,7 @@ fn releitura(contexto: &Contexto, identificador: &str) -> Resultado<firmware::En
 /// só "2 partições": ninguém reconhece um disco por uma contagem.
 pub fn montar_o_plano(
     preparacao: &Preparacao,
-    iso: Option<&Path>,
+    pacote_do_pre_voo: &PacoteDoPreVoo,
     firmware_antes: &firmware::Leitura,
 ) -> String {
     let disco = &preparacao.disco;
@@ -1242,13 +1531,18 @@ pub fn montar_o_plano(
     // O porquê do esquema é registro de projeto, e o lugar dele é o
     // [ADR-0025](../../docs/adr/0025-o-arca-particiona-em-gpt.md).
     saida.push_str("\nE O QUE MAIS VAI ACONTECER:\n");
+
+    // O plano não promete download: desde PR-7 o pacote já está no PC quando
+    // ele é impresso. Só o ensaio sem pacote guardado chega aqui sem ele, e aí
+    // a linha diz o que o preparo de verdade faria, e quando.
     saida.push_str(&format!(
         "  Clonezilla {} · {}\n",
         pacote::VERSAO,
-        match iso {
-            Some(caminho) => format!("do arquivo local {} (PR-2)", caminho.display()),
-            None => format!(
-                "baixado ({}), com o SHA256 conferido contra\n     o valor compilado neste ARCA — e nao contra um baixado junto (PR-1)",
+        match pacote_do_pre_voo {
+            PacoteDoPreVoo::DoIso(caminho) => format!("do arquivo local {} (PR-2)", caminho.display()),
+            PacoteDoPreVoo::Guardado(_) => "do pacote guardado neste PC, conferido contra o valor\n     compilado neste ARCA (PR-1)".to_string(),
+            PacoteDoPreVoo::PorBaixar => format!(
+                "o preparo de verdade o baixa antes do menu ({}) e o guarda\n     neste PC, com o SHA256 conferido contra o valor compilado neste ARCA (PR-1)",
                 tamanho(pacote::TAMANHO_BYTES)
             ),
         }
@@ -1507,10 +1801,33 @@ mod testes {
         registro: Registro,
     }
 
+    /// O espaço livre de um volume que não é o assunto do teste.
+    const MUITO_ESPACO: u64 = 1 << 40;
+
+    /// O que o pacote guardado da bancada tem dentro.
+    const O_PACOTE_GUARDADO: &str = "o pacote guardado, de mentira";
+
     impl Bancada {
+        /// A bancada nasce com o pacote guardado que bate, que é o estado
+        /// normal de um PC depois do primeiro preparo (PR-7): o preparo segue
+        /// sem rede, e os testes que não são sobre o pacote continuam sobre o
+        /// que eram. [`Bancada::sem_pacote_guardado`] tira o pacote.
         fn nova(etiqueta: &str, console: ConsoleDeMentira) -> Bancada {
+            let registro = Registro::em(
+                std::env::temp_dir().join(format!(
+                    "arca-prepare-{etiqueta}-{}-{:?}",
+                    std::process::id(),
+                    std::thread::current().id()
+                )),
+                Box::new(RelogioDoSistema),
+            );
+            let guardado = pacote::guardado_em(registro.pasta());
+
+            let mut arquivos = ArquivosEmMemoria::novo().com(&guardado, O_PACOTE_GUARDADO);
+            arquivos.espaco_livre = MUITO_ESPACO;
+
             Bancada {
-                arquivos: ArquivosEmMemoria::novo(),
+                arquivos,
                 discos: DiscosDeMentira::default(),
                 // O firmware é lido antes do plano (PR-6), então a bancada
                 // nasce com um gerenciador legível e sem entrada do ARCA — o
@@ -1518,18 +1835,51 @@ mod testes {
                 firmware: FirmwareDeMentira::novo().respondendo(FIRMWARE, &ordem_desta_mesa()),
                 relogio: RelogioParado::em("2026-08-23T18:38:00"),
                 entropia: EntropiaDeMentira::com(&[0; 8]),
-                sistema: SistemaDeMentira::novo(),
+                sistema: SistemaDeMentira::novo()
+                    .com_resumo(&guardado.to_string_lossy(), pacote::SHA256),
                 console,
                 particionador: ParticionadorDeMentira::desta_mesa(),
-                registro: Registro::em(
-                    std::env::temp_dir().join(format!(
-                        "arca-prepare-{etiqueta}-{}-{:?}",
-                        std::process::id(),
-                        std::thread::current().id()
-                    )),
-                    Box::new(RelogioDoSistema),
-                ),
+                registro,
             }
+        }
+
+        /// A mesma bancada num PC que nunca preparou nada: sem pacote
+        /// guardado, e o `.parcial` que o download vai deixar passando no
+        /// SHA256 e virando o guardado.
+        fn sem_pacote_guardado(mut self) -> Bancada {
+            let mut arquivos = ArquivosEmMemoria::novo();
+            arquivos.espaco_livre = MUITO_ESPACO;
+            self.arquivos = arquivos;
+            self.sistema = SistemaDeMentira::novo()
+                .com_resumo(&self.parcial().to_string_lossy(), pacote::SHA256)
+                .com_resumo(&self.guardado().to_string_lossy(), pacote::SHA256);
+            self
+        }
+
+        fn guardado(&self) -> PathBuf {
+            pacote::guardado_em(self.registro.pasta())
+        }
+
+        fn parcial(&self) -> PathBuf {
+            pacote::parcial_em(self.registro.pasta())
+        }
+
+        /// O texto do `arca.log` desta bancada.
+        fn registrado(&self) -> String {
+            std::fs::read_to_string(self.registro.caminho()).unwrap_or_default()
+        }
+
+        /// O pré-voo do pacote, com a tela que ele escreveu.
+        fn pre_voo(
+            &self,
+            dry_run: bool,
+            iso: Option<&Path>,
+        ) -> (Resultado<PacoteDoPreVoo>, String) {
+            let mut tela = String::new();
+            let pacote = obter_o_pacote_no_pre_voo(&self.contexto(dry_run), iso, &mut |texto| {
+                tela.push_str(texto)
+            });
+            (pacote, tela)
         }
 
         fn contexto(&self, dry_run: bool) -> Contexto<'_> {
@@ -1735,38 +2085,44 @@ mod testes {
     }
 
     #[test]
-    fn sem_iso_o_pre_voo_nao_tem_o_que_conferir() {
-        // O pré-voo é sobre o arquivo que já está no disco de quem chamou. Sem
-        // `--iso` não há arquivo ainda, e antecipar o download significaria
-        // baixar meio giga para um destino que só existe depois do passo 5.
+    fn sem_iso_o_pacote_guardado_e_conferido_antes_do_menu_e_de_novo_no_passo_7() {
+        // **A premissa deste teste mudou por decisão, e não para ficar
+        // verde.** Até 04/10/2026 ele se chamava
+        // `sem_iso_o_pre_voo_nao_tem_o_que_conferir` e exigia que, sem `--iso`,
+        // o pacote fosse conferido "uma vez so, depois do ponto sem volta" —
+        // baixado no passo 6, para o `ARCAVAULT`. PR-7 revogou isso: nenhum
+        // download depois do passo 5, e o pacote mora no PC (WPC-134,
+        // ADR-0028).
         //
-        // Por isso o caminho do pacote é montado como o passo 6 o monta, com a
-        // letra do `ARCAVAULT` que o particionamento devolveu. Um `resumir`
-        // antes do passo 5 não teria como apontar para ele, e a igualdade
-        // exata de `resumidos` pega qualquer um a mais.
-        //
-        // Até 29/09/2026 (WPC-66) este teste rodava em `--dry-run`, que para
-        // no passo 2, antes dos únicos passos que resumem pacote. Ele passava
-        // sem dizer nada sobre a ordem.
-        let no_vault = PathBuf::from(format!(
+        // O que ele cobra agora é o caminho do `--iso` valendo para o pacote
+        // guardado: conferido no pré-voo e de novo no passo 7, extraído dele,
+        // e a cópia de PR-3 feita a partir dele. A igualdade exata de
+        // `resumidos` pega uma conferência a mais ou a menos.
+        let bancada = Bancada::nova(
+            "sem-iso",
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        );
+        let guardado = bancada.guardado();
+        let copia = PathBuf::from(format!(
             "{}:\\",
             o_que_o_particionamento_deixou().vault.letra
         ))
         .join(pacote::ARQUIVO);
 
-        let mut bancada = Bancada::nova(
-            "sem-iso",
-            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
-        );
-        bancada.sistema =
-            SistemaDeMentira::novo().com_resumo(&no_vault.to_string_lossy(), pacote::SHA256);
-
-        // O resultado é descartado pelo mesmo motivo do teste acima: o comando
-        // morre no `grub.cfg` que o `bsdtar` de mentira não extraiu. A
-        // extração registrada é a prova de que ele atravessou os passos 6 e 7,
-        // e é ela que derruba este teste se o comando morrer antes deles.
+        // O resultado é descartado: o comando morre no `grub.cfg` que o
+        // `bsdtar` de mentira não extraiu. A extração registrada é a prova de
+        // que ele atravessou os passos 6 e 7.
         let _ = executar(&bancada.contexto(false), Some(1), None);
 
+        assert!(
+            bancada.particionador.particionou(),
+            "sem `--iso` o comando nao chegou a particionar"
+        );
+        assert_eq!(
+            bancada.sistema.resumidos(),
+            vec![guardado.clone(), guardado.clone()],
+            "o pacote guardado tem de ser conferido no pre-voo e de novo no passo 7"
+        );
         assert_eq!(
             bancada
                 .sistema
@@ -1774,22 +2130,785 @@ mod testes {
                 .borrow()
                 .first()
                 .map(|(de, _)| de.clone()),
-            Some(no_vault.clone()),
-            "o pacote baixado nao chegou a ser extraido"
+            Some(guardado),
+            "a extracao nao saiu do pacote guardado"
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&copia).as_deref(),
+            Some(O_PACOTE_GUARDADO),
+            "a copia de PR-3 nao saiu do pacote guardado"
+        );
+        assert!(
+            bancada.sistema.baixados.borrow().is_empty(),
+            "com o pacote guardado, o preparo usou a rede"
+        );
+    }
+
+    #[test]
+    fn um_pacote_guardado_que_muda_antes_do_passo_7_nao_e_copiado() {
+        // A segunda conferência existe para isto: entre o pré-voo e o passo 7
+        // há uma pessoa lendo o plano, e o arquivo pode mudar. A cópia de PR-3
+        // vem depois dela, e um pacote que não passa não é copiado.
+        let mut bancada = Bancada::nova(
+            "guardado-muda",
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        );
+        let outra_versao = "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10";
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.guardado().to_string_lossy(), pacote::SHA256)
+            .com_resumo_depois(&bancada.guardado().to_string_lossy(), outra_versao);
+        let copia = PathBuf::from(format!(
+            "{}:\\",
+            o_que_o_particionamento_deixou().vault.letra
+        ))
+        .join(pacote::ARQUIVO);
+
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente { .. })
+            ),
+            "{erro}"
         );
         assert!(
             bancada.particionador.particionou(),
-            "sem `--iso` o comando nao chegou a particionar"
+            "a recusa veio antes do passo 5"
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&copia),
+            None,
+            "o pacote que nao passou foi copiado para o ARCAVAULT"
+        );
+    }
+
+    // ─────────── o pacote guardado (PR-7) ───────────
+
+    /// A linha que o pré-voo escreve quando o pacote guardado passa.
+    fn linha_do_guardado(guardado: &Path) -> String {
+        format!(
+            "  Pacote conferido ................ ok · 00cee7700433 · guardado neste PC em {} · nada tocado ainda (PR-7)\n",
+            guardado.display()
+        )
+    }
+
+    /// 120,0 MB, o que já tinha vindo nos testes de retomada.
+    const CENTO_E_VINTE_MB: u64 = 125_829_120;
+
+    /// Uma fonte que não completou a conexão: o que o `curl` respondeu em
+    /// 04/10/2026 contra `192.0.2.1`.
+    fn nao_respondeu(no_destino: u64) -> crate::portas::Transferencia {
+        crate::portas::Transferencia {
+            codigo: 28,
+            texto: "curl: (28) Connection timed out after 30002 milliseconds".to_string(),
+            http: None,
+            parou: false,
+            tamanho_no_destino: no_destino,
+        }
+    }
+
+    /// Uma fonte que parou de mandar, encerrada pelo adaptador.
+    fn parou(no_destino: u64) -> crate::portas::Transferencia {
+        crate::portas::Transferencia {
+            codigo: 1,
+            texto: String::new(),
+            http: Some(200),
+            parou: true,
+            tamanho_no_destino: no_destino,
+        }
+    }
+
+    /// Uma fonte que respondeu 404.
+    fn nao_achou(no_destino: u64) -> crate::portas::Transferencia {
+        crate::portas::Transferencia {
+            codigo: 22,
+            texto: "curl: (22) The requested URL returned error: 404".to_string(),
+            http: Some(404),
+            parou: false,
+            tamanho_no_destino: no_destino,
+        }
+    }
+
+    #[test]
+    fn sem_pacote_guardado_ele_e_baixado_conferido_e_renomeado_antes_dos_discos() {
+        let bancada = Bancada::nova(
+            "sem-guardado",
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        )
+        .sem_pacote_guardado();
+        let (guardado, parcial) = (bancada.guardado(), bancada.parcial());
+
+        // O pré-voo sozinho, para ver a ordem: nada de disco antes de ele
+        // terminar.
+        let (pacote, _) = bancada.pre_voo(false, None);
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::Guardado(guardado.clone()));
+        assert_eq!(bancada.particionador.enumeracoes.get(), 0);
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![pacote::FONTES[0].url]
+        );
+        assert_eq!(*bancada.sistema.destinos.borrow(), vec![parcial.clone()]);
+        assert_eq!(
+            bancada.sistema.resumidos().first(),
+            Some(&parcial),
+            "o `.parcial` tem de ser conferido antes de virar o pacote"
+        );
+        assert!(bancada.arquivos.conteudo_de(&guardado).is_some());
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&parcial),
+            None,
+            "o `.parcial` nao foi renomeado"
+        );
+
+        // E o comando inteiro, que só então chega aos discos.
+        let bancada = Bancada::nova(
+            "sem-guardado-inteiro",
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        )
+        .sem_pacote_guardado();
+        let _ = executar(&bancada.contexto(false), Some(1), None);
+        assert_eq!(bancada.sistema.baixados.borrow().len(), 1);
+        assert!(bancada.particionador.enumeracoes.get() >= 1);
+        assert!(bancada.particionador.particionou());
+    }
+
+    #[test]
+    fn um_pacote_baixado_sem_o_que_boota_nao_chega_aos_discos() {
+        let mut bancada =
+            Bancada::nova("baixado-incompleto", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .listando(0, "boot/grub/grub.cfg\nlive/vmlinuz\nlive/initrd.img\n");
+
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::PacoteIncompleto { .. })
+            ),
+            "{erro}"
+        );
+        assert_eq!(bancada.particionador.enumeracoes.get(), 0);
+        assert!(!bancada.particionador.particionou());
+        assert_eq!(bancada.arquivos.conteudo_de(bancada.guardado()), None);
+    }
+
+    #[test]
+    fn um_pacote_guardado_que_bate_e_usado_sem_rede() {
+        let bancada = Bancada::nova("guardado-bom", ConsoleDeMentira::mudo());
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert_eq!(
+            pacote.unwrap(),
+            PacoteDoPreVoo::Guardado(bancada.guardado())
+        );
+        assert!(bancada.sistema.baixados.borrow().is_empty(), "usou a rede");
+        assert_eq!(tela, linha_do_guardado(&bancada.guardado()));
+        assert!(
+            bancada.registrado().contains(&format!(
+                "pacote guardado usado sem rede · {}",
+                bancada.guardado().display()
+            )),
+            "{}",
+            bancada.registrado()
+        );
+    }
+
+    #[test]
+    fn um_pacote_guardado_que_nao_bate_e_baixado_de_novo_do_zero() {
+        let mut bancada = Bancada::nova("guardado-ruim", ConsoleDeMentira::mudo());
+        let (guardado, parcial) = (bancada.guardado(), bancada.parcial());
+        bancada.arquivos = ArquivosEmMemoria::novo()
+            .com(&guardado, "o pacote que nao bate")
+            .com_tamanho(&parcial, "o que veio da ultima vez", CENTO_E_VINTE_MB);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        let outra_versao = "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10";
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&guardado.to_string_lossy(), outra_versao)
+            .com_resumo(&parcial.to_string_lossy(), pacote::SHA256);
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::Guardado(guardado.clone()));
+        let aviso = "  Pacote guardado ................. nao bate com o SHA256 deste ARCA · baixando de novo, do zero\n";
+        let baixando = tela.find("  Baixando Clonezilla").expect("nao baixou");
+        assert_eq!(tela.find(aviso), Some(0), "{tela}");
+        assert!(aviso.len() <= baixando, "{tela}");
+        // Do zero: a primeira linha do download não retoma, e o que tinha
+        // vindo da última vez foi zerado — o guardado termina vazio, que é o
+        // `.parcial` zerado e renomeado.
+        assert!(!tela.contains("retomando"), "{tela}");
+        assert_eq!(bancada.arquivos.conteudo_de(&guardado).as_deref(), Some(""));
+    }
+
+    #[test]
+    fn um_pacote_guardado_que_nao_bate_so_e_substituido_quando_o_novo_passa() {
+        let mut bancada = Bancada::nova("guardado-ruim-de-novo", ConsoleDeMentira::mudo());
+        let (guardado, parcial) = (bancada.guardado(), bancada.parcial());
+        bancada.arquivos = ArquivosEmMemoria::novo().com(&guardado, "o pacote que nao bate");
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        let outra_versao = "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10";
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&guardado.to_string_lossy(), outra_versao)
+            .com_resumo(&parcial.to_string_lossy(), outra_versao);
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+
+        assert!(
+            matches!(
+                pacote,
+                Err(Erro::PacoteRecusado(
+                    pacote::RecusaDoPacote::ResumoDivergente { .. }
+                ))
+            ),
+            "{pacote:?}"
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&guardado).as_deref(),
+            Some("o pacote que nao bate"),
+            "o guardado foi substituido por um pacote que tambem nao passou"
+        );
+    }
+
+    #[test]
+    fn um_parcial_menor_que_o_pacote_e_retomado_de_onde_parou() {
+        let mut bancada =
+            Bancada::nova("parcial-menor", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let parcial = bancada.parcial();
+        bancada.arquivos = ArquivosEmMemoria::novo().com_tamanho(
+            &parcial,
+            "o que veio da ultima vez",
+            CENTO_E_VINTE_MB,
+        );
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert!(
+            tela.starts_with(
+                "  Baixando Clonezilla ............. 3.3.3-15 · retomando de 120,0 MB · free.nchc.org.tw (oldstable)"
+            ),
+            "{tela}"
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(bancada.guardado()).as_deref(),
+            Some("o que veio da ultima vez"),
+            "o `.parcial` foi zerado em vez de retomado"
+        );
+    }
+
+    #[test]
+    fn um_parcial_do_tamanho_do_pacote_ou_maior_recomeca_do_zero() {
+        for tamanho_do_parcial in [pacote::TAMANHO_BYTES, pacote::TAMANHO_BYTES + 1] {
+            let mut bancada =
+                Bancada::nova("parcial-inteiro", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+            let parcial = bancada.parcial();
+            bancada.arquivos = ArquivosEmMemoria::novo().com_tamanho(
+                &parcial,
+                "um pacote inteiro que nao bateu",
+                tamanho_do_parcial,
+            );
+            bancada.arquivos.espaco_livre = MUITO_ESPACO;
+
+            let (pacote, tela) = bancada.pre_voo(false, None);
+
+            assert!(pacote.is_ok(), "{tamanho_do_parcial}: {pacote:?}");
+            assert!(!tela.contains("retomando"), "{tamanho_do_parcial}: {tela}");
+            assert_eq!(
+                bancada.arquivos.conteudo_de(bancada.guardado()).as_deref(),
+                Some(""),
+                "{tamanho_do_parcial}: o `.parcial` nao foi zerado"
+            );
+        }
+    }
+
+    #[test]
+    fn nenhuma_fonte_entregou_recusa_antes_dos_discos_e_guarda_o_que_veio() {
+        let mut bancada =
+            Bancada::nova("nenhuma-fonte", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let [primeira, segunda, terceira] = pacote::FONTES;
+        bancada.sistema = SistemaDeMentira::novo()
+            .baixando_de(primeira.url, nao_respondeu(0), &[])
+            .baixando_de(segunda.url, parou(CENTO_E_VINTE_MB), &[CENTO_E_VINTE_MB])
+            .baixando_de(terceira.url, nao_achou(CENTO_E_VINTE_MB), &[]);
+
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::NenhumaFonteEntregou { .. })
+            ),
+            "{erro}"
+        );
+        assert_eq!(
+            erro.to_string(),
+            "nao deu para baixar o Clonezilla 3.3.3-15 de nenhuma das 3 fontes:\n  \
+             free.nchc.org.tw (oldstable) — nao respondeu em 30 s\n  \
+             free.nchc.org.tw (stable) — parou de mandar por 60 s, com 120,0 MB de 535,5 MB\n  \
+             downloads.sourceforge.net — HTTP 404\n\
+             O que ja veio fica guardado, e a proxima tentativa continua de onde parou. Para nao depender do download do ARCA, baixe pelo navegador\n  \
+             https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip\n\
+             e passe o arquivo com --iso. Nada foi apagado (PR-7)"
         );
         assert_eq!(
             *bancada.sistema.baixados.borrow(),
-            vec![pacote::URL.to_string()]
+            vec![primeira.url, segunda.url, terceira.url],
+            "cada fonte, uma vez, nesta ordem"
+        );
+        assert_eq!(bancada.particionador.enumeracoes.get(), 0);
+        assert!(!bancada.particionador.particionou());
+        assert!(
+            bancada.arquivos.conteudo_de(bancada.parcial()).is_some(),
+            "o `.parcial` sumiu"
+        );
+        assert_eq!(bancada.arquivos.conteudo_de(bancada.guardado()), None);
+    }
+
+    #[test]
+    fn um_pacote_recem_baixado_que_nao_bate_recusa_antes_dos_discos() {
+        let mut bancada =
+            Bancada::nova("baixado-divergente", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let outra_versao = "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10";
+        bancada.sistema =
+            SistemaDeMentira::novo().com_resumo(&bancada.parcial().to_string_lossy(), outra_versao);
+
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
+
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente { .. })
+            ),
+            "{erro}"
+        );
+        assert_eq!(bancada.particionador.enumeracoes.get(), 0);
+        assert!(!bancada.particionador.particionou());
+        assert!(bancada.arquivos.conteudo_de(bancada.parcial()).is_some());
+        assert_eq!(bancada.arquivos.conteudo_de(bancada.guardado()), None);
+    }
+
+    #[test]
+    fn uma_pasta_que_nao_aceita_escrita_recusa_antes_de_baixar() {
+        // Duas formas de "não aceita escrita": a pasta que não se deixa
+        // criar, e o `.parcial` que não se deixa criar.
+        let bancada = Bancada::nova("sem-escrita", ConsoleDeMentira::mudo());
+        let (pasta, parcial) = (bancada.registro.pasta().to_path_buf(), bancada.parcial());
+        drop(bancada);
+
+        for recusado in [pasta.clone(), parcial] {
+            let bancada =
+                Bancada::nova("sem-escrita", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+            let arquivos = ArquivosQueRecusam::com(
+                recusado.clone(),
+                std::io::ErrorKind::PermissionDenied,
+                "Acesso negado. (os error 5)",
+            );
+            let contexto = Contexto {
+                arquivos: &arquivos,
+                ..bancada.contexto(false)
+            };
+
+            let erro = obter_o_pacote_no_pre_voo(&contexto, None, &mut |_| {}).unwrap_err();
+
+            assert!(
+                matches!(
+                    &erro,
+                    Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaGuardar { pasta: p, .. })
+                        if *p == pasta
+                ),
+                "{}: {erro}",
+                recusado.display()
+            );
+            assert!(
+                erro.to_string().contains("Acesso negado. (os error 5)"),
+                "{erro}"
+            );
+            assert!(
+                bancada.sistema.baixados.borrow().is_empty(),
+                "{}: baixou sem ter onde guardar",
+                recusado.display()
+            );
+        }
+    }
+
+    #[test]
+    fn sem_espaco_para_o_que_falta_recusa_antes_de_baixar() {
+        let mut bancada =
+            Bancada::nova("sem-espaco", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.arquivos.espaco_livre = 100 * 1024 * 1024;
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+
+        match pacote {
+            Err(Erro::PacoteRecusado(recusa @ pacote::RecusaDoPacote::FaltaEspaco { .. })) => {
+                let dita = recusa.to_string();
+                assert!(
+                    dita.starts_with("faltam 536 MB para baixar o pacote, e "),
+                    "{dita}"
+                );
+                assert!(
+                    dita.ends_with(" tem 100 MB livres. Nada foi apagado (PR-7)"),
+                    "{dita}"
+                );
+            }
+            outro => panic!("esperava FaltaEspaco, veio {outro:?}"),
+        }
+        assert!(bancada.sistema.baixados.borrow().is_empty());
+
+        // O que conta é o que falta: com 500 MB já no `.parcial`, faltam
+        // 35,5 MB, e 40 MB livres bastam.
+        let mut bancada =
+            Bancada::nova("sem-espaco-retomando", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let parcial = bancada.parcial();
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com_tamanho(&parcial, "o que ja veio", 500 * 1024 * 1024);
+        bancada.arquivos.espaco_livre = 40 * 1024 * 1024;
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+        assert!(pacote.is_ok(), "{pacote:?}");
+    }
+
+    #[test]
+    fn o_ensaio_sem_pacote_guardado_nao_baixa_e_diz_que_o_preparo_baixa() {
+        let bancada =
+            Bancada::nova("ensaio-sem-guardado", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+
+        let (pacote, tela) = bancada.pre_voo(true, None);
+
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::PorBaixar);
+        assert!(
+            bancada.sistema.baixados.borrow().is_empty(),
+            "o ensaio baixou"
         );
         assert_eq!(
-            bancada.sistema.resumidos(),
-            vec![no_vault],
-            "sem `--iso` o pacote tem de ser conferido uma vez so, depois do ponto sem volta"
+            bancada.arquivos.conteudo_de(bancada.parcial()),
+            None,
+            "o ensaio escreveu o `.parcial`"
         );
+        assert_eq!(
+            tela,
+            "  Pacote .......................... nao esta neste PC · o preparo de verdade baixa 535,5 MB antes de qualquer pergunta; o ensaio nao baixa\n"
+        );
+
+        let plano = montar_o_plano(
+            &preparacao_da_mesa(),
+            &PacoteDoPreVoo::PorBaixar,
+            &sem_entrada(),
+        );
+        assert!(
+            plano.contains(
+                "  Clonezilla 3.3.3-15 · o preparo de verdade o baixa antes do menu (535,5 MB) e o guarda\n     \
+                 neste PC, com o SHA256 conferido contra o valor compilado neste ARCA (PR-1)\n"
+            ),
+            "{plano}"
+        );
+    }
+
+    #[test]
+    fn o_ensaio_com_pacote_guardado_confere_e_nao_particiona() {
+        let bancada = Bancada::nova("ensaio-com-guardado", ConsoleDeMentira::mudo());
+
+        let (pacote, tela) = bancada.pre_voo(true, None);
+        assert_eq!(
+            pacote.unwrap(),
+            PacoteDoPreVoo::Guardado(bancada.guardado())
+        );
+        assert_eq!(tela, linha_do_guardado(&bancada.guardado()));
+        assert_eq!(bancada.sistema.resumidos(), vec![bancada.guardado()]);
+
+        let bancada = Bancada::nova("ensaio-com-guardado-inteiro", ConsoleDeMentira::mudo());
+        executar(&bancada.contexto(true), Some(1), None).expect("o ensaio nao falha");
+        assert!(!bancada.particionador.particionou());
+        assert!(bancada.sistema.baixados.borrow().is_empty());
+    }
+
+    #[test]
+    fn o_plano_com_pacote_guardado_nao_promete_download() {
+        let plano = montar_o_plano(&preparacao_da_mesa(), &guardado_da_mesa(), &sem_entrada());
+
+        assert!(
+            plano.contains(
+                "  Clonezilla 3.3.3-15 · do pacote guardado neste PC, conferido contra o valor\n     \
+                 compilado neste ARCA (PR-1)\n"
+            ),
+            "{plano}"
+        );
+        assert!(!plano.contains("baixa"), "{plano}");
+    }
+
+    #[test]
+    fn com_iso_o_pacote_guardado_nem_e_olhado() {
+        let mut bancada = com_o_pacote_em(
+            "iso-com-guardado",
+            NA_PASTA_DE_DOWNLOADS,
+            pacote::SHA256,
+            ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]),
+        );
+        let (pasta, guardado, parcial) = (
+            bancada.registro.pasta().to_path_buf(),
+            bancada.guardado(),
+            bancada.parcial(),
+        );
+        bancada.arquivos = ArquivosEmMemoria::novo()
+            .com(NA_PASTA_DE_DOWNLOADS, "o zip, de mentira")
+            .com(&guardado, O_PACOTE_GUARDADO);
+
+        let (pacote, tela) = bancada.pre_voo(false, Some(Path::new(NA_PASTA_DE_DOWNLOADS)));
+        let _ = executar(
+            &bancada.contexto(false),
+            Some(1),
+            Some(Path::new(NA_PASTA_DE_DOWNLOADS)),
+        );
+
+        assert!(
+            bancada.particionador.particionou(),
+            "o caminho do `--iso` nao chegou ao fim"
+        );
+        for caminho in [&pasta, &guardado, &parcial] {
+            assert!(
+                !bancada.arquivos.foi_consultado(caminho),
+                "o `--iso` olhou {}",
+                caminho.display()
+            );
+        }
+        assert!(bancada.sistema.baixados.borrow().is_empty());
+        assert_eq!(
+            tela,
+            format!(
+                "  Pacote conferido ................ ok · 00cee7700433 · {NA_PASTA_DE_DOWNLOADS} · nada tocado ainda (PR-2)\n"
+            )
+        );
+
+        let plano = montar_o_plano(&preparacao_da_mesa(), &pacote.unwrap(), &sem_entrada());
+        assert!(
+            plano.contains(&format!(
+                "  Clonezilla 3.3.3-15 · do arquivo local {NA_PASTA_DE_DOWNLOADS} (PR-2)\n"
+            )),
+            "{plano}"
+        );
+    }
+
+    #[test]
+    fn o_download_nao_mexe_nos_outros_arquivos_da_pasta() {
+        use crate::portas::Arquivos as _;
+
+        let mut bancada = Bancada::nova("outros-arquivos", ConsoleDeMentira::mudo());
+        let (pasta, guardado, parcial) = (
+            bancada.registro.pasta().to_path_buf(),
+            bancada.guardado(),
+            bancada.parcial(),
+        );
+        let antigo = pasta.join("clonezilla-live-3.3.2-1-amd64.zip");
+        let log = pasta.join("arca.log");
+        bancada.arquivos = ArquivosEmMemoria::novo()
+            .com(&guardado, "o pacote que nao bate")
+            .com(&antigo, "a versao anterior")
+            .com(&log, "o registro");
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        let outra_versao = "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10";
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&guardado.to_string_lossy(), outra_versao)
+            .com_resumo(&parcial.to_string_lossy(), pacote::SHA256);
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&antigo).as_deref(),
+            Some("a versao anterior")
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&log).as_deref(),
+            Some("o registro")
+        );
+        let chaves: Vec<PathBuf> = bancada
+            .arquivos
+            .listar(&pasta)
+            .unwrap()
+            .into_iter()
+            .map(|entrada| entrada.caminho)
+            .collect();
+        assert_eq!(
+            chaves,
+            vec![log, antigo, guardado],
+            "sobrou ou sumiu arquivo na pasta"
+        );
+    }
+
+    #[test]
+    fn um_download_interrompido_nao_chega_ao_particionador() {
+        let mut bancada =
+            Bancada::nova("interrompido", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo().recusando_o_download(
+            pacote::FONTES[0].url,
+            Erro::Ferramenta {
+                ferramenta: "curl",
+                origem: std::io::Error::other("interrompido"),
+            },
+        );
+
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
+
+        // O duplo devolve uma cópia da recusa, e não a mesma variante; o que
+        // importa é que a falha do `curl` sobe, e não uma recusa do pacote.
+        assert!(erro.to_string().contains("interrompido"), "{erro}");
+        assert!(!matches!(erro, Erro::PacoteRecusado(_)), "{erro}");
+        assert_eq!(bancada.particionador.enumeracoes.get(), 0);
+        assert!(!bancada.particionador.particionou());
+        assert!(bancada.arquivos.conteudo_de(bancada.parcial()).is_some());
+    }
+
+    // ─────────── as fontes do pacote (PR-7) ───────────
+
+    #[test]
+    fn o_andamento_reescreve_a_linha_no_lugar() {
+        let mut bancada =
+            Bancada::nova("andamento", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                pacote::FONTES[0].url,
+                crate::duplos::entregou(),
+                &[10_485_760, CENTO_E_VINTE_MB],
+            );
+
+        let (_, tela) = bancada.pre_voo(false, None);
+
+        let primeira = "  Baixando Clonezilla ............. 3.3.3-15 · 0 B de 535,5 MB · free.nchc.org.tw (oldstable)";
+        let reescrita = "\r  Baixando Clonezilla ............. 3.3.3-15 · 120,0 MB de 535,5 MB · free.nchc.org.tw (oldstable)";
+        assert!(tela.starts_with(primeira), "{tela:?}");
+        let ate_o_fim_da_linha = &tela[..tela.find('\n').unwrap()];
+        assert!(ate_o_fim_da_linha.contains(reescrita), "{tela:?}");
+        assert!(
+            ate_o_fim_da_linha
+                .contains("\r  Baixando Clonezilla ............. 3.3.3-15 · 10,0 MB de 535,5 MB"),
+            "{tela:?}"
+        );
+    }
+
+    #[test]
+    fn uma_fonte_que_nao_responde_e_abandonada_e_a_proxima_e_tentada() {
+        let mut bancada =
+            Bancada::nova("nao-responde", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(pacote::FONTES[0].url, nao_respondeu(0), &[]);
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert!(
+            tela.contains(
+                "\n  Fonte abandonada ................ free.nchc.org.tw (oldstable) · nao respondeu em 30 s\n"
+            ),
+            "{tela}"
+        );
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![pacote::FONTES[0].url, pacote::FONTES[1].url]
+        );
+    }
+
+    #[test]
+    fn uma_fonte_que_para_e_abandonada_e_a_proxima_continua_do_mesmo_parcial() {
+        let mut bancada = Bancada::nova("para", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let parcial = bancada.parcial();
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com_tamanho(&parcial, "o que ja tinha vindo", 1024);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&parcial.to_string_lossy(), pacote::SHA256)
+            .baixando_de(pacote::FONTES[0].url, parou(CENTO_E_VINTE_MB), &[]);
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert!(
+            tela.contains(
+                "\n  Fonte abandonada ................ free.nchc.org.tw (oldstable) · parou de mandar por 60 s, com 120,0 MB de 535,5 MB\n"
+            ),
+            "{tela}"
+        );
+        assert!(
+            tela.contains(
+                "  Baixando Clonezilla ............. 3.3.3-15 · retomando de 120,0 MB · free.nchc.org.tw (stable)"
+            ),
+            "{tela}"
+        );
+        assert_eq!(
+            *bancada.sistema.destinos.borrow(),
+            vec![parcial.clone(), parcial]
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(bancada.guardado()).as_deref(),
+            Some("o que ja tinha vindo"),
+            "o `.parcial` foi zerado entre as duas fontes"
+        );
+    }
+
+    #[test]
+    fn uma_fonte_com_erro_http_e_abandonada_e_a_proxima_e_tentada() {
+        let mut bancada = Bancada::nova("http", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(pacote::FONTES[0].url, nao_achou(0), &[]);
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert!(
+            tela.contains(
+                "\n  Fonte abandonada ................ free.nchc.org.tw (oldstable) · HTTP 404\n"
+            ),
+            "{tela}"
+        );
+        assert_eq!(bancada.sistema.baixados.borrow()[1], pacote::FONTES[1].url);
+    }
+
+    #[test]
+    fn cada_fonte_tentada_fica_no_arca_log() {
+        let mut bancada = Bancada::nova("log", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let [primeira, segunda, terceira] = pacote::FONTES;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(primeira.url, nao_respondeu(0), &[])
+            .baixando_de(segunda.url, parou(CENTO_E_VINTE_MB), &[])
+            .baixando_de(terceira.url, crate::duplos::entregou(), &[]);
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+        assert!(pacote.is_ok(), "{pacote:?}");
+
+        let registrado = bancada.registrado();
+        let linhas: Vec<&str> = registrado
+            .lines()
+            .filter(|l| l.contains("fonte https://"))
+            .collect();
+        let esperadas = [
+            format!(
+                "fonte {} · nao respondeu em 30 s · 0 bytes desta fonte",
+                primeira.url
+            ),
+            format!(
+                "fonte {} · parou de mandar por 60 s, com 120,0 MB de 535,5 MB · 125829120 bytes desta fonte",
+                segunda.url
+            ),
+            format!(
+                "fonte {} · entregou · 435649528 bytes desta fonte",
+                terceira.url
+            ),
+        ];
+        assert_eq!(linhas.len(), 3, "{registrado}");
+        for (linha, esperada) in linhas.iter().zip(&esperadas) {
+            assert!(
+                linha.ends_with(esperada.as_str()),
+                "{linha}\nesperava: {esperada}"
+            );
+        }
     }
 
     // ─────────── uma pasta no `--iso`, e o pacote que ela pode ter dentro ───────────
@@ -1997,7 +3116,7 @@ mod testes {
 
         let erro = obter_o_pacote(
             &bancada.contexto(false),
-            Some(Path::new(A_PASTA_DE_DOWNLOADS)),
+            Path::new(A_PASTA_DE_DOWNLOADS),
             Path::new(r"E:\"),
         )
         .unwrap_err();
@@ -2252,6 +3371,14 @@ mod testes {
         firmware::ler(&ordem_desta_mesa())
     }
 
+    /// O pacote de um preparo sem `--iso` quando o plano sai: guardado neste
+    /// PC e conferido (PR-7).
+    fn guardado_da_mesa() -> PacoteDoPreVoo {
+        PacoteDoPreVoo::Guardado(PathBuf::from(
+            r"C:\Users\Ana Paula\AppData\Local\ARCA\clonezilla-live-3.3.3-15-amd64.zip",
+        ))
+    }
+
     // ─────────────────── o identificador, pela forma ───────────────────
 
     #[test]
@@ -2317,7 +3444,7 @@ mod testes {
         // PR-4 na letra: quem vai perder dados tem de poder reconhece-los. Uma
         // contagem — "2 particoes" — nao serve, porque ninguem reconhece um
         // disco por uma contagem.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao_da_mesa(), &guardado_da_mesa(), &sem_entrada());
 
         assert!(saida.contains("Dell Beta Apps NO IA WSL"), "{saida}");
         assert!(saida.contains("NTFS"), "{saida}");
@@ -2328,7 +3455,7 @@ mod testes {
 
     #[test]
     fn o_plano_mostra_as_duas_particoes_que_vao_ficar() {
-        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao_da_mesa(), &guardado_da_mesa(), &sem_entrada());
 
         assert!(saida.contains("ARCAVAULT"), "{saida}");
         assert!(saida.contains("ARCABOOT"), "{saida}");
@@ -2348,7 +3475,7 @@ mod testes {
         // desenvolvimento na tela de quem só quer preparar um disco.
         //
         // O porquê do esquema é registro de projeto, e mora no ADR.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao_da_mesa(), &guardado_da_mesa(), &sem_entrada());
 
         for vazamento in [
             "ADR-",
@@ -2377,7 +3504,7 @@ mod testes {
         // valores ao lado, quem lê pode conferir a afirmacao. E a mesma razao
         // pela qual o §6.1 imprime os dois discos em setores em vez do
         // veredito de R-7 resumido.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao_da_mesa(), &guardado_da_mesa(), &sem_entrada());
 
         assert!(saida.contains("IsSystem false"), "{saida}");
         assert!(saida.contains("IsBoot false"), "{saida}");
@@ -2388,7 +3515,7 @@ mod testes {
         // Criar entrada de boot mexe na NVRAM, que e o lugar onde um erro
         // deixa alguem sem bootar. Quem lê um plano antes de apagar um disco
         // tem o direito de saber que o plano nao para no disco.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao_da_mesa(), &guardado_da_mesa(), &sem_entrada());
 
         assert!(saida.contains("entrada de boot"), "{saida}");
         assert!(saida.contains("tirada da ordem permanente"), "{saida}");
@@ -2408,7 +3535,7 @@ mod testes {
         let preparacao = preparacao::julgar(2, dispositivo, &[0, 1, 2], Some('C'))
             .expect("ele passa as defesas");
 
-        let saida = montar_o_plano(&preparacao, None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao, &guardado_da_mesa(), &sem_entrada());
         assert!(saida.contains("JA E UM DISPOSITIVO ARCA"), "{saida}");
         assert!(saida.contains("AS IMAGENS"), "{saida}");
         assert!(saida.contains("B-10"), "{saida}");
@@ -2424,7 +3551,7 @@ mod testes {
         let preparacao = preparacao::julgar(2, dispositivo, &[0, 1, 2], Some('C'))
             .expect("ele passa as defesas");
 
-        let saida = montar_o_plano(&preparacao, None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao, &guardado_da_mesa(), &sem_entrada());
         assert!(
             saida.contains("ESTE DISCO JA E UM DISPOSITIVO ARCA"),
             "{saida}"
@@ -2436,7 +3563,7 @@ mod testes {
     fn um_disco_qualquer_nao_ganha_o_aviso_das_imagens() {
         // Conselho que aparece sempre vira ruido — a licao que a E10 pagou no
         // `arca resultado` e a E11 repetiu em V-1.
-        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao_da_mesa(), &guardado_da_mesa(), &sem_entrada());
         assert!(!saida.contains("JA E UM DISPOSITIVO ARCA"), "{saida}");
     }
 
@@ -2458,7 +3585,7 @@ mod testes {
         let mut preparacao = preparacao_da_mesa();
         preparacao.disco.particoes.clear();
 
-        let saida = montar_o_plano(&preparacao, None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao, &guardado_da_mesa(), &sem_entrada());
         assert!(saida.contains("o disco esta em branco"), "{saida}");
     }
 
@@ -2472,7 +3599,7 @@ mod testes {
         preparacao.disco.particoes[0].sistema_de_arquivos = None;
         preparacao.disco.particoes[0].letra = None;
 
-        let saida = montar_o_plano(&preparacao, None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao, &guardado_da_mesa(), &sem_entrada());
         assert!(saida.contains("crua"), "{saida}");
         assert!(saida.contains("(sem rotulo)"), "{saida}");
         assert!(saida.contains("(sem letra)"), "{saida}");
@@ -2482,7 +3609,7 @@ mod testes {
     fn com_iso_a_tela_nao_promete_download() {
         let saida = montar_o_plano(
             &preparacao_da_mesa(),
-            Some(Path::new(r"D:\cz.zip")),
+            &PacoteDoPreVoo::DoIso(PathBuf::from(r"D:\cz.zip")),
             &sem_entrada(),
         );
 
@@ -3315,13 +4442,13 @@ mod testes {
             ordem_desta_mesa(),
             entrada_com(firmware::ARCA, "partition=X:", CAMINHO_DO_EFI)
         ));
-        let saida = montar_o_plano(&preparacao_da_mesa(), None, &com_entrada);
+        let saida = montar_o_plano(&preparacao_da_mesa(), &guardado_da_mesa(), &com_entrada);
         assert!(saida.contains("REAPONTADA"), "{saida}");
         assert!(saida.contains(GUID_DA_ENTRADA), "{saida}");
         assert!(saida.contains("C-4"), "{saida}");
         assert!(!saida.contains("e criada no firmware"), "{saida}");
 
-        let saida = montar_o_plano(&preparacao_da_mesa(), None, &sem_entrada());
+        let saida = montar_o_plano(&preparacao_da_mesa(), &guardado_da_mesa(), &sem_entrada());
         assert!(saida.contains("e criada no firmware"), "{saida}");
         assert!(!saida.contains("REAPONTADA"), "{saida}");
     }

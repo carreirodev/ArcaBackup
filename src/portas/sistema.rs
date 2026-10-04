@@ -27,6 +27,7 @@
 use crate::erro::Resultado;
 use crate::resumo::Algoritmo;
 use std::path::Path;
+use std::time::Duration;
 
 /// O que uma ferramenta de console respondeu.
 ///
@@ -54,6 +55,41 @@ impl SaidaDeFerramenta {
             .collect::<Vec<_>>()
             .join(" · ")
     }
+}
+
+/// Os dois limites de uma transferencia que nao pode ficar muda (PR-7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limites {
+    /// Quanto esperar a conexao. Passado ao `--connect-timeout` do `curl`.
+    pub conectar: Duration,
+
+    /// Quanto o destino pode ficar sem crescer antes de a transferencia ser
+    /// abandonada.
+    pub parado: Duration,
+}
+
+/// O que uma transferencia deixou, sem julgar.
+///
+/// Quem diz o que a fonte respondeu e codigo puro, em
+/// [`crate::pacote::o_que_a_fonte_respondeu`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Transferencia {
+    /// O codigo de saida do `curl`. Sem significado quando `parou`: ai quem
+    /// encerrou o `curl` foi o adaptador.
+    pub codigo: i32,
+
+    /// O que o `curl` escreveu no stderr — a frase dele sobre a falha.
+    pub texto: String,
+
+    /// O codigo HTTP da ultima resposta, e `None` quando nenhuma chegou.
+    pub http: Option<u16>,
+
+    /// Se a transferencia foi abandonada por ficar [`Limites::parado`] sem o
+    /// destino crescer.
+    pub parou: bool,
+
+    /// Quantos bytes o destino tem ao fim.
+    pub tamanho_no_destino: u64,
 }
 
 pub trait Sistema {
@@ -116,7 +152,25 @@ pub trait Sistema {
     /// falta e deixar os outros trinta e oito sem resposta.
     fn resumir(&self, caminho: &Path, algoritmo: Algoritmo) -> Resultado<SaidaDeFerramenta>;
 
-    /// Baixa `url` para `destino` com o `curl` do `System32` (PR-1).
+    /// Baixa `url` para `destino` com o `curl` do `System32` (PR-1, PR-7),
+    /// **continuando do byte em que `destino` termina**.
+    ///
+    /// Quem quer recomecar do zero zera o destino antes. A retomada e a regra,
+    /// e nao uma opcao: uma fonte que parou e substituida pela seguinte, que
+    /// continua do mesmo arquivo.
+    ///
+    /// # Ninguem espera calado
+    ///
+    /// `andamento` recebe o tamanho do destino ao menos a cada segundo,
+    /// enquanto o `curl` roda. Uma conexao que nao se completa em
+    /// [`Limites::conectar`] e o `curl` desistindo; um destino que nao cresce
+    /// em [`Limites::parado`] e o adaptador encerrando o `curl`, com
+    /// [`Transferencia::parou`].
+    ///
+    /// O segundo limite e do adaptador, e nao do `--speed-time` do `curl`,
+    /// porque o `curl` mede velocidade por media: medido em 04/10/2026, ele
+    /// abandona `T + 6 s` depois do ultimo byte — 66 s para os 60 de PR-7.
+    /// Ver o ADR-0028.
     ///
     /// # Por que aqui, e por que `curl` e nao um crate de HTTP
     ///
@@ -140,7 +194,13 @@ pub trait Sistema {
     ///
     /// Escrever um arquivo por caminho, pela API do proprio Windows. Nao ha
     /// handle de dispositivo, caminho bruto nem deslocamento em setores.
-    fn baixar(&self, url: &str, destino: &Path) -> Resultado<SaidaDeFerramenta>;
+    fn baixar(
+        &self,
+        url: &str,
+        destino: &Path,
+        limites: Limites,
+        andamento: &mut dyn FnMut(u64),
+    ) -> Resultado<Transferencia>;
 
     /// Extrai `pacote` dentro de `destino` com o `bsdtar` do `System32`.
     ///

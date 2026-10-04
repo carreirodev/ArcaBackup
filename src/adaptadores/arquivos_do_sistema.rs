@@ -118,6 +118,13 @@ impl Arquivos for ArquivosDoSistema {
             .map_err(erro_de_arquivo("copia", destino))
     }
 
+    fn renomear(&self, origem: &Path, destino: &Path) -> Resultado<()> {
+        // No Windows, `fs::rename` e `MoveFileEx` com
+        // `MOVEFILE_REPLACE_EXISTING`: o destino que existir e substituido,
+        // como a escrita atomica acima ja depende.
+        fs::rename(origem, destino).map_err(erro_de_arquivo("renomeacao", destino))
+    }
+
     fn espaco_livre(&self, caminho: &Path) -> Resultado<u64> {
         espaco_livre_do_volume(caminho)
     }
@@ -329,6 +336,26 @@ mod testes {
                 "{nome}"
             );
         }
+    }
+
+    #[test]
+    fn renomear_substitui_o_pacote_guardado_que_ja_estava_la() {
+        // O `.parcial` que passou no SHA256 vira o pacote guardado por cima de
+        // um que nao bateu (WPC-134). Um `rename` que recusasse destino
+        // existente deixaria o guardado ruim no lugar para sempre.
+        let pasta = std::env::temp_dir().join(format!("arca-renomear-{}", std::process::id()));
+        fs::create_dir_all(&pasta).unwrap();
+        let parcial = pasta.join("clonezilla-live-3.3.3-15-amd64.zip.parcial");
+        let guardado = pasta.join("clonezilla-live-3.3.3-15-amd64.zip");
+        fs::write(&parcial, b"o pacote novo").unwrap();
+        fs::write(&guardado, b"o pacote que nao bateu").unwrap();
+
+        ArquivosDoSistema.renomear(&parcial, &guardado).unwrap();
+
+        assert_eq!(fs::read(&guardado).unwrap(), b"o pacote novo");
+        assert!(!parcial.exists(), "o `.parcial` continua com o nome antigo");
+
+        let _ = fs::remove_dir_all(&pasta);
     }
 
     #[test]

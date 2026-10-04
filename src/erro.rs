@@ -89,8 +89,9 @@ pub enum Erro {
     #[error("{0}")]
     ParticionamentoDivergiu(crate::preparacao::Divergencia),
 
-    /// PR-1: o pacote do Clonezilla não passou.
-    #[error("o pacote do Clonezilla foi recusado: {0}")]
+    /// PR-1: o pacote do Clonezilla não passou — ou, desde PR-7, não chegou a
+    /// ser obtido. Ver `mensagem_do_pacote` para o prefixo.
+    #[error("{}", mensagem_do_pacote(.0))]
     PacoteRecusado(crate::pacote::RecusaDoPacote),
 
     /// O `bcdedit /copy` respondeu e a resposta não trouxe **um**
@@ -536,6 +537,24 @@ fn mensagem_de_dispositivos_demais(
         Some(boots) => format!(
             "ha {quantos} volumes com o rotulo {rotulo} conectados ({onde}), e o ARCA opera um dispositivo por vez: e pelo rotulo que a receita resolve o destino, e com ele repetido nao ha o que escolher. Os volumes de boot conectados sao {boots}. {O_QUE_FAZER}"
         ),
+    }
+}
+
+/// A recusa do pacote como o `erro:` a mostra.
+///
+/// As de PR-1 e PR-2 dizem por que o pacote nao serve, e o prefixo diz que ele
+/// foi recusado. As de PR-7 nao falam de um pacote recusado — nenhuma fonte o
+/// entregou, ou nao ha onde guarda-lo —, e o texto delas, aprovado em
+/// 04/10/2026 (WPC-134), vai inteiro, sem uma primeira linha que dissesse
+/// "recusado" e "Clonezilla" duas vezes.
+fn mensagem_do_pacote(recusa: &crate::pacote::RecusaDoPacote) -> String {
+    use crate::pacote::RecusaDoPacote::{FaltaEspaco, NaoDeuParaGuardar, NenhumaFonteEntregou};
+
+    match recusa {
+        NenhumaFonteEntregou { .. } | NaoDeuParaGuardar { .. } | FaltaEspaco { .. } => {
+            recusa.to_string()
+        }
+        _ => format!("o pacote do Clonezilla foi recusado: {recusa}"),
     }
 }
 

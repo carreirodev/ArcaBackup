@@ -552,6 +552,11 @@ pub struct ArquivosEmMemoria {
     /// requisito nao e sobre mudar, e sobre nem olhar.
     consultados: RefCell<Vec<PathBuf>>,
 
+    /// O tamanho que a listagem diz de um arquivo, no lugar do comprimento do
+    /// conteudo. Existe para o `.parcial` de meio giga do `arca prepare`
+    /// (PR-7), que nenhum teste vai guardar numa `String`.
+    tamanhos: RefCell<BTreeMap<PathBuf, u64>>,
+
     pub espaco_livre: u64,
 }
 
@@ -565,6 +570,19 @@ impl ArquivosEmMemoria {
             .borrow_mut()
             .insert(caminho.into(), conteudo.to_string());
         self
+    }
+
+    /// Um arquivo cuja listagem diz `bytes`, seja qual for o conteudo. Ver
+    /// `tamanhos`.
+    pub fn com_tamanho(
+        self,
+        caminho: impl Into<PathBuf>,
+        conteudo: &str,
+        bytes: u64,
+    ) -> ArquivosEmMemoria {
+        let caminho = caminho.into();
+        self.tamanhos.borrow_mut().insert(caminho.clone(), bytes);
+        self.com(caminho, conteudo)
     }
 
     /// Uma pasta sem nada dentro — o residuo de um backup interrompido cedo
@@ -662,9 +680,31 @@ impl Arquivos for ArquivosEmMemoria {
     }
 
     fn escrever_atomico(&self, caminho: &Path, conteudo: &str) -> Resultado<()> {
+        self.tamanhos.borrow_mut().remove(caminho);
         self.conteudo
             .borrow_mut()
             .insert(caminho.to_path_buf(), conteudo.to_string());
+        Ok(())
+    }
+
+    fn renomear(&self, origem: &Path, destino: &Path) -> Resultado<()> {
+        // Como o `fs::rename`: a origem que nao existe e erro, e o destino que
+        // existe e substituido.
+        let conteudo = self.conteudo.borrow_mut().remove(origem).ok_or_else(|| {
+            erro_de_arquivo("renomeacao", origem)(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "nao existe neste sistema de arquivos de mentira",
+            ))
+        })?;
+
+        let mut tamanhos = self.tamanhos.borrow_mut();
+        match tamanhos.remove(origem) {
+            Some(bytes) => tamanhos.insert(destino.to_path_buf(), bytes),
+            None => tamanhos.remove(destino),
+        };
+        self.conteudo
+            .borrow_mut()
+            .insert(destino.to_path_buf(), conteudo);
         Ok(())
     }
 
@@ -711,9 +751,11 @@ impl Arquivos for ArquivosEmMemoria {
         }
 
         let datas = self.datas.borrow();
+        let tamanhos = self.tamanhos.borrow();
         let mut entradas: BTreeMap<PathBuf, Entrada> = BTreeMap::new();
 
         let mut anotar = |filho: PathBuf, diretorio: bool, tamanho_bytes: u64| {
+            let tamanho_bytes = tamanhos.get(&filho).copied().unwrap_or(tamanho_bytes);
             let modificado_em = datas.get(&filho).copied();
             entradas.entry(filho.clone()).or_insert(Entrada {
                 caminho: filho,
@@ -782,22 +824,30 @@ pub struct SistemaDeMentira {
     /// passar sem que o arquivo existisse, que e o oposto do que V-1 confere.
     pub resumo_padrao: SaidaDeFerramenta,
 
+    /// O que o `certutil` responde de um caminho **a partir da segunda vez**.
+    ///
+    /// Existe para o pacote que muda entre o pre-voo e o passo 7 do `arca
+    /// prepare`, que e o intervalo que a segunda conferencia cobre (PR-7).
+    pub resumos_seguintes: RefCell<BTreeMap<String, SaidaDeFerramenta>>,
+
     /// Os caminhos resumidos, na ordem. E o que permite a um teste afirmar
     /// **quais** arquivos foram lidos, e nao so quantos.
     pub resumidos: RefCell<Vec<PathBuf>>,
 
-    /// O que o `curl` responde, e o **conteudo** que ele deixa no destino.
+    /// O que cada fonte responde, por URL. Uma URL que ninguem ensinou
+    /// entrega o pacote inteiro, que e o caso normal.
     ///
-    /// O conteudo importa porque o passo seguinte de PR-1 e resumir o arquivo
-    /// baixado: um duplo que baixasse o nada faria a conferencia de SHA256 cair
-    /// no caminho de "arquivo ausente" em vez de exercitar o que ela existe
-    /// para exercitar.
-    pub download: Resultado<SaidaDeFerramenta>,
-    pub conteudo_baixado: String,
+    /// O duplo nao escreve no sistema de arquivos — ele nao alcanca o
+    /// [`ArquivosEmMemoria`] da bancada. O que ele diz do destino e o
+    /// `tamanho_no_destino` ensinado, e quem prepara o `.parcial` e o teste.
+    pub downloads: RefCell<BTreeMap<String, DownloadDeMentira>>,
 
     /// As URLs pedidas, na ordem. `arca prepare --iso` **nao** pode baixar
     /// nada, e este vetor e o que torna isso afirmavel.
     pub baixados: RefCell<Vec<String>>,
+
+    /// O destino de cada pedido, na mesma ordem de `baixados`.
+    pub destinos: RefCell<Vec<PathBuf>>,
 
     /// O que o `bsdtar -x` responde, e os caminhos que ele "extrai".
     pub extracao: Resultado<SaidaDeFerramenta>,
@@ -829,13 +879,11 @@ impl Default for SistemaDeMentira {
                 )
                 .to_string(),
             },
+            resumos_seguintes: RefCell::new(BTreeMap::new()),
             resumidos: RefCell::new(Vec::new()),
-            download: Ok(SaidaDeFerramenta {
-                codigo: 0,
-                texto: String::new(),
-            }),
-            conteudo_baixado: "o pacote do Clonezilla, de mentira".to_string(),
+            downloads: RefCell::new(BTreeMap::new()),
             baixados: RefCell::new(Vec::new()),
+            destinos: RefCell::new(Vec::new()),
             extracao: Ok(SaidaDeFerramenta {
                 codigo: 0,
                 texto: String::new(),
@@ -866,18 +914,70 @@ syslinux/isolinux.cfg
 utils/
 ";
 
+/// O que uma fonte responde ao duplo, e os avisos de andamento no caminho.
+pub struct DownloadDeMentira {
+    pub resposta: Resultado<crate::portas::Transferencia>,
+    pub andamento: Vec<u64>,
+}
+
+/// Uma transferencia que entregou o pacote inteiro.
+pub fn entregou() -> crate::portas::Transferencia {
+    crate::portas::Transferencia {
+        codigo: 0,
+        texto: String::new(),
+        http: Some(200),
+        parou: false,
+        tamanho_no_destino: crate::pacote::TAMANHO_BYTES,
+    }
+}
+
 impl SistemaDeMentira {
     pub fn novo() -> SistemaDeMentira {
         SistemaDeMentira::default()
     }
 
-    /// O que o `curl` responde e o que ele deixa no destino.
-    pub fn baixando(mut self, codigo: i32, texto: &str, conteudo: &str) -> SistemaDeMentira {
-        self.download = Ok(SaidaDeFerramenta {
-            codigo,
-            texto: texto.to_string(),
-        });
-        self.conteudo_baixado = conteudo.to_string();
+    /// O que a fonte de `url` responde, e os tamanhos que o andamento avisa
+    /// antes disso.
+    pub fn baixando_de(
+        self,
+        url: &str,
+        resposta: crate::portas::Transferencia,
+        andamento: &[u64],
+    ) -> SistemaDeMentira {
+        self.downloads.borrow_mut().insert(
+            url.to_string(),
+            DownloadDeMentira {
+                resposta: Ok(resposta),
+                andamento: andamento.to_vec(),
+            },
+        );
+        self
+    }
+
+    /// A fonte de `url` nem chega a responder: o `curl` nao rodou, ou foi
+    /// interrompido de um jeito que nao deixou resposta.
+    pub fn recusando_o_download(self, url: &str, recusa: Erro) -> SistemaDeMentira {
+        self.downloads.borrow_mut().insert(
+            url.to_string(),
+            DownloadDeMentira {
+                resposta: Err(recusa),
+                andamento: Vec::new(),
+            },
+        );
+        self
+    }
+
+    /// O resumo de um arquivo a partir da segunda vez que ele e resumido.
+    pub fn com_resumo_depois(self, caminho: &str, digitos: &str) -> SistemaDeMentira {
+        self.resumos_seguintes.borrow_mut().insert(
+            caminho.to_ascii_lowercase(),
+            SaidaDeFerramenta {
+                codigo: 0,
+                texto: format!(
+                    "MD5 hash de {caminho}:\r\n{digitos}\r\nCertUtil: -hashfile : comando concluido com exito.\r\n"
+                ),
+            },
+        );
         self
     }
 
@@ -987,14 +1087,21 @@ impl Sistema for SistemaDeMentira {
         caminho: &Path,
         algoritmo: crate::resumo::Algoritmo,
     ) -> Resultado<SaidaDeFerramenta> {
+        let chave = caminho.to_string_lossy().to_ascii_lowercase();
+        let ja_resumido = self
+            .resumidos
+            .borrow()
+            .iter()
+            .any(|anterior| anterior.to_string_lossy().to_ascii_lowercase() == chave);
         self.resumidos.borrow_mut().push(caminho.to_path_buf());
 
-        let chave = caminho.to_string_lossy().to_ascii_lowercase();
-        let saida = self
-            .resumos
-            .borrow()
-            .get(&chave)
-            .cloned()
+        let seguinte = if ja_resumido {
+            self.resumos_seguintes.borrow().get(&chave).cloned()
+        } else {
+            None
+        };
+        let saida = seguinte
+            .or_else(|| self.resumos.borrow().get(&chave).cloned())
             .unwrap_or_else(|| self.resumo_padrao.clone());
 
         // O algoritmo entra no texto da primeira linha, como o `certutil`
@@ -1008,14 +1115,30 @@ impl Sistema for SistemaDeMentira {
         })
     }
 
-    fn baixar(&self, url: &str, _destino: &Path) -> Resultado<SaidaDeFerramenta> {
+    fn baixar(
+        &self,
+        url: &str,
+        destino: &Path,
+        _limites: crate::portas::Limites,
+        andamento: &mut dyn FnMut(u64),
+    ) -> Resultado<crate::portas::Transferencia> {
         // Registra **antes** de decidir se recusa, pelo mesmo motivo do
         // `reiniciar`: um download que falhou tambem foi tentado, e `arca
         // prepare --iso` nao pode ter tentado nenhum.
         self.baixados.borrow_mut().push(url.to_string());
-        match &self.download {
-            Ok(saida) => Ok(saida.clone()),
-            Err(erro) => Err(clonar_a_recusa(erro)),
+        self.destinos.borrow_mut().push(destino.to_path_buf());
+
+        match self.downloads.borrow().get(url) {
+            None => Ok(entregou()),
+            Some(ensinado) => {
+                for bytes in &ensinado.andamento {
+                    andamento(*bytes);
+                }
+                match &ensinado.resposta {
+                    Ok(transferencia) => Ok(transferencia.clone()),
+                    Err(erro) => Err(clonar_a_recusa(erro)),
+                }
+            }
         }
     }
 
@@ -1071,6 +1194,10 @@ pub struct ParticionadorDeMentira {
     /// terceiro tempo de PR-4 releu antes de agir, em vez de reusar a leitura
     /// que imprimiu o plano.
     pub descricoes: Cell<usize>,
+
+    /// Quantas vezes listaram os discos. Zero é o que prova que o pré-voo do
+    /// pacote recusou antes de o `arca prepare` chegar aos discos (PR-7).
+    pub enumeracoes: Cell<usize>,
 }
 
 impl ParticionadorDeMentira {
@@ -1082,6 +1209,7 @@ impl ParticionadorDeMentira {
             particionados: RefCell::new(Vec::new()),
             saida: Ok(o_que_o_particionamento_deixou()),
             descricoes: Cell::new(0),
+            enumeracoes: Cell::new(0),
         }
     }
 
@@ -1093,6 +1221,7 @@ impl ParticionadorDeMentira {
             particionados: RefCell::new(Vec::new()),
             saida: Ok(o_que_o_particionamento_deixou()),
             descricoes: Cell::new(0),
+            enumeracoes: Cell::new(0),
         }
     }
 
@@ -1126,6 +1255,7 @@ impl crate::portas::Particionador for ParticionadorDeMentira {
     }
 
     fn enumerar(&self) -> Resultado<Vec<crate::portas::particionador::DiscoParaPreparar>> {
+        self.enumeracoes.set(self.enumeracoes.get() + 1);
         Ok(self.discos.clone())
     }
 
@@ -1374,12 +1504,20 @@ impl Arquivos for ArquivosQueRecusam {
         }
     }
 
+    /// A recusa vale para escrever tambem: e a pasta do pacote guardado que
+    /// nao aceita escrita, do criterio 8 da WPC-134.
     fn escrever_atomico(&self, caminho: &Path, conteudo: &str) -> Resultado<()> {
-        self.dentro.escrever_atomico(caminho, conteudo)
+        match self.recusa(caminho) {
+            Some(erro) => Err(erro),
+            None => self.dentro.escrever_atomico(caminho, conteudo),
+        }
     }
 
     fn criar_diretorio(&self, caminho: &Path) -> Resultado<()> {
-        self.dentro.criar_diretorio(caminho)
+        match self.recusa(caminho) {
+            Some(erro) => Err(erro),
+            None => self.dentro.criar_diretorio(caminho),
+        }
     }
 
     fn listar(&self, caminho: &Path) -> Resultado<Vec<Entrada>> {
@@ -1391,6 +1529,13 @@ impl Arquivos for ArquivosQueRecusam {
         match self.recusa(origem) {
             Some(erro) => Err(erro),
             None => self.dentro.copiar(origem, destino),
+        }
+    }
+
+    fn renomear(&self, origem: &Path, destino: &Path) -> Resultado<()> {
+        match self.recusa(origem) {
+            Some(erro) => Err(erro),
+            None => self.dentro.renomear(origem, destino),
         }
     }
 

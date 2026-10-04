@@ -36,6 +36,7 @@ impl Nivel {
 }
 
 pub struct Registro {
+    pasta: PathBuf,
     caminho: PathBuf,
     relogio: Box<dyn Relogio>,
 }
@@ -56,12 +57,24 @@ impl Registro {
         let _ = fs::create_dir_all(&diretorio);
         Registro {
             caminho: diretorio.join("arca.log"),
+            pasta: diretorio,
             relogio,
         }
     }
 
     pub fn caminho(&self) -> &Path {
         &self.caminho
+    }
+
+    /// A pasta do ARCA no PC — `%LOCALAPPDATA%\ARCA`, ou a do diretorio
+    /// temporario.
+    ///
+    /// E tambem onde mora o pacote guardado do `arca prepare` (PR-7): a pasta
+    /// e decidida aqui, num lugar so, para que o registro e o pacote nunca
+    /// morem em pastas diferentes por terem perguntado ao ambiente cada um a
+    /// sua vez.
+    pub fn pasta(&self) -> &Path {
+        &self.pasta
     }
 
     pub fn info(&self, mensagem: impl AsRef<str>) {

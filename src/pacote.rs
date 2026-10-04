@@ -69,13 +69,31 @@
 //! dispositivo ser declarado pronto. Não é zelo — é o que faz o §4.4 valer
 //! para um dispositivo recém-preparado.
 //!
+//! # O pacote guardado, e por que nenhum download vem depois do passo 5
+//!
+//! Ate 04/10/2026 o `arca prepare` baixava o pacote no passo 6, depois de o
+//! passo 5 ter apagado o disco, sem limite para uma transferencia parada e
+//! sem andamento na tela. Em 03/10 e 04/10/2026 ele ficou parado calado ate
+//! o usuario cancelar, e cada tentativa custou o disco antes de falhar. E cada
+//! preparo baixava 535,5 MB de novo, porque o passo 5 apaga tambem a copia de
+//! PR-3.
+//!
+//! Desde entao vale PR-7: o pacote e obtido no pre-voo e mora no PC, na pasta
+//! do registro, sob o nome de [`ARQUIVO`] — e so existe sob esse nome depois
+//! de passar no SHA256. O download em andamento mora num `.parcial`, que se
+//! retoma, e as [`FONTES`] sao tentadas em ordem. Ver o [ADR-0028].
+//!
 //! [ADR-0005]: ../docs/adr/0005-o-estado-inerte-se-reconstroi-do-grub-cfg-corrente.md
 //! [ADR-0007]: ../docs/adr/0007-o-bloco-do-arca-deriva-do-live-toram.md
 //! [ADR-0014]: ../docs/adr/0014-o-arca-particiona-o-dispositivo.md
+//! [ADR-0028]: ../docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md
 
+use crate::formato::tamanho;
+use crate::portas::{Limites, Transferencia};
 use crate::resumo::{Algoritmo, RecusaDoResumo, Resumo};
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// A versão do Clonezilla que o ARCA instala.
 ///
@@ -86,12 +104,169 @@ pub const VERSAO: &str = "3.3.3-15";
 /// O nome do arquivo, como o projeto o publica.
 pub const ARQUIVO: &str = "clonezilla-live-3.3.3-15-amd64.zip";
 
-/// De onde baixar (PR-1).
+/// Uma fonte do pacote: o nome que a tela mostra e de onde baixar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fonte {
+    /// O host, e a pasta quando o host serve o pacote de duas. E o que separa
+    /// as duas fontes do mirror do projeto numa linha de tela.
+    pub rotulo: &'static str,
+    pub url: &'static str,
+}
+
+/// De onde baixar, na ordem em que se tenta (PR-1, PR-7).
 ///
-/// O SourceForge é o canal de distribuição que o site do Clonezilla aponta, e
-/// resolve para um mirror próximo de quem baixa. O `curl` segue o redirecionamento
-/// com `-L`.
-pub const URL: &str = "https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_stable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip";
+/// # Tres, e nao uma
+///
+/// Com uma URL so, uma fonte parada voltava a ser um preparo perdido. E foi o
+/// SourceForge que travou em 03/10 e 04/10/2026.
+///
+/// # A ordem, e o que a decidiu
+///
+/// O mirror do projeto vem primeiro: medido em 04/10/2026, 20 MB de cada
+/// fonte, ele deu 1,5 MB/s e o SourceForge 0,9 MB/s. O mirror move a versao
+/// de `stable/` para `oldstable/<versao>/` quando sai a seguinte — e a
+/// `3.3.3-15` ja estava em `oldstable/` naquele dia —, por isso ele entra com
+/// as duas pastas, e um 404 custa um segundo. O SourceForge resolve para um
+/// mirror proximo de quem baixa, e o `curl` segue o redirecionamento com `-L`.
+///
+/// Nenhuma delas e confiavel, e por isso elas sao intercambiaveis: quem diz se
+/// o que veio e o pacote e o [`SHA256`] compilado. Ao trocar a versao, as tres
+/// mudam junto com [`VERSAO`], [`ARQUIVO`], [`SHA256`] e [`TAMANHO_BYTES`].
+pub const FONTES: [Fonte; 3] = [
+    Fonte {
+        rotulo: "free.nchc.org.tw (oldstable)",
+        url: "https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip",
+    },
+    Fonte {
+        rotulo: "free.nchc.org.tw (stable)",
+        url: "https://free.nchc.org.tw/clonezilla-live/stable/clonezilla-live-3.3.3-15-amd64.zip",
+    },
+    Fonte {
+        rotulo: "downloads.sourceforge.net",
+        url: "https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_stable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip",
+    },
+];
+
+/// Quanto uma fonte tem para conectar, e quanto ela pode ficar sem entregar
+/// nada, antes de ser abandonada (PR-7).
+///
+/// Uma fonte de verdade entrega centenas de quilobytes por segundo; um
+/// minuto sem um byte e uma fonte parada, e nao uma lenta. Os dois numeros
+/// sao os do design de 04/10/2026, ajustaveis se um mirror lento os disparar
+/// sem estar parado.
+pub const LIMITES: Limites = Limites {
+    conectar: Duration::from_secs(30),
+    parado: Duration::from_secs(60),
+};
+
+/// O pacote guardado, dentro da pasta do ARCA no PC (PR-7).
+pub fn guardado_em(pasta: &Path) -> PathBuf {
+    pasta.join(ARQUIVO)
+}
+
+/// O download em andamento, ao lado do pacote guardado e com outro nome.
+///
+/// O nome e outro de proposito: um pacote so existe sob [`ARQUIVO`] depois de
+/// passar no SHA256, e um download pela metade com o nome do pacote seria
+/// tomado por um por quem olhasse a pasta.
+pub fn parcial_em(pasta: &Path) -> PathBuf {
+    pasta.join(format!("{ARQUIVO}.parcial"))
+}
+
+/// Por onde comecar um download, dado o `.parcial` que ja esta la.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Comeco {
+    /// Zerar o `.parcial` e baixar o pacote inteiro.
+    DoZero,
+
+    /// Continuar do byte em que o `.parcial` termina.
+    Retomando(u64),
+}
+
+/// Retomar ou recomecar — e quem decide e o [`TAMANHO_BYTES`] compilado.
+///
+/// Menor que o pacote, o `.parcial` e um download interrompido, e se retoma.
+/// Do tamanho do pacote ou maior, ele ja foi inteiro e nao bateu com o
+/// SHA256, ou nao e o pacote: retomar pediria um byte que o pacote nao tem.
+pub fn como_comecar(tamanho_do_parcial: Option<u64>) -> Comeco {
+    match tamanho_do_parcial {
+        Some(bytes) if bytes < TAMANHO_BYTES => Comeco::Retomando(bytes),
+        _ => Comeco::DoZero,
+    }
+}
+
+/// O codigo de saida do `curl` para o tempo esgotado.
+///
+/// Com `--connect-timeout` e sem `--speed-time` nem `--max-time`, a conexao e
+/// a unica coisa que o `curl` cronometra — medido em 04/10/2026, inclusive
+/// depois de um redirecionamento, quando o `http_code` vem `302`.
+const CURL_TEMPO_ESGOTADO: i32 = 28;
+
+/// O que uma fonte respondeu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Resposta {
+    Entregou,
+    NaoRespondeu,
+    Parou {
+        recebido: u64,
+    },
+    Http(u16),
+
+    /// O texto do `curl`, para qualquer outra falha: sem rede, nome que nao
+    /// resolve, servidor que nao aceita retomada.
+    Outra(String),
+}
+
+impl fmt::Display for Resposta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Resposta::Entregou => f.write_str("entregou"),
+            Resposta::NaoRespondeu => {
+                write!(f, "nao respondeu em {} s", LIMITES.conectar.as_secs())
+            }
+            Resposta::Parou { recebido } => write!(
+                f,
+                "parou de mandar por {} s, com {} de {}",
+                LIMITES.parado.as_secs(),
+                tamanho(*recebido),
+                tamanho(TAMANHO_BYTES)
+            ),
+            Resposta::Http(codigo) => write!(f, "HTTP {codigo}"),
+            Resposta::Outra(texto) => f.write_str(texto),
+        }
+    }
+}
+
+/// O que a fonte respondeu, julgado pelo codigo e nunca pela frase.
+///
+/// A frase do `curl` so aparece quando nenhum codigo diz o que houve, e
+/// aparece inteira: e o que quem lê pode procurar.
+pub fn o_que_a_fonte_respondeu(transferencia: &Transferencia) -> Resposta {
+    if transferencia.parou {
+        return Resposta::Parou {
+            recebido: transferencia.tamanho_no_destino,
+        };
+    }
+    if transferencia.codigo == 0 {
+        return Resposta::Entregou;
+    }
+    if transferencia.codigo == CURL_TEMPO_ESGOTADO {
+        return Resposta::NaoRespondeu;
+    }
+    if let Some(codigo) = transferencia.http.filter(|codigo| *codigo >= 400) {
+        return Resposta::Http(codigo);
+    }
+
+    let frase = transferencia
+        .texto
+        .lines()
+        .map(str::trim)
+        .find(|linha| !linha.is_empty());
+    Resposta::Outra(match frase {
+        Some(frase) => frase.to_string(),
+        None => format!("o curl saiu com codigo {}", transferencia.codigo),
+    })
+}
 
 /// O SHA256 esperado, **compilado no binário** (PR-1).
 ///
@@ -211,7 +386,41 @@ pub enum RecusaDoPacote {
 
     /// Extraído, o pacote não tem o que faz um dispositivo bootar.
     PacoteIncompleto { faltando: Vec<String> },
+
+    /// PR-7: nenhuma das [`FONTES`] entregou o pacote.
+    ///
+    /// `tentativas` e cada fonte, com o que ela respondeu, na ordem em que foi
+    /// tentada. O texto foi aprovado pelo usuario em 04/10/2026 (WPC-134), e
+    /// termina no caminho que nao depende do download do ARCA: o navegador e
+    /// o `--iso`.
+    ///
+    /// # Por que a mensagem pode prometer que nada foi apagado
+    ///
+    /// Porque o pacote e obtido no pre-voo do `arca prepare`, antes do passo
+    /// 0, e nenhum download acontece depois dele.
+    NenhumaFonteEntregou {
+        tentativas: Vec<(&'static str, Resposta)>,
+    },
+
+    /// PR-7: a pasta do pacote guardado nao aceita escrita — ela nao se deixa
+    /// criar, ou o `.parcial` nao se deixa criar nem zerar. `motivo` e o que o
+    /// Windows respondeu.
+    ///
+    /// Nasce no pre-voo, antes de qualquer download, e por isso pode prometer
+    /// que nada foi apagado.
+    NaoDeuParaGuardar { pasta: PathBuf, motivo: String },
+
+    /// PR-7: o volume da pasta do pacote guardado tem menos espaco livre do
+    /// que falta baixar. Nasce no pre-voo, antes de qualquer download.
+    FaltaEspaco {
+        pasta: PathBuf,
+        falta_bytes: u64,
+        livre_bytes: u64,
+    },
 }
+
+/// Um megabyte, na base 1024 de [`crate::formato::tamanho`].
+const MEGABYTE: u64 = 1024 * 1024;
 
 impl fmt::Display for RecusaDoPacote {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -255,6 +464,40 @@ impl fmt::Display for RecusaDoPacote {
                 f,
                 "o pacote foi extraido e nao tem o que faz um dispositivo bootar: falta {}. O `bsdtar` ter saido com codigo zero nao e prova de que o conteudo esta la",
                 faltando.join(", ")
+            ),
+            RecusaDoPacote::NenhumaFonteEntregou { tentativas } => {
+                writeln!(
+                    f,
+                    "nao deu para baixar o Clonezilla {VERSAO} de nenhuma das {} fontes:",
+                    tentativas.len()
+                )?;
+                for (rotulo, resposta) in tentativas {
+                    writeln!(f, "  {rotulo} — {resposta}")?;
+                }
+                write!(
+                    f,
+                    "O que ja veio fica guardado, e a proxima tentativa continua de onde parou. Para nao depender do download do ARCA, baixe pelo navegador\n  {}\ne passe o arquivo com --iso. Nada foi apagado (PR-7)",
+                    FONTES[0].url
+                )
+            }
+            RecusaDoPacote::NaoDeuParaGuardar { pasta, motivo } => write!(
+                f,
+                "nao deu para guardar o pacote em {} ({motivo}). Nada foi apagado (PR-7)",
+                pasta.display()
+            ),
+            // O que falta arredonda para cima e o que ha livre para baixo: uma
+            // recusa que dissesse "faltam 536 MB, e ha 536 MB livres" seria
+            // ilegivel.
+            RecusaDoPacote::FaltaEspaco {
+                pasta,
+                falta_bytes,
+                livre_bytes,
+            } => write!(
+                f,
+                "faltam {} MB para baixar o pacote, e {} tem {} MB livres. Nada foi apagado (PR-7)",
+                falta_bytes.div_ceil(MEGABYTE),
+                pasta.display(),
+                livre_bytes / MEGABYTE
             ),
         }
     }
@@ -343,13 +586,212 @@ mod testes {
             "a versao fixada nao e a que o dispositivo desta mesa roda"
         );
 
-        // E o nome do arquivo e a URL carregam a mesma versao. Trocar a
-        // constante e esquecer de trocar a URL baixaria outra coisa.
+        // E o nome do arquivo e as fontes carregam a mesma versao. Trocar a
+        // constante e esquecer de trocar uma fonte baixaria outra coisa.
         assert!(ARQUIVO.contains(VERSAO), "o nome do arquivo: {ARQUIVO}");
-        assert!(URL.contains(VERSAO), "a URL: {URL}");
-        assert!(
-            URL.ends_with(ARQUIVO),
-            "a URL nao termina no arquivo: {URL}"
+        for fonte in FONTES {
+            assert!(fonte.url.contains(VERSAO), "a URL: {}", fonte.url);
+            assert!(
+                fonte.url.ends_with(ARQUIVO),
+                "a URL nao termina no arquivo: {}",
+                fonte.url
+            );
+        }
+    }
+
+    // ─────────────── as fontes e o pacote guardado (PR-7) ───────────────
+
+    #[test]
+    fn as_fontes_sao_as_tres_na_ordem_e_carregam_a_versao() {
+        // O oraculo e o criterio 20 da WPC-134, conferido nos dois servidores
+        // em 04/10/2026: a `3.3.3-15` estava em `oldstable/3.3.3-15/` no
+        // mirror do projeto e em `clonezilla_live_stable/3.3.3-15/` no
+        // SourceForge, com o mesmo SHA256 e o mesmo tamanho.
+        let esperadas = [
+            (
+                "free.nchc.org.tw (oldstable)",
+                "https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip",
+            ),
+            (
+                "free.nchc.org.tw (stable)",
+                "https://free.nchc.org.tw/clonezilla-live/stable/clonezilla-live-3.3.3-15-amd64.zip",
+            ),
+            (
+                "downloads.sourceforge.net",
+                "https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_stable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip",
+            ),
+        ];
+
+        let tem: Vec<(&str, &str)> = FONTES.iter().map(|f| (f.rotulo, f.url)).collect();
+        assert_eq!(tem, esperadas);
+
+        for fonte in FONTES {
+            assert!(fonte.url.contains(VERSAO), "sem a versao: {}", fonte.url);
+            assert!(fonte.url.ends_with(ARQUIVO), "sem o arquivo: {}", fonte.url);
+        }
+    }
+
+    #[test]
+    fn o_tamanho_compilado_decide_entre_retomar_e_recomecar() {
+        // O espaco inteiro de entrada, com as duas bordas dos dois lados.
+        for (tamanho_do_parcial, esperado) in [
+            (None, Comeco::DoZero),
+            (Some(0), Comeco::Retomando(0)),
+            (Some(561_478_647), Comeco::Retomando(561_478_647)),
+            (Some(561_478_648), Comeco::DoZero),
+            (Some(561_478_649), Comeco::DoZero),
+        ] {
+            assert_eq!(
+                como_comecar(tamanho_do_parcial),
+                esperado,
+                "{tamanho_do_parcial:?}"
+            );
+        }
+    }
+
+    /// Uma transferencia de mentira, com o que o adaptador devolveria.
+    fn transferencia(codigo: i32, http: Option<u16>, texto: &str) -> Transferencia {
+        Transferencia {
+            codigo,
+            texto: texto.to_string(),
+            http,
+            parou: false,
+            tamanho_no_destino: 0,
+        }
+    }
+
+    #[test]
+    fn o_que_cada_fonte_respondeu_e_julgado_pelo_codigo() {
+        // Os codigos e os `http_code` sao os medidos em 04/10/2026, com o
+        // `curl` 8.21.0 do `System32` contra servidores locais. As frases
+        // vieram junto, e nenhuma decide nada: estao aqui para provar isso.
+        let casos = [
+            (
+                transferencia(28, None, "curl: (28) Connection timed out after 3001 milliseconds"),
+                Resposta::NaoRespondeu,
+                "nao respondeu em 30 s",
+            ),
+            (
+                // O redirecionamento respondeu, e o destino dele nao conectou:
+                // o `http_code` e o do `302`.
+                transferencia(28, Some(302), "curl: (28) Connection timed out after 3000 milliseconds"),
+                Resposta::NaoRespondeu,
+                "nao respondeu em 30 s",
+            ),
+            (
+                transferencia(22, Some(404), "curl: (22) The requested URL returned error: 404"),
+                Resposta::Http(404),
+                "HTTP 404",
+            ),
+            (
+                transferencia(
+                    7,
+                    None,
+                    "curl: (7) Failed to connect to 127.0.0.1:9 after 2014 ms: Could not connect to server\r\n",
+                ),
+                Resposta::Outra(
+                    "curl: (7) Failed to connect to 127.0.0.1:9 after 2014 ms: Could not connect to server"
+                        .to_string(),
+                ),
+                "curl: (7) Failed to connect to 127.0.0.1:9 after 2014 ms: Could not connect to server",
+            ),
+            (transferencia(0, Some(206), ""), Resposta::Entregou, "entregou"),
+        ];
+
+        for (transferencia, resposta, dita) in casos {
+            assert_eq!(o_que_a_fonte_respondeu(&transferencia), resposta);
+            assert_eq!(resposta.to_string(), dita);
+        }
+
+        // Parada e do adaptador, e vale mais do que o codigo: quem encerrou o
+        // `curl` foi ele.
+        let parada = Transferencia {
+            parou: true,
+            tamanho_no_destino: 125_829_120,
+            ..transferencia(1, Some(200), "")
+        };
+        let resposta = o_que_a_fonte_respondeu(&parada);
+        assert_eq!(
+            resposta,
+            Resposta::Parou {
+                recebido: 125_829_120
+            }
+        );
+        assert_eq!(
+            resposta.to_string(),
+            "parou de mandar por 60 s, com 120,0 MB de 535,5 MB"
+        );
+    }
+
+    #[test]
+    fn a_recusa_de_nenhuma_fonte_e_o_texto_aprovado() {
+        // O texto do criterio 6 da WPC-134, aprovado em 04/10/2026, byte a
+        // byte.
+        let recusa = RecusaDoPacote::NenhumaFonteEntregou {
+            tentativas: vec![
+                (FONTES[0].rotulo, Resposta::NaoRespondeu),
+                (
+                    FONTES[1].rotulo,
+                    Resposta::Parou {
+                        recebido: 125_829_120,
+                    },
+                ),
+                (FONTES[2].rotulo, Resposta::Http(404)),
+            ],
+        };
+
+        assert_eq!(
+            recusa.to_string(),
+            "nao deu para baixar o Clonezilla 3.3.3-15 de nenhuma das 3 fontes:\n  \
+             free.nchc.org.tw (oldstable) — nao respondeu em 30 s\n  \
+             free.nchc.org.tw (stable) — parou de mandar por 60 s, com 120,0 MB de 535,5 MB\n  \
+             downloads.sourceforge.net — HTTP 404\n\
+             O que ja veio fica guardado, e a proxima tentativa continua de onde parou. Para nao depender do download do ARCA, baixe pelo navegador\n  \
+             https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip\n\
+             e passe o arquivo com --iso. Nada foi apagado (PR-7)"
+        );
+    }
+
+    #[test]
+    fn as_recusas_de_onde_guardar_sao_o_texto_aprovado() {
+        // Os dois textos do criterio 8 da WPC-134, aprovados em 04/10/2026.
+        let pasta = PathBuf::from(r"C:\Users\Ana Paula\AppData\Local\ARCA");
+
+        assert_eq!(
+            RecusaDoPacote::NaoDeuParaGuardar {
+                pasta: pasta.clone(),
+                motivo: "Acesso negado. (os error 5)".to_string(),
+            }
+            .to_string(),
+            r"nao deu para guardar o pacote em C:\Users\Ana Paula\AppData\Local\ARCA (Acesso negado. (os error 5)). Nada foi apagado (PR-7)"
+        );
+
+        // 561.478.648 bytes sao 535,47 MB: faltam 536, e nao 535.
+        assert_eq!(
+            RecusaDoPacote::FaltaEspaco {
+                pasta,
+                falta_bytes: TAMANHO_BYTES,
+                livre_bytes: 100 * MEGABYTE,
+            }
+            .to_string(),
+            r"faltam 536 MB para baixar o pacote, e C:\Users\Ana Paula\AppData\Local\ARCA tem 100 MB livres. Nada foi apagado (PR-7)"
+        );
+    }
+
+    #[test]
+    fn o_parcial_mora_ao_lado_do_guardado_com_outro_nome() {
+        let pasta = Path::new(r"C:\Users\Ana Paula\AppData\Local\ARCA");
+        assert_eq!(
+            guardado_em(pasta),
+            PathBuf::from(
+                r"C:\Users\Ana Paula\AppData\Local\ARCA\clonezilla-live-3.3.3-15-amd64.zip"
+            )
+        );
+        assert_eq!(
+            parcial_em(pasta),
+            PathBuf::from(
+                r"C:\Users\Ana Paula\AppData\Local\ARCA\clonezilla-live-3.3.3-15-amd64.zip.parcial"
+            )
         );
     }
 

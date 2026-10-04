@@ -131,19 +131,27 @@ mod testes {
 
     impl Bancada {
         fn nova(etiqueta: &str) -> Bancada {
+            let registro = Registro::em(
+                std::env::temp_dir().join(format!("arca-{etiqueta}-{}", std::process::id())),
+                Box::new(RelogioDoSistema),
+            );
+
+            // O `arca prepare` obtém o pacote antes de olhar disco nenhum
+            // (PR-7). Com o pacote guardado no PC, ele segue sem rede até a
+            // recusa pelo disco, que é o que os testes daqui perguntam.
+            let guardado = crate::pacote::guardado_em(registro.pasta());
+
             Bancada {
-                arquivos: ArquivosEmMemoria::novo(),
+                arquivos: ArquivosEmMemoria::novo().com(&guardado, "o pacote, de mentira"),
                 discos: DiscosDeMentira::default(),
                 firmware: FirmwareDeMentira::novo(),
                 relogio: RelogioParado::em("2026-08-22T11:42:03"),
-                sistema: SistemaDeMentira::novo(),
+                sistema: SistemaDeMentira::novo()
+                    .com_resumo(&guardado.to_string_lossy(), crate::pacote::SHA256),
                 entropia: EntropiaDeMentira::com(&[0; 8]),
                 console: ConsoleDeMentira::mudo(),
                 particionador: crate::duplos::ParticionadorDeMentira::com_discos(Vec::new()),
-                registro: Registro::em(
-                    std::env::temp_dir().join(format!("arca-{etiqueta}-{}", std::process::id())),
-                    Box::new(RelogioDoSistema),
-                ),
+                registro,
             }
         }
 

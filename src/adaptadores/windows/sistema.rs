@@ -12,10 +12,13 @@
 //!   caso do `bcdedit` da E2, e `de_pagina_de_codigo` resolve.
 
 use crate::erro::{Erro, Resultado};
-use crate::portas::{SaidaDeFerramenta, Sistema};
+use crate::portas::{Limites, SaidaDeFerramenta, Sistema, Transferencia};
 use crate::resumo::Algoritmo;
+use std::ffi::OsString;
+use std::io::Read;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use super::texto::{de_pagina_de_codigo, pagina_do_console, para_utf16};
 
@@ -76,6 +79,76 @@ fn resposta(saida: &std::process::Output) -> SaidaDeFerramenta {
         codigo: saida.status.code().unwrap_or(-1),
         texto,
     }
+}
+
+/// De quanto em quanto tempo o download olha o tamanho do destino.
+const VOLTA_DO_DOWNLOAD: Duration = Duration::from_millis(200);
+
+/// De quanto em quanto tempo o andamento e avisado. PR-7 pede a linha da tela
+/// reescrita ao menos a cada 2 s; um segundo deixa folga para a tela.
+const INTERVALO_DO_ANDAMENTO: Duration = Duration::from_secs(1);
+
+/// O comeco da linha que o `-w` pede ao `curl`, com o codigo HTTP da ultima
+/// resposta.
+const MARCA_DO_HTTP: &str = "arca-curl http=";
+
+/// A linha de comando do `curl` para um download que retoma e nao fica mudo.
+///
+/// - `-C -` continua do byte em que o destino termina, e com o destino vazio
+///   ou ausente baixa do comeco — medido em 04/10/2026: com 100 bytes no
+///   destino o pedido sai com `Range: bytes=100-`, e sem eles, sem `Range`;
+/// - `-N` tira o buffer da escrita. Sem ele, medido no mesmo dia, o destino
+///   fica com 0 bytes enquanto os bytes chegam — o andamento mentiria, a
+///   parada seria vista onde nao ha, e encerrar o `curl` perderia o que
+///   estava no buffer;
+/// - `--connect-timeout` e o unico limite que fica com o `curl`. O da fonte
+///   parada e deste adaptador: ver [`Sistema::baixar`];
+/// - `-f` para que uma pagina de erro HTTP nao vire um arquivo de 500 bytes
+///   com cara de pacote, e `-L` porque o SourceForge redireciona.
+///
+/// **Sem `--retry`.** Ele faria uma fonte parada esperar tres vezes antes de
+/// a seguinte ser tentada, e o que ele comprava — uma rede que cai no meio —
+/// a retomada do `.parcial` compra pela proxima fonte.
+fn argumentos_do_curl(url: &str, destino: &Path, limites: Limites) -> Vec<OsString> {
+    let mut argumentos: Vec<OsString> = ["-sS", "-N", "-L", "-f", "-C", "-", "--connect-timeout"]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+    argumentos.push(limites.conectar.as_secs_f64().to_string().into());
+    argumentos.push("-w".into());
+    argumentos.push(format!("{MARCA_DO_HTTP}%{{http_code}}\\n").into());
+    argumentos.push("-o".into());
+    argumentos.push(destino.as_os_str().to_os_string());
+    argumentos.push(url.into());
+    argumentos
+}
+
+/// O codigo HTTP que o `-w` escreveu, e `None` quando ele e `000`: nenhuma
+/// resposta chegou.
+fn http_do_curl(stdout: &str) -> Option<u16> {
+    stdout
+        .lines()
+        .find_map(|linha| linha.trim().strip_prefix(MARCA_DO_HTTP))
+        .and_then(|codigo| codigo.trim().parse::<u16>().ok())
+        .filter(|codigo| *codigo != 0)
+}
+
+/// Quantos bytes o destino tem. O que nao existe tem zero: o `curl` so cria o
+/// arquivo quando o primeiro byte chega.
+fn tamanho_de(destino: &Path) -> u64 {
+    std::fs::metadata(destino).map(|m| m.len()).unwrap_or(0)
+}
+
+/// Le tudo o que um processo escrever num cano, numa thread propria — um cano
+/// cheio que ninguem lê para o `curl` no meio do download.
+fn ler_tudo(cano: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut cano) = cano {
+            let _ = cano.read_to_end(&mut bytes);
+        }
+        bytes
+    })
 }
 
 /// Onde a Inicializacao Rapida mora, como numero.
@@ -154,29 +227,82 @@ impl Sistema for SistemaDoWindows {
         })
     }
 
-    fn baixar(&self, url: &str, destino: &Path) -> Resultado<SaidaDeFerramenta> {
-        // `-L` porque o SourceForge redireciona para um mirror; `-f` para que
-        // uma pagina de erro HTTP nao vire um arquivo de 500 bytes com cara de
-        // pacote; `--retry` porque meio giga por uma rede domestica cai.
-        //
+    fn baixar(
+        &self,
+        url: &str,
+        destino: &Path,
+        limites: Limites,
+        andamento: &mut dyn FnMut(u64),
+    ) -> Resultado<Transferencia> {
+        let falhou = |origem| Erro::Ferramenta {
+            ferramenta: "curl",
+            origem,
+        };
+
         // `-sS` cala a barra de progresso e mantem a mensagem de erro: o
         // andamento e impresso pelo ARCA, e a barra do `curl` no meio da tela
         // do §7.1 atrapalharia mais do que ajuda.
-        let saida = Command::new(FERRAMENTAS.curl)
-            .arg("-sS")
-            .arg("-L")
-            .arg("-f")
-            .args(["--retry", "2"])
-            .arg("-o")
-            .arg(destino)
-            .arg(url)
-            .output()
-            .map_err(|origem| Erro::Ferramenta {
-                ferramenta: "curl",
-                origem,
-            })?;
+        let mut curl = Command::new(FERRAMENTAS.curl)
+            .args(argumentos_do_curl(url, destino, limites))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(falhou)?;
+        let stdout = ler_tudo(curl.stdout.take());
+        let stderr = ler_tudo(curl.stderr.take());
 
-        Ok(resposta(&saida))
+        // A fonte parada e julgada pelo destino que nao cresce, e nao pelo
+        // `--speed-time`: o `curl` mede velocidade por media e, medido em
+        // 04/10/2026, abandona `T + 6 s` depois do ultimo byte. O relogio
+        // aqui so mede o intervalo entre duas leituras deste mesmo processo.
+        // O primeiro aviso vem depois do primeiro intervalo, e nao agora: a
+        // linha que quem chamou acabou de escrever — de quanto retoma — fica
+        // na tela esse segundo.
+        let mut tamanho = tamanho_de(destino);
+        let mut cresceu_em = Instant::now();
+        let mut avisado_em = Instant::now();
+
+        let mut parou = false;
+        let terminou = loop {
+            if let Some(estado) = curl.try_wait().map_err(falhou)? {
+                break Some(estado);
+            }
+            std::thread::sleep(VOLTA_DO_DOWNLOAD);
+
+            let agora = tamanho_de(destino);
+            if agora != tamanho {
+                tamanho = agora;
+                cresceu_em = Instant::now();
+            }
+            if avisado_em.elapsed() >= INTERVALO_DO_ANDAMENTO {
+                andamento(tamanho);
+                avisado_em = Instant::now();
+            }
+            if cresceu_em.elapsed() >= limites.parado {
+                // Encerrar e o que um Ctrl+C faz, e o `.parcial` fica com o
+                // que veio: com `-N`, nada esta no buffer.
+                let _ = curl.kill();
+                let _ = curl.wait();
+                parou = true;
+                break None;
+            }
+        };
+
+        let pagina = pagina_do_console();
+        let escrito = de_pagina_de_codigo(&stdout.join().unwrap_or_default(), pagina);
+        let texto = de_pagina_de_codigo(&stderr.join().unwrap_or_default(), pagina);
+
+        let tamanho_no_destino = tamanho_de(destino);
+        andamento(tamanho_no_destino);
+
+        Ok(Transferencia {
+            codigo: terminou.and_then(|estado| estado.code()).unwrap_or(-1),
+            texto,
+            http: http_do_curl(&escrito),
+            parou,
+            tamanho_no_destino,
+        })
     }
 
     fn extrair(&self, pacote: &Path, destino: &Path) -> Resultado<SaidaDeFerramenta> {
@@ -307,7 +433,12 @@ fn ler_dword(subchave: &str, valor: &str) -> Resultado<Option<u32>> {
     })
 }
 
-#[cfg(all(test, windows))]
+// Dois atributos, e nao `cfg(all(test, windows))`: a varredura de
+// `tests/b10_nada_e_apagado.rs` reconhece o modulo de testes pelo
+// `#[cfg(test)]`, e os testes do download (04/10/2026) limpam o proprio
+// diretorio temporario — que nao e o que B-10 governa.
+#[cfg(test)]
+#[cfg(windows)]
 mod testes {
     use super::*;
 
@@ -389,5 +520,238 @@ mod testes {
 
         let texto = String::from_utf8_lossy(&saida.stdout);
         assert!(texto.starts_with("curl "), "veio: {texto}");
+    }
+
+    // ─────────── o download contra servidores desta maquina (PR-7) ───────────
+    //
+    // O `curl` de verdade, contra um servidor HTTP em `127.0.0.1` que faz o
+    // que cada teste pede. E o que mede o adaptador sem depender da internet:
+    // as quatro formas de uma fonte responder foram medidas assim em
+    // 04/10/2026, antes de este codigo existir.
+
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+
+    /// O pacote de mentira: 1000 bytes que nao se repetem em 251, para que
+    /// uma retomada no byte errado nao passe por certa.
+    fn corpo() -> Vec<u8> {
+        (0..1000u32).map(|i| (i % 251) as u8).collect()
+    }
+
+    #[derive(Clone, Copy)]
+    enum Servidor {
+        /// `200` com os 100 primeiros bytes, e depois mais nada.
+        Parar,
+        /// `404`.
+        NaoAchou,
+        /// Honra o `Range`: `206` com o que falta.
+        Retomar,
+        /// `200`, 100 bytes a cada 400 ms.
+        Devagar,
+    }
+
+    /// Sobe o servidor e devolve a URL e o canal por onde chegam os pedidos.
+    fn servir(como: Servidor) -> (String, mpsc::Receiver<String>) {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let (pedidos, recebidos) = mpsc::channel();
+
+        std::thread::spawn(move || {
+            for conexao in ouvinte.incoming() {
+                let mut conexao = conexao.unwrap();
+                let mut leitor = BufReader::new(conexao.try_clone().unwrap());
+                let mut pedido = String::new();
+                loop {
+                    let mut linha = String::new();
+                    if leitor.read_line(&mut linha).unwrap_or(0) == 0 || linha == "\r\n" {
+                        break;
+                    }
+                    pedido.push_str(&linha);
+                }
+                let _ = pedidos.send(pedido.clone());
+
+                let corpo = corpo();
+                match como {
+                    Servidor::Parar => {
+                        let _ = write!(conexao, "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n");
+                        let _ = conexao.write_all(&corpo[..100]);
+                        let _ = conexao.flush();
+                        std::thread::sleep(Duration::from_secs(30));
+                    }
+                    Servidor::NaoAchou => {
+                        let _ = write!(
+                            conexao,
+                            "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nnot found"
+                        );
+                    }
+                    Servidor::Retomar => {
+                        let de = pedido
+                            .lines()
+                            .find_map(|l| l.strip_prefix("Range: bytes="))
+                            .and_then(|r| r.trim_end_matches('-').parse::<usize>().ok())
+                            .unwrap_or(0);
+                        let _ = write!(
+                            conexao,
+                            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {de}-999/1000\r\nContent-Length: {}\r\n\r\n",
+                            1000 - de
+                        );
+                        let _ = conexao.write_all(&corpo[de..]);
+                    }
+                    Servidor::Devagar => {
+                        let _ = write!(conexao, "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n");
+                        for pedaco in corpo.chunks(100) {
+                            let _ = conexao.write_all(pedaco);
+                            let _ = conexao.flush();
+                            std::thread::sleep(Duration::from_millis(400));
+                        }
+                    }
+                }
+            }
+        });
+
+        (format!("http://127.0.0.1:{porta}/pacote.zip"), recebidos)
+    }
+
+    /// Um `.parcial` novo num diretorio so deste teste.
+    fn parcial(etiqueta: &str) -> std::path::PathBuf {
+        let pasta =
+            std::env::temp_dir().join(format!("arca-curl-{etiqueta}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&pasta);
+        std::fs::create_dir_all(&pasta).unwrap();
+        pasta.join("clonezilla-live-3.3.3-15-amd64.zip.parcial")
+    }
+
+    /// Limites curtos: os de verdade sao 30 e 60 s, e o que se prova aqui e
+    /// o mecanismo, nao o numero.
+    const CURTOS: Limites = Limites {
+        conectar: Duration::from_secs(5),
+        parado: Duration::from_secs(2),
+    };
+
+    #[test]
+    fn o_curl_recebe_os_limites_e_retoma() {
+        let argumentos: Vec<String> = argumentos_do_curl(
+            "https://exemplo/pacote.zip",
+            Path::new(r"C:\ARCA\pacote.zip.parcial"),
+            crate::pacote::LIMITES,
+        )
+        .into_iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+
+        let depois = |opcao: &str| {
+            argumentos
+                .iter()
+                .position(|a| a == opcao)
+                .and_then(|i| argumentos.get(i + 1))
+                .map(String::as_str)
+        };
+
+        assert_eq!(depois("--connect-timeout"), Some("30"), "{argumentos:?}");
+        assert_eq!(depois("-C"), Some("-"), "{argumentos:?}");
+        assert_eq!(depois("-o"), Some(r"C:\ARCA\pacote.zip.parcial"));
+        for presente in ["-N", "-f", "-L"] {
+            assert!(argumentos.iter().any(|a| a == presente), "falta {presente}");
+        }
+        for ausente in [
+            "--retry",
+            "--speed-time",
+            "--speed-limit",
+            "--remove-on-error",
+        ] {
+            assert!(
+                !argumentos.iter().any(|a| a == ausente),
+                "{ausente} esta la: {argumentos:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn uma_fonte_parada_e_abandonada_e_o_parcial_fica_com_o_que_veio() {
+        let (url, _pedidos) = servir(Servidor::Parar);
+        let destino = parcial("parada");
+
+        let inicio = Instant::now();
+        let transferencia = SistemaDoWindows
+            .baixar(&url, &destino, CURTOS, &mut |_| {})
+            .expect("o curl roda");
+        let levou = inicio.elapsed();
+
+        assert!(transferencia.parou, "{transferencia:?}");
+        assert!(
+            levou < Duration::from_secs(5),
+            "uma fonte parada levou {levou:?} para ser abandonada, com limite de 2 s"
+        );
+        assert_eq!(transferencia.tamanho_no_destino, 100);
+        assert_eq!(std::fs::read(&destino).unwrap(), &corpo()[..100]);
+
+        let _ = std::fs::remove_dir_all(destino.parent().unwrap());
+    }
+
+    #[test]
+    fn o_curl_retoma_do_byte_em_que_o_parcial_termina() {
+        let (url, pedidos) = servir(Servidor::Retomar);
+        let destino = parcial("retomada");
+        std::fs::write(&destino, &corpo()[..100]).unwrap();
+
+        let transferencia = SistemaDoWindows
+            .baixar(&url, &destino, CURTOS, &mut |_| {})
+            .expect("o curl roda");
+
+        let pedido = pedidos.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(pedido.contains("Range: bytes=100-"), "{pedido}");
+        assert_eq!(transferencia.codigo, 0, "{transferencia:?}");
+        assert_eq!(transferencia.http, Some(206));
+        assert_eq!(transferencia.tamanho_no_destino, 1000);
+        assert_eq!(std::fs::read(&destino).unwrap(), corpo());
+
+        let _ = std::fs::remove_dir_all(destino.parent().unwrap());
+    }
+
+    #[test]
+    fn um_erro_http_volta_com_o_codigo() {
+        let (url, _pedidos) = servir(Servidor::NaoAchou);
+        let destino = parcial("404");
+
+        let transferencia = SistemaDoWindows
+            .baixar(&url, &destino, CURTOS, &mut |_| {})
+            .expect("o curl roda");
+
+        assert_eq!(transferencia.codigo, 22, "{transferencia:?}");
+        assert_eq!(transferencia.http, Some(404));
+        assert!(!transferencia.parou);
+        assert_eq!(transferencia.tamanho_no_destino, 0);
+
+        let _ = std::fs::remove_dir_all(destino.parent().unwrap());
+    }
+
+    #[test]
+    fn o_andamento_chega_ao_menos_a_cada_2_s() {
+        // Uns 4 s de download. O que se cobra e o intervalo entre dois
+        // avisos, que e o que mantem a linha da tela viva (PR-7).
+        let (url, _pedidos) = servir(Servidor::Devagar);
+        let destino = parcial("andamento");
+
+        let mut avisos: Vec<(Instant, u64)> = Vec::new();
+        let transferencia = SistemaDoWindows
+            .baixar(&url, &destino, CURTOS, &mut |bytes| {
+                avisos.push((Instant::now(), bytes))
+            })
+            .expect("o curl roda");
+
+        assert_eq!(transferencia.codigo, 0, "{transferencia:?}");
+        assert!(avisos.len() >= 3, "so {} avisos", avisos.len());
+        for par in avisos.windows(2) {
+            assert!(
+                par[1].0 - par[0].0 <= Duration::from_secs(2),
+                "{:?} entre dois avisos",
+                par[1].0 - par[0].0
+            );
+            assert!(par[1].1 >= par[0].1, "o andamento voltou: {avisos:?}");
+        }
+        assert_eq!(avisos.last().map(|(_, bytes)| *bytes), Some(1000));
+
+        let _ = std::fs::remove_dir_all(destino.parent().unwrap());
     }
 }
