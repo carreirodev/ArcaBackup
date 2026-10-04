@@ -2342,6 +2342,14 @@ mod testes {
         // `.parcial` zerado e renomeado.
         assert!(!tela.contains("retomando"), "{tela}");
         assert_eq!(bancada.arquivos.conteudo_de(&guardado).as_deref(), Some(""));
+
+        // E a ordem das escritas: a pasta, o `.parcial` zerado, e só então o
+        // `.parcial` renomeado por cima do guardado que não bateu.
+        let pasta = bancada.registro.pasta().to_path_buf();
+        assert_eq!(
+            bancada.arquivos.escritos(),
+            vec![pasta, parcial.clone(), parcial, guardado]
+        );
     }
 
     #[test]
@@ -2399,6 +2407,15 @@ mod testes {
             Some("o que veio da ultima vez"),
             "o `.parcial` foi zerado em vez de retomado"
         );
+        // Nenhuma escrita no `.parcial` além da renomeação: ele não foi zerado.
+        assert_eq!(
+            bancada.arquivos.escritos(),
+            vec![
+                bancada.registro.pasta().to_path_buf(),
+                parcial,
+                bancada.guardado()
+            ]
+        );
     }
 
     #[test]
@@ -2422,6 +2439,16 @@ mod testes {
                 bancada.arquivos.conteudo_de(bancada.guardado()).as_deref(),
                 Some(""),
                 "{tamanho_do_parcial}: o `.parcial` nao foi zerado"
+            );
+            assert_eq!(
+                bancada.arquivos.escritos(),
+                vec![
+                    bancada.registro.pasta().to_path_buf(),
+                    parcial.clone(),
+                    parcial,
+                    bancada.guardado()
+                ],
+                "{tamanho_do_parcial}: o `.parcial` nao foi zerado antes de renomeado"
             );
         }
     }
@@ -2524,9 +2551,12 @@ mod testes {
                 "{}: {erro}",
                 recusado.display()
             );
-            assert!(
-                erro.to_string().contains("Acesso negado. (os error 5)"),
-                "{erro}"
+            assert_eq!(
+                erro.to_string(),
+                format!(
+                    "nao deu para guardar o pacote em {} (Acesso negado. (os error 5)). Nada foi apagado (PR-7)",
+                    pasta.display()
+                )
             );
             assert!(
                 bancada.sistema.baixados.borrow().is_empty(),
@@ -2537,6 +2567,55 @@ mod testes {
     }
 
     #[test]
+    fn o_ensaio_com_pacote_guardado_que_nao_bate_nao_baixa() {
+        // Decidido na construção (WPC-134, Handoff): o ensaio diz o que o
+        // preparo de verdade faria com o guardado que não bate, e não baixa.
+        let mut bancada = Bancada::nova("ensaio-guardado-ruim", ConsoleDeMentira::mudo());
+        let outra_versao = "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10";
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.guardado().to_string_lossy(), outra_versao);
+
+        let (pacote, tela) = bancada.pre_voo(true, None);
+
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::PorBaixar);
+        assert_eq!(
+            tela,
+            "  Pacote guardado ................. nao bate com o SHA256 deste ARCA · o preparo de verdade baixa de novo, do zero; o ensaio nao baixa\n"
+        );
+        assert!(
+            bancada.sistema.baixados.borrow().is_empty(),
+            "o ensaio baixou"
+        );
+        assert_eq!(
+            bancada.arquivos.escritos(),
+            Vec::<PathBuf>::new(),
+            "o ensaio escreveu"
+        );
+    }
+
+    #[test]
+    fn uma_pasta_com_o_nome_do_pacote_recusa_antes_de_baixar() {
+        // Decidido na construção (WPC-134, Handoff): o `renomear` falharia
+        // sobre a pasta depois de um download inteiro.
+        let mut bancada = Bancada::nova("pasta-com-o-nome", ConsoleDeMentira::mudo());
+        let guardado = bancada.guardado();
+        bancada.arquivos = ArquivosEmMemoria::novo().com_pasta_vazia(&guardado);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+
+        let erro = pacote.unwrap_err();
+        assert_eq!(
+            erro.to_string(),
+            format!(
+                "nao deu para guardar o pacote em {} (`clonezilla-live-3.3.3-15-amd64.zip` e uma pasta). Nada foi apagado (PR-7)",
+                bancada.registro.pasta().display()
+            )
+        );
+        assert!(bancada.sistema.baixados.borrow().is_empty());
+    }
+
+    #[test]
     fn sem_espaco_para_o_que_falta_recusa_antes_de_baixar() {
         let mut bancada =
             Bancada::nova("sem-espaco", ConsoleDeMentira::mudo()).sem_pacote_guardado();
@@ -2544,20 +2623,23 @@ mod testes {
 
         let (pacote, _) = bancada.pre_voo(false, None);
 
-        match pacote {
-            Err(Erro::PacoteRecusado(recusa @ pacote::RecusaDoPacote::FaltaEspaco { .. })) => {
-                let dita = recusa.to_string();
-                assert!(
-                    dita.starts_with("faltam 536 MB para baixar o pacote, e "),
-                    "{dita}"
-                );
-                assert!(
-                    dita.ends_with(" tem 100 MB livres. Nada foi apagado (PR-7)"),
-                    "{dita}"
-                );
-            }
-            outro => panic!("esperava FaltaEspaco, veio {outro:?}"),
-        }
+        // O texto inteiro, como o `erro:` o mostra: sem o prefixo das recusas
+        // de PR-1 e PR-2.
+        let erro = pacote.unwrap_err();
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::FaltaEspaco { .. })
+            ),
+            "{erro}"
+        );
+        assert_eq!(
+            erro.to_string(),
+            format!(
+                "faltam 536 MB para baixar o pacote, e {} tem 100 MB livres. Nada foi apagado (PR-7)",
+                bancada.registro.pasta().display()
+            )
+        );
         assert!(bancada.sistema.baixados.borrow().is_empty());
 
         // O que conta é o que falta: com 500 MB já no `.parcial`, faltam
@@ -2589,6 +2671,11 @@ mod testes {
             bancada.arquivos.conteudo_de(bancada.parcial()),
             None,
             "o ensaio escreveu o `.parcial`"
+        );
+        assert_eq!(
+            bancada.arquivos.escritos(),
+            Vec::<PathBuf>::new(),
+            "o ensaio escreveu"
         );
         assert_eq!(
             tela,
@@ -2675,7 +2762,21 @@ mod testes {
                 "o `--iso` olhou {}",
                 caminho.display()
             );
+            assert!(
+                !bancada.arquivos.foi_escrito(caminho),
+                "o `--iso` escreveu {}",
+                caminho.display()
+            );
         }
+        assert!(
+            bancada
+                .arquivos
+                .escritos()
+                .iter()
+                .all(|escrito| !escrito.starts_with(&pasta)),
+            "o `--iso` escreveu na pasta do pacote guardado: {:?}",
+            bancada.arquivos.escritos()
+        );
         assert!(bancada.sistema.baixados.borrow().is_empty());
         assert_eq!(
             tela,

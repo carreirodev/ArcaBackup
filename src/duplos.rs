@@ -552,6 +552,14 @@ pub struct ArquivosEmMemoria {
     /// requisito nao e sobre mudar, e sobre nem olhar.
     consultados: RefCell<Vec<PathBuf>>,
 
+    /// Todo caminho em que alguem escreveu, criou, renomeou ou copiou para,
+    /// na ordem.
+    ///
+    /// Existe pelo outro lado de `consultados`: "o `--iso` nao lê nem escreve
+    /// o pacote guardado" e "o ensaio nao escreve nada" (PR-7) so viram teste
+    /// se der para perguntar ao duplo o que foi escrito.
+    escritos: RefCell<Vec<PathBuf>>,
+
     /// O tamanho que a listagem diz de um arquivo, no lugar do comprimento do
     /// conteudo. Existe para o `.parcial` de meio giga do `arca prepare`
     /// (PR-7), que nenhum teste vai guardar numa `String`.
@@ -618,6 +626,24 @@ impl ArquivosEmMemoria {
         self.consultados.borrow_mut().push(caminho.to_path_buf());
     }
 
+    /// Os caminhos escritos, criados, renomeados ou copiados para, na ordem.
+    pub fn escritos(&self) -> Vec<PathBuf> {
+        self.escritos.borrow().clone()
+    }
+
+    /// Se alguem escreveu neste caminho, de qualquer forma.
+    pub fn foi_escrito(&self, caminho: impl AsRef<Path>) -> bool {
+        let caminho = caminho.as_ref();
+        self.escritos
+            .borrow()
+            .iter()
+            .any(|escrito| escrito == caminho)
+    }
+
+    fn anotar_escrita(&self, caminho: &Path) {
+        self.escritos.borrow_mut().push(caminho.to_path_buf());
+    }
+
     /// O filho imediato de `base` no caminho de um descendente, e se esse
     /// filho e diretorio — o que se sabe por haver mais componentes depois
     /// dele.
@@ -680,6 +706,7 @@ impl Arquivos for ArquivosEmMemoria {
     }
 
     fn escrever_atomico(&self, caminho: &Path, conteudo: &str) -> Resultado<()> {
+        self.anotar_escrita(caminho);
         self.tamanhos.borrow_mut().remove(caminho);
         self.conteudo
             .borrow_mut()
@@ -688,6 +715,9 @@ impl Arquivos for ArquivosEmMemoria {
     }
 
     fn renomear(&self, origem: &Path, destino: &Path) -> Resultado<()> {
+        self.anotar_escrita(origem);
+        self.anotar_escrita(destino);
+
         // Como o `fs::rename`: a origem que nao existe e erro, e o destino que
         // existe e substituido.
         let conteudo = self.conteudo.borrow_mut().remove(origem).ok_or_else(|| {
@@ -709,6 +739,7 @@ impl Arquivos for ArquivosEmMemoria {
     }
 
     fn criar_diretorio(&self, caminho: &Path) -> Resultado<()> {
+        self.anotar_escrita(caminho);
         let mut diretorios = self.diretorios.borrow_mut();
         if !diretorios.iter().any(|d| d == caminho) {
             diretorios.push(caminho.to_path_buf());
@@ -719,8 +750,10 @@ impl Arquivos for ArquivosEmMemoria {
     fn copiar(&self, origem: &Path, destino: &Path) -> Resultado<()> {
         // A copia registra a origem em `consultados` porque ela **lê** —
         // C-1 pergunta o que foi consultado, e uma copia que nao aparecesse
-        // ali seria uma leitura escondida do teste.
+        // ali seria uma leitura escondida do teste. E o destino em
+        // `escritos`, porque ela escreve.
         self.anotar_consulta(origem);
+        self.anotar_escrita(destino);
 
         // Um arquivo que nao existe e erro, como no sistema de arquivos de
         // verdade. Copiar o nada em silencio deixaria o `arca prepare`
