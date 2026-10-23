@@ -560,6 +560,28 @@ mod testes {
     }
 
     #[test]
+    fn a_fonte_que_parou_dentro_da_janela_sai_com_a_velocidade_da_janela() {
+        // A excecao a "a linha que diz que a fonte saiu traz os numeros que a
+        // linha viva mostrava", achada na revisao do PR 1 em 23/10/2026: 5 MB
+        // no primeiro segundo e nada depois. A linha viva diz `parada` desde
+        // os 6 s, e o julgamento dos 20 s ainda ve os 5 MB na janela.
+        let mut medicao = Medicao::comecando_com(0);
+        for segundos in 1..=20 {
+            medicao.anotar(amostra(segundos as f64, 5_242_880));
+        }
+
+        assert!(
+            medicao.linha_viva().ends_with(" · 0 B/s · parada ha 19 s"),
+            "{}",
+            medicao.linha_viva()
+        );
+        assert_eq!(
+            medicao.lentidao().map(|lentidao| lentidao.to_string()),
+            Some("lenta: faltariam 36 min a 256,0 KB/s".to_string())
+        );
+    }
+
+    #[test]
     fn nada_em_20_s_e_lenta() {
         // Parada desde o comeco da fonte, com o que ja tinha vindo antes.
         let parada = medindo(1_048_576, &[(20.0, 1_048_576)]);

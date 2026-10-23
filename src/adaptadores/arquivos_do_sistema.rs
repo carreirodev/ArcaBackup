@@ -108,11 +108,14 @@ impl Arquivos for ArquivosDoSistema {
         // conteudo pela memoria deste processo — o que importa quando o
         // arquivo tem meio giga (a copia do pacote de PR-3).
         //
-        // Nao e atomica, e nao precisa ser: os dois usos do `arca prepare`
+        // Nao e atomica, e nao precisa ser. Os dois usos no dispositivo
         // escrevem onde nada havia, num disco que o proprio comando acabou de
-        // particionar. Uma copia interrompida deixa um arquivo pela metade
+        // particionar: uma copia interrompida deixa um arquivo pela metade
         // num dispositivo que ainda nao esta pronto, e rodar o comando de novo
-        // resolve — ele comeca apagando.
+        // resolve — ele comeca apagando. O terceiro, o `--iso` copiado para o
+        // `.parcial` do PC (WPC-220), nunca escreve no nome do pacote
+        // guardado: a copia interrompida e um `.parcial` pela metade, que o
+        // proximo download retoma ou zera, e o nome so vem depois do SHA256.
         fs::copy(origem, destino)
             .map(|_| ())
             .map_err(erro_de_arquivo("copia", destino))

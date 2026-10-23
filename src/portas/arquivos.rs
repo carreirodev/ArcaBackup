@@ -108,9 +108,14 @@ pub trait Arquivos {
     /// colhido: *"ele fica no dispositivo ate o proximo `arca backup` gravar
     /// por cima, que e substituicao e nao exclusao"*.
     ///
-    /// Os dois usos sao do `arca prepare` e os dois escrevem onde nada havia:
-    /// o binario do ARCA no `ARCABOOT` e a copia do pacote no `ARCAVAULT`
-    /// (PR-3), num disco que o proprio comando acabou de particionar.
+    /// Os tres usos sao do `arca prepare`. Dois escrevem onde nada havia: o
+    /// binario do ARCA no `ARCABOOT` e a copia do pacote no `ARCAVAULT`
+    /// (PR-3), num disco que o proprio comando acabou de particionar. O
+    /// terceiro, desde 23/10/2026, copia o `--iso` que passou no SHA256 para o
+    /// `.parcial` da pasta do ARCA no PC, por cima do que um download tenha
+    /// deixado ali (PR-2, [ADR-0029]). O `.parcial` e um dos dois arquivos que
+    /// o ARCA substitui, e o que se perde e um download pela metade de um
+    /// pacote que acabou de chegar inteiro.
     ///
     /// # Por que uma copia, e nao lê e escrever
     ///
@@ -119,6 +124,7 @@ pub trait Arquivos {
     /// todas as formas.
     ///
     /// [ADR-0008]: ../../docs/adr/0008-colher-marca-o-estado-em-vez-de-apaga-lo.md
+    /// [ADR-0029]: ../../docs/adr/0029-a-fonte-lenta-perde-a-vez-e-o-iso-fica-guardado.md
     fn copiar(&self, origem: &Path, destino: &Path) -> Resultado<()>;
 
     /// Renomeia `origem` para `destino`, substituindo o destino se ele existir.

@@ -953,7 +953,11 @@ fn tentar_a_fonte(
     // Quem julga a fonte lenta é código puro, sobre as amostras do
     // adaptador; o adaptador só encerra o `curl` (ADR-0029). A tela e o
     // julgamento saem da mesma `medicao`, e por isso a linha que diz que a
-    // fonte saiu traz os números que a linha viva mostrava.
+    // fonte saiu traz os números que a linha viva mostrava — salvo quando a
+    // linha viva já dizia `parada`. Aí ela mostrava `0 B/s`, e a que diz que a
+    // fonte saiu traz a velocidade da janela de 20 s, que ainda tem o que veio
+    // antes de parar (achado na revisão do PR 1, em 23/10/2026; o teste é
+    // `andamento::testes::a_fonte_que_parou_dentro_da_janela_sai_com_a_velocidade_da_janela`).
     let mut lentidao = None;
     let transferencia =
         contexto
@@ -1002,34 +1006,7 @@ fn tentar_a_fonte(
     ));
 
     if resposta == pacote::Resposta::Entregou {
-        // PR-1 antes do nome: o `.parcial` só vira o pacote guardado depois
-        // de passar.
-        let resumo = match conferir_o_pacote(contexto, &parcial) {
-            Ok(resumo) => resumo,
-
-            // O que não bate é zerado, e a próxima execução baixa do zero.
-            // Deixá-lo prenderia o ARCA nele: uma página de login de Wi-Fi
-            // entregue no lugar do zip é menor que o pacote, e seria retomada
-            // para sempre. Decidido pelo usuário em 04/10/2026 (WPC-134).
-            // "Não consegui medir" não cai aqui, e não zera nada.
-            Err(
-                divergente @ Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente {
-                    ..
-                }),
-            ) => {
-                if let Err(nao_zerou) = zerar_o_parcial(contexto, pasta) {
-                    contexto.registro.aviso(format!(
-                        "o .parcial que nao bate nao foi zerado: {nao_zerou}"
-                    ));
-                }
-                return Err(divergente);
-            }
-            Err(outro) => return Err(outro),
-        };
-        contexto
-            .arquivos
-            .renomear(&parcial, &pacote::guardado_em(pasta))?;
-        return Ok(Tentativa::Entregou(resumo));
+        return promover_o_parcial(contexto, pasta).map(Tentativa::Entregou);
     }
 
     // Uma escrita que falhou não é resposta da fonte: as outras cairiam no
@@ -1057,6 +1034,41 @@ fn nao_deu_para_guardar(pasta: &Path, erro: Erro) -> Erro {
         pasta: pasta.to_path_buf(),
         motivo: erro.motivo(),
     })
+}
+
+/// O `.parcial` que passa vira o pacote guardado; o que não bate é zerado.
+///
+/// PR-1 antes do nome: o pacote guardado só existe sob o nome final depois de
+/// passar no SHA256. Os dois caminhos que o alimentam, o download e, desde a
+/// WPC-220, a cópia do `--iso`, passam por aqui, e a regra mora num lugar só
+/// (achado na revisão do PR 1, em 23/10/2026, quando ela estava escrita duas
+/// vezes).
+fn promover_o_parcial(contexto: &Contexto, pasta: &Path) -> Resultado<crate::resumo::Resumo> {
+    let parcial = pacote::parcial_em(pasta);
+    let resumo = match conferir_o_pacote(contexto, &parcial) {
+        Ok(resumo) => resumo,
+
+        // O que não bate é zerado, e a próxima execução baixa do zero.
+        // Deixá-lo prenderia o ARCA nele: uma página de login de Wi-Fi
+        // entregue no lugar do zip é menor que o pacote, e seria retomada para
+        // sempre. Decidido pelo usuário em 04/10/2026 (WPC-134). A cópia do
+        // `--iso` que não bate cai aqui pelo mesmo motivo: um `.parcial` que a
+        // próxima execução retomasse seria o pacote errado pela metade. "Não
+        // consegui medir" não cai aqui, e não zera nada.
+        Err(divergente @ Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente { .. })) => {
+            if let Err(nao_zerou) = zerar_o_parcial(contexto, pasta) {
+                contexto.registro.aviso(format!(
+                    "o .parcial que nao bate nao foi zerado: {nao_zerou}"
+                ));
+            }
+            return Err(divergente);
+        }
+        Err(outro) => return Err(outro),
+    };
+    contexto
+        .arquivos
+        .renomear(&parcial, &pacote::guardado_em(pasta))?;
+    Ok(resumo)
 }
 
 /// Zera o `.parcial`, escrevendo-o vazio por cima.
@@ -1171,17 +1183,10 @@ fn guardar_o_iso(contexto: &Contexto, iso: &Path, tela: &mut dyn FnMut(&str)) {
         return nao_guardou(contexto, tela, erro.motivo());
     }
 
-    match conferir_o_pacote(contexto, &parcial) {
+    // A cópia que não bate é zerada lá dentro, como o download que não bate.
+    match promover_o_parcial(contexto, pasta) {
         Ok(_) => {}
-        // A cópia que não bate é zerada, como o download que não bate: um
-        // `.parcial` que a próxima execução retomasse seria o pacote errado
-        // pela metade.
         Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente { .. })) => {
-            if let Err(nao_zerou) = zerar_o_parcial(contexto, pasta) {
-                contexto.registro.aviso(format!(
-                    "o .parcial copiado do --iso que nao bate nao foi zerado: {nao_zerou}"
-                ));
-            }
             contexto
                 .registro
                 .aviso("a copia do --iso nao bateu com o SHA256 · este preparo segue do --iso");
@@ -1192,9 +1197,6 @@ fn guardar_o_iso(contexto: &Contexto, iso: &Path, tela: &mut dyn FnMut(&str)) {
             return;
         }
         Err(erro) => return nao_guardou(contexto, tela, motivo_da_medida(&erro)),
-    }
-    if let Err(erro) = contexto.arquivos.renomear(&parcial, &guardado) {
-        return nao_guardou(contexto, tela, erro.motivo());
     }
 
     contexto.registro.info(format!(
@@ -1248,8 +1250,8 @@ fn nao_guardou(contexto: &Contexto, tela: &mut dyn FnMut(&str), motivo: String) 
 /// O motivo de uma medida que não se fez: o que o `certutil` respondeu, sem a
 /// frase da recusa de PR-1 em volta; a recusa do pacote, sem o "o pacote do
 /// Clonezilla foi recusado" que o `erro:` põe na frente; ou o que o Windows
-/// respondeu. Ele vai entre parênteses no meio de uma linha que já diz de que
-/// pacote se trata.
+/// respondeu, que é também o caso da renomeação depois da medida. Ele vai
+/// entre parênteses no meio de uma linha que já diz de que pacote se trata.
 fn motivo_da_medida(erro: &Erro) -> String {
     match erro {
         Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaResumir(porque)) => {

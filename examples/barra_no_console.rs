@@ -4,10 +4,12 @@
 //! A duvida e concreta, e e o Unresolved 4 da WPC-220. A linha `Baixando
 //! Clonezilla` e reescrita no lugar e tem de caber em 120 colunas, e o teste
 //! dela conta caracteres. Isso so vale se cada caractere ocupar uma coluna. O
-//! `·` ja foi medido em `examples/ponto_no_console.rs`; o `█` (U+2588) e o `░`
-//! (U+2591) sao de largura "ambigua" no Unicode, e um console que os desenhasse
-//! com duas colunas faria a linha quebrar — e uma linha que quebra nao se
-//! reescreve, ela se repete.
+//! `·` ja foi medido em `examples/ponto_no_console.rs`. O `█` (U+2588) e de
+//! largura "ambigua" no Unicode, e o `░` (U+2591), neutra: conferido na
+//! `EastAsianWidth.txt` do Unicode 18.0 em 23/10/2026, na revisao do PR 1, que
+//! achou este texto dizendo que os dois eram ambiguos. Um console que
+//! desenhasse algum deles com duas colunas faria a linha quebrar — e uma linha
+//! que quebra nao se reescreve, ela se repete.
 //!
 //! Este exemplo responde medindo, e nao supondo: imprime cada marca pelo
 //! `print!` do Rust, como o ARCA imprime, e lê de volta quanto o cursor andou e
