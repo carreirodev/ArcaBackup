@@ -3646,7 +3646,8 @@ mod testes {
         // acontece de verdade — a cópia tem os bytes do `--iso`, que acabou
         // de passar na mesma listagem —, e o código não a renomeia: um
         // pacote guardado sem o que boota seria pior que nenhum. Não é a
-        // divergência de C23, e por isso a cópia não é zerada.
+        // divergência do critério 23 da WPC-220, e por isso a cópia não é
+        // zerada.
         let mut bancada = com_um_iso_que_passa("copia-incompleta", pacote::SHA256);
         bancada.sistema = SistemaDeMentira::novo()
             .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
@@ -3761,8 +3762,8 @@ mod testes {
         assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
         assert_eq!(bancada.arquivos.conteudo_de(&parcial).as_deref(), Some(""));
         // As escritas no `.parcial` são a cópia e o zero, e mais nenhuma. Que
-        // o zero só acontece no braço da divergência é C18 quem mostra: lá a
-        // cópia chega intacta ao guardado.
+        // o zero só acontece no braço da divergência é o teste do critério 18
+        // da WPC-220 quem mostra: lá a cópia chega intacta ao guardado.
         assert_eq!(bancada.sistema.resumidos(), vec![iso, parcial.clone()]);
         assert_eq!(
             bancada.arquivos.escritos(),

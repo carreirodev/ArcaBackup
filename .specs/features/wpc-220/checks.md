@@ -214,7 +214,7 @@ Proof: `awk '/^\*\*Pacote guardado\*\*:/,/^_Evitar_/' CONTEXT.md | grep -F -- '-
 | a linha viva (4 estados) | medindo C1, C2 · baixando C3, C4 · parada C5 · entregue C6 · os quatro na largura C7 | - |
 | o guardado diante de um `--iso` que passa (5) | ausente C18 · bate C19 · não bate C20 · não se deixa medir C21 · pasta com o nome C22(4) | - |
 | o mesmo no ensaio (5) | ausente C26 · bate C26 · não bate C26 · não se deixa medir C26 · pasta C26 | - |
-| a cópia que não se faz (9) | pasta C22(1) · `.parcial` C22(2) · espaço C22(3) · pasta com o nome C22(4) · a cópia não se mede C22(5) · o espaço não se mede C22(6) · a renomeação recusada C22(7) · a listagem da cópia sem os quatro caminhos C22(8) · a cópia não bate C23 | - |
+| a cópia que não se faz (9) | pasta C22(1) · `.parcial` C22(2) · espaço C22(3) · pasta com o nome C22(4) · a cópia não se mede C22(5) · o espaço não se mede C22(6) · a renomeação recusada C22(7) · a listagem da cópia sem os quatro caminhos C22(8) · a cópia não bate C23 | a listagem da cópia que **falha** (o `bsdtar` que não roda só sobre a cópia): cai no mesmo braço de C22(5) pelo código, e o duplo não a alcança, porque `listagens` só guarda saídas que rodaram. Um `bsdtar` que não roda recusaria o `--iso` antes da cópia |
 | a recusa do `--iso` no pré-voo (5) | `NaoEstaLa` · `EUmaPasta` · `NaoDeuParaOlhar` · `ResumoDivergente` · `PacoteIncompleto`, as cinco em C25 | - |
 
 - Nenhum check afirma código de saída, rota ou forma de resposta HTTP: as respostas das fontes cruzam a fronteira no adaptador (C3, C8, C17) e no duplo (o resto)
