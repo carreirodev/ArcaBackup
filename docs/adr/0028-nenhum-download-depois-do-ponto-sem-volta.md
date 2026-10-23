@@ -82,6 +82,8 @@ A porta `Arquivos` ganha `renomear`, que substitui o destino, e continua sem mé
 
 ### 6. Nenhum download fica mudo
 
+**Revista em 23/10/2026 pelo [ADR-0029](0029-a-fonte-lenta-perde-a-vez-e-o-iso-fica-guardado.md), na parte da fonte lenta.** Uma fonte que, na velocidade dos últimos 20 s, levaria mais de 10 minutos para terminar perde a vez na primeira volta, e, se todas forem lentas, a mais rápida medida volta numa segunda volta e vai até o fim. Uma fonte vai até duas vezes por execução, e a linha `Baixando Clonezilla` passa a mostrar a barra, a velocidade e quanto falta. Nasceu de um download a 64 KB/s, que a regra abaixo nunca largaria. A fonte parada, os 30 s, os 60 s, a ordem das três fontes e o `.parcial` único ficam como estão.
+
 Uma fonte que não conecta em 30 s, ou que fica 60 s sem entregar nada, é abandonada, e a próxima continua do byte em que a anterior parou: o `.parcial` é um só. A linha `Baixando Clonezilla` é reescrita no lugar com quanto já veio, a cada segundo, e cada fonte abandonada ganha uma linha que diz o que ela respondeu. Uma fonte de verdade entrega centenas de quilobytes por segundo; um minuto sem um byte é uma fonte parada, e não uma lenta.
 
 As fontes, em ordem, cada uma tentada uma vez por execução:
@@ -124,7 +126,7 @@ Ele foi reescrito como `sem_iso_o_pacote_guardado_e_conferido_antes_do_menu_e_de
 ## O que fica como estava
 
 - **PR-1**: a versão `3.3.3-15` e o SHA256 compilado. Ao trocar de versão, as três fontes mudam junto com `VERSAO`, `ARQUIVO`, `SHA256` e `TAMANHO_BYTES`, e o resto é o que o [ADR-0018](0018-o-pacote-e-o-zip-e-o-prepare-desarma-o-que-instala.md) descreve.
-- **PR-2**: o `--iso` não lê nem escreve o pacote guardado, e a tela dele é a de antes. Ele também não alimenta o pacote guardado: o próximo preparo sem `--iso` baixa.
+- **PR-2**: até 23/10/2026, o `--iso` não lia nem escrevia o pacote guardado, a tela dele era a de antes, e ele não alimentava o pacote guardado: o próximo preparo sem `--iso` baixava. O [ADR-0029](0029-a-fonte-lenta-perde-a-vez-e-o-iso-fica-guardado.md) reviu isso: o `--iso` que passa no SHA256 é copiado para o pacote guardado deste PC, e o próximo preparo sem `--iso` não baixa.
 - **PR-3**: a cópia no `ARCAVAULT` continua sendo feita depois do passo 5 e da segunda conferência — agora a partir do pacote guardado.
 - O passo 7, PR-4 e as sete defesas de PR-5.
 - Usar automaticamente uma versão mais nova do Clonezilla, ou avisar que ela existe, continua fora: instalaria um Clonezilla que nunca rodou as receitas do ARCA, e revogaria PR-1.

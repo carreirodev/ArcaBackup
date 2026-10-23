@@ -112,7 +112,7 @@ BIOS legada · BitLocker · RAID · Storage Spaces · rede.
 | **Privilégio administrativo** | **Todos** os comandos exigem. O manifesto embutido faz o Windows pedir o UAC sozinho |
 | Ferramentas do próprio Windows | `bcdedit`, `powershell.exe`, `chkdsk`, `certutil`, `shutdown`, e — só no `prepare` — `C:\Windows\System32\curl.exe` e `C:\Windows\System32\tar.exe` (que é o `bsdtar`) |
 | **Um disco externo** | **17,6 GB** no mínimo — 1,6 GB do `ARCABOOT` mais os 16 GB mínimos do `ARCAVAULT`, contados em base 1024. Na prática, grande o bastante para caber as imagens |
-| Conexão de rede | Só no primeiro `arca prepare` sem `--iso` de cada versão do Clonezilla, para baixar 535,5 MB no pré-voo, antes do menu de discos. Os seguintes usam o pacote guardado neste PC, sem rede, enquanto ele estiver lá e bater com o SHA256 |
+| Conexão de rede | Só no primeiro `arca prepare` sem `--iso` de cada versão do Clonezilla, para baixar 535,5 MB no pré-voo, antes do menu de discos — e nem nele, se um `--iso` que passou no SHA256 já guardou o pacote neste PC. Os seguintes usam o pacote guardado, sem rede, enquanto ele estiver lá e bater com o SHA256 |
 
 > **Os caminhos do `curl` e do `tar` são fixos em `C:\Windows\System32\`, e não vêm do `PATH`.** O Git Bash traz homônimos — um `tar` que não entende zip faria o pré-voo do `prepare` recusar um pacote bom, dizendo que faltam nele os quatro caminhos que fazem um dispositivo bootar.
 
@@ -471,7 +471,7 @@ arca prepare [--dispositivo <INDICE>] [--iso <CAMINHO>] [--dry-run]
 | Argumento | Obrigatório | O que é |
 |---|---|---|
 | `--dispositivo <INDICE>` | não | O índice do disco **no Windows** — o número que o `Get-Disk` mostra. Não aceita letra, rótulo nem `sda`. **Omitido, o comando lista os discos e pergunta o número** |
-| `--iso <CAMINHO>` | não | Instala de um arquivo local, sem baixar e sem ler nem escrever o pacote guardado deste PC. Apesar do nome, o arquivo é o **zip** do Clonezilla |
+| `--iso <CAMINHO>` | não | Instala de um arquivo local, sem baixar. O arquivo que passa no SHA256 é copiado para o pacote guardado deste PC, e o próximo preparo sem `--iso` não baixa ([Instalar sem rede](#instalar-sem-rede)). Apesar do nome, o arquivo é o **zip** do Clonezilla |
 
 #### O menu, quando você não passa `--dispositivo`
 
@@ -538,7 +538,7 @@ Com `--dispositivo` na linha, o menu **não aparece** — é o atalho de quem j�
 
 | # | Passo | Parando aqui, o que fica |
 |---|---|---|
-| pré-voo | Obter e conferir o pacote: o do `--iso`, ou o pacote guardado neste PC — reusado ou baixado (PR-7) | nada tocado — um download pela metade fica no `.parcial`, para a próxima vez |
+| pré-voo | Obter e conferir o pacote: o do `--iso`, que é copiado para o pacote guardado (PR-2), ou o pacote guardado neste PC — reusado ou baixado (PR-7) | nada tocado — um download pela metade fica no `.parcial`, para a próxima vez |
 | 0 | Listar os discos e perguntar o número — **só sem `--dispositivo`** | nada tocado |
 | 1 | Descrever o disco e julgar as sete defesas | nada tocado |
 | 1b | **Ler o firmware** — a ordem permanente e a entrada a reusar, com o firmware ainda coerente (PR-6). Sem conseguir ler, o `prepare` recusa aqui | nada tocado |
@@ -563,13 +563,24 @@ O **pré-voo não tem número** porque não é um estado em que se possa parar: 
 |---|---|
 | Versão | **3.3.3-15** — a que está bootando neste projeto, lida do `hostname=cl-3.3.3-15` do `grub.cfg` |
 | Arquivo | `clonezilla-live-3.3.3-15-amd64.zip`, 561.478.648 bytes |
-| Fontes | Tentadas nesta ordem, uma vez cada: `https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip`, `https://free.nchc.org.tw/clonezilla-live/stable/clonezilla-live-3.3.3-15-amd64.zip` e `https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_stable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip` |
+| Fontes | Tentadas nesta ordem numa primeira volta; só as que saíram por lentas voltam, numa segunda, e nenhuma vai mais de duas vezes: `https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip`, `https://free.nchc.org.tw/clonezilla-live/stable/clonezilla-live-3.3.3-15-amd64.zip` e `https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_stable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip` |
 | Guardado em | `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip`, a mesma pasta do `arca.log`. O download em andamento fica ao lado, com `.parcial` no fim do nome |
 | SHA256 | `00cee7700433e63017e2ea9eb40519108829710132364a8028a6c039a6046304` |
 
 O SHA256 é **constante de código, compilada no binário** — nunca baixada junto do arquivo, o que não verificaria nada: quem pudesse trocar um trocaria o outro. Ele tem duas fontes independentes — o `CHECKSUMS.TXT` do mirror do projeto e o `certutil` sobre o arquivo baixado do SourceForge, servidores diferentes e o mesmo número — e a conferência acontece **antes de extrair**.
 
-**O pacote fica guardado neste PC.** O primeiro `arca prepare` de cada versão o baixa no pré-voo, antes do menu de discos; os seguintes o conferem de novo e não usam a rede. Uma fonte que não conecta em 30 s, ou que fica 60 s sem entregar nada, é abandonada, e a próxima continua do byte em que ela parou. Um download interrompido fica no `.parcial`, e a próxima execução o retoma. Nenhuma fonte é confiável, e por isso elas são intercambiáveis: quem diz se o que veio é o pacote é o SHA256 ([ADR-0028](docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md)).
+**O pacote fica guardado neste PC.** O primeiro `arca prepare` de cada versão o baixa no pré-voo, antes do menu de discos; os seguintes o conferem de novo e não usam a rede. Um `--iso` que passa no SHA256 também o guarda, e aí nem o primeiro baixa ([Instalar sem rede](#instalar-sem-rede)). Uma fonte que não conecta em 30 s, ou que fica 60 s sem entregar nada, é abandonada, e a próxima continua do byte em que ela parou. Um download interrompido fica no `.parcial`, e a próxima execução o retoma. Nenhuma fonte é confiável, e por isso elas são intercambiáveis: quem diz se o que veio é o pacote é o SHA256 ([ADR-0028](docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md)).
+
+**Uma fonte lenta perde a vez** (PR-7). Na primeira volta, sai a fonte que, na velocidade dos últimos 20 s, levaria mais de 10 minutos para terminar, com uma linha `Fonte abandonada` que diz, por exemplo, `lenta: faltariam 2 h 23 min a 64,0 KB/s`, e a que nada mandou nos últimos 20 s, com `lenta: nada veio nos ultimos 20 s`. Nenhuma sai antes de 20 s, e a seguinte continua do mesmo `.parcial`. Se as que sobraram saíram todas por lentas, elas voltam numa **segunda volta**, da mais rápida medida para a mais lenta e sem julgamento de lentidão: a primeira vai até o fim, e só a parada, a falta de conexão ou um erro a tiram. Nada é recusado por ser lento, e nenhuma fonte vai mais de duas vezes. A regra nasceu em 23/10/2026, de um download a 63,9 KB/s numa conexão de 800 Mb, com o mirror do projeto entregando a mesma versão a 5,1 MB/s desta mesa ([ADR-0029](docs/adr/0029-a-fonte-lenta-perde-a-vez-e-o-iso-fica-guardado.md)).
+
+Enquanto baixa, cada fonte tentada ganha uma linha `Fonte`, com a versão, a fonte e de onde retoma, e, abaixo dela, a linha `Baixando Clonezilla`, reescrita no lugar a cada segundo:
+
+```text
+  Fonte ........................... 3.3.3-15 · free.nchc.org.tw (oldstable)
+  Baixando Clonezilla ............. [████░░░░░░░░░░░░░░░░]  20% · 110,0 de 535,5 MB · 5,0 MB/s · faltam 2 min
+```
+
+A velocidade e quanto falta são os mesmos números que julgam a fonte lenta, e a tela nunca diz que falta pouco numa fonte que sai. Antes de haver o que medir, a linha diz `medindo`. Com o `.parcial` parado há 5 s ou mais, diz `0 B/s · parada ha <N> s`.
 
 #### Instalar sem rede
 
@@ -578,6 +589,18 @@ arca prepare --dispositivo 1 --iso D:\clonezilla-live-3.3.3-15-amd64.zip
 ```
 
 O SHA256 é conferido do mesmo jeito; só o `curl` é pulado. É o que salva quando a máquina que precisa preparar o dispositivo é justamente a que está sem Windows e sem rede.
+
+**E o arquivo que passa fica guardado neste PC** (PR-2). No pré-voo, ele é copiado para o `.parcial`, conferido de novo e só então renomeado para o pacote guardado, e o próximo `arca prepare` sem `--iso` não baixa. Assim, quem baixou pelo navegador copia o arquivo uma vez por PC, e não a cada preparo. O arquivo do `--iso` fica onde está, e este preparo continua saindo dele: o passo 7, a extração e a cópia de PR-3. A cópia serve ao próximo preparo, e nunca recusa este. A linha `Pacote guardado`, logo abaixo da `Pacote conferido`, diz o que aconteceu com ela ([ADR-0029](docs/adr/0029-a-fonte-lenta-perde-a-vez-e-o-iso-fica-guardado.md)):
+
+| A linha diz | O que houve |
+|---|---|
+| `copiado do --iso para <guardado> · o proximo preparo nao baixa (PR-2)` | Não havia pacote guardado, e agora há |
+| *(nenhuma linha)* | O pacote guardado já batia com o SHA256, e não foi reescrito |
+| `nao batia com o SHA256 deste ARCA · substituido pela copia do --iso` | O guardado não era o pacote. A cópia passou e tomou o lugar dele |
+| `nao deu para medir o que ja esta guardado (<motivo>) · deixado como esta` | O `certutil` ou o Windows não deixaram medir o guardado. Não ter conseguido medir não é o mesmo que não bater, e ele fica como está |
+| `nao deu para guardar em <pasta> (<motivo>) · este preparo segue do --iso` | A pasta ou o `.parcial` não aceitaram escrita, faltou espaço para os 535,5 MB, há uma pasta com o nome do pacote, ou a cópia não se deixou medir. O `arca.log` ganha um `AVISO` com o mesmo motivo |
+| `a copia nao bateu com o SHA256 · este preparo segue do --iso` | A cópia não saiu igual ao arquivo que passou. O `.parcial` é zerado |
+| `o preparo de verdade copia o --iso para este PC; o ensaio nao escreve` | É o `--dry-run`, e nada é escrito |
 
 **O `--iso` nomeia o arquivo, e não a pasta onde ele está** — e um caminho relativo vale a partir da pasta de onde o comando foi digitado. Com o pacote na pasta de downloads, o caminho inteiro entre aspas é a forma que não erra:
 
@@ -599,12 +622,13 @@ Sem `--dispositivo`, o ensaio ainda passa pelo menu — ele pergunta o número, 
 
 #### Exemplo real — a execução de 23/08/2026, com o pré-voo de PR-7 no lugar do download do passo 6
 
-*Captura preservada em `recursos/capturas/arca-prepare-2026-08-23-marco.txt`, abreviada nos comentários mais longos. **As linhas do pacote não são as da captura**: em 23/08/2026 o download acontecia no passo 6, depois do particionamento. As duas primeiras linhas, a do Clonezilla no plano e a do SHA256 conferido no passo 7 são as que o código escreve hoje para um primeiro preparo, baixando da primeira fonte; o caminho é o de um usuário de exemplo. A linha do download é reescrita no lugar enquanto ele corre, e aparece aqui como fica no fim. Nenhum teste compara esta tela inteira.*
+*Captura preservada em `recursos/capturas/arca-prepare-2026-08-23-marco.txt`, abreviada nos comentários mais longos. **As linhas do pacote não são as da captura**: em 23/08/2026 o download acontecia no passo 6, depois do particionamento. As três primeiras linhas, a do Clonezilla no plano e a do SHA256 conferido no passo 7 são as que o código escreve hoje para um primeiro preparo, baixando da primeira fonte; o caminho é o de um usuário de exemplo. A linha da barra é reescrita no lugar enquanto o download corre, e aparece aqui como fica no fim: em 100%, sem `faltam`, com a velocidade dos últimos 20 s. Os 5,1 MB/s são os do download inteiro que o mirror do projeto entregou desta mesa em 23/10/2026. Nenhum teste compara esta tela inteira.*
 
 ```
 > arca prepare --dispositivo 1
 
-  Baixando Clonezilla ............. 3.3.3-15 · 535,5 MB de 535,5 MB · free.nchc.org.tw (oldstable)
+  Fonte ........................... 3.3.3-15 · free.nchc.org.tw (oldstable)
+  Baixando Clonezilla ............. [████████████████████] 100% · 535,5 de 535,5 MB · 5,1 MB/s
   Pacote conferido ................ ok · 00cee7700433 · guardado neste PC em C:\Users\Ana Paula\AppData\Local\ARCA\clonezilla-live-3.3.3-15-amd64.zip · nada tocado ainda (PR-7)
   Disco 1 ......................... JMicron Generic · USB · 447,1 GB
   Tipo de midia ................... External hard disk media · nao e disco fixo (PR-5)
@@ -1774,8 +1798,8 @@ O `estado.json` é um JSON escrito e lido à mão, sem dependência nova:
 |---|---|
 | `%LOCALAPPDATA%\ARCA\arca.log` | O registro local. **Descartável** |
 | `%LOCALAPPDATA%\ARCA\arca.log.anterior` | A geração anterior, rotacionada a 1 MB |
-| `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip` | O **pacote guardado** do `arca prepare`: o zip do Clonezilla, que só existe com este nome depois de passar no SHA256 e é conferido de novo a cada uso (PR-7). Uma restauração o leva embora, e isso custa um download |
-| `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip.parcial` | O download em andamento, que a próxima execução retoma. Fica depois de um download interrompido. O que chegou e não bateu com o SHA256 é zerado na hora, e a próxima execução baixa do zero |
+| `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip` | O **pacote guardado** do `arca prepare`: o zip do Clonezilla, que só existe com este nome depois de passar no SHA256 e é conferido de novo a cada uso (PR-7). Vem do download do pré-voo ou de um `--iso` que passou no SHA256, copiado para cá (PR-2). Uma restauração o leva embora, e isso custa um download, ou um `--iso` |
+| `%LOCALAPPDATA%\ARCA\clonezilla-live-3.3.3-15-amd64.zip.parcial` | O download em andamento, que a próxima execução retoma. Fica depois de um download interrompido. É também por onde passa a cópia do `--iso`, conferida antes de virar o pacote guardado. O que chegou e não bateu com o SHA256 é zerado na hora, e a próxima execução baixa do zero |
 
 O registro anota a linha de comando **bruta** de cada invocação — que é o que denuncia um argumento perdido na elevação. Trecho real do `arca.log` de 22/08/2026, preservado em `recursos/capturas/arca-log-windows-2026-08-23-pos-restauracao.txt` (a palavra `suposto` é daquela versão do código, de antes de o oráculo do §4.5 existir):
 
@@ -1951,12 +1975,12 @@ O que ja veio fica guardado, e a proxima tentativa continua de onde parou. Para 
 e passe o arquivo com --iso. Nada foi apagado (PR-7)
 ```
 
-Nenhuma das fontes entregou o pacote, e cada linha diz o que uma delas respondeu: `nao respondeu em 30 s` é uma fonte que não conectou; `parou de mandar por 60 s` é uma que conectou e parou de entregar; `HTTP <codigo>` é o servidor respondendo com erro — um 404 pode ser o arquivo que mudou de pasta no mirror —; e qualquer outra falha, como estar sem rede, aparece com o texto do próprio `curl`. **Nada foi apagado**: o pacote é obtido no pré-voo, antes do passo 0, e nenhum disco chegou a ser listado.
+Nenhuma das fontes entregou o pacote, e cada linha diz o que uma delas respondeu na última vez em que foi tentada: `nao respondeu em 30 s` é uma fonte que não conectou; `parou de mandar por 60 s` é uma que conectou e parou de entregar; `HTTP <codigo>` é o servidor respondendo com erro — um 404 pode ser o arquivo que mudou de pasta no mirror —; e qualquer outra falha, como estar sem rede, aparece com o texto do próprio `curl`. Uma fonte que saiu por lenta na primeira volta voltou na segunda, e a linha dela diz como a segunda terminou: por isso `lenta:` nunca aparece aqui ([ADR-0029](docs/adr/0029-a-fonte-lenta-perde-a-vez-e-o-iso-fica-guardado.md)). **Nada foi apagado**: o pacote é obtido no pré-voo, antes do passo 0, e nenhum disco chegou a ser listado.
 
 Há dois caminhos:
 
 1. **Rode o mesmo comando de novo.** O que já veio fica no `.parcial`, em `%LOCALAPPDATA%\ARCA\`, e a próxima tentativa continua de onde parou, em vez de começar do zero.
-2. **Baixe pelo navegador** a URL que a mensagem dá — a da primeira fonte — e passe o arquivo com `--iso`. O SHA256 é conferido do mesmo jeito. O `--iso` não lê nem escreve o pacote guardado (PR-2), e por isso o próximo `arca prepare` sem `--iso` volta a baixar.
+2. **Baixe pelo navegador** a URL que a mensagem dá — a da primeira fonte — e passe o arquivo com `--iso`. O SHA256 é conferido do mesmo jeito, e o arquivo que passa fica guardado neste PC: ele é copiado para o pacote guardado, e o próximo `arca prepare` sem `--iso` não baixa (PR-2). A cópia manual acontece uma vez por PC, e não a cada preparo ([Instalar sem rede](#instalar-sem-rede)).
 
 ### `nao deu para guardar o pacote em ...`
 
@@ -1976,7 +2000,7 @@ erro: nao deu para guardar o pacote em C:\Users\Ana Paula\AppData\Local\ARCA (cu
 
 **Nada foi apagado**: a recusa vem do pré-voo, antes do passo 0. Nos dois primeiros casos, ela vem antes de qualquer download. No do `curl`, ele chega a ser chamado na primeira fonte — com bytes para retomar, ele falha antes de conectar, medido em 04/10/2026 —, e as outras fontes não são tentadas, porque cairiam no mesmo arquivo.
 
-Abra a pasta no Explorador — `%LOCALAPPDATA%\ARCA` na barra de endereço —, confira o que há nela e as permissões dela, inclusive se o `.parcial` está marcado como somente leitura, e rode de novo. Para preparar sem depender dessa pasta, passe o pacote com `--iso`, que não a usa.
+Abra a pasta no Explorador — `%LOCALAPPDATA%\ARCA` na barra de endereço —, confira o que há nela e as permissões dela, inclusive se o `.parcial` está marcado como somente leitura, e rode de novo. Para preparar sem depender dessa pasta, passe o pacote com `--iso`. Ele tenta guardar uma cópia nela, mas, se ela continuar recusando, a tela diz `nao deu para guardar em <pasta> (<motivo>) · este preparo segue do --iso`, e o preparo segue do arquivo do `--iso`.
 
 ### `faltam N MB para baixar o pacote, e ... tem M MB livres`
 
@@ -1986,7 +2010,7 @@ erro: faltam 536 MB para baixar o pacote, e C:\Users\Ana Paula\AppData\Local\ARC
 
 O volume onde mora a pasta do pacote guardado — o `C:`, quase sempre — não tem espaço livre para o que falta baixar. A conta é do que **falta**: com parte do pacote já no `.parcial`, o que já veio não entra nela. **Nada foi apagado**: a recusa vem do pré-voo, antes de qualquer download e antes do passo 0.
 
-Libere espaço nesse volume — pelo menos os MB que a mensagem diz que faltam — e rode de novo. Ou baixe o pacote pelo navegador para outro disco e passe-o com `--iso`, que não usa essa pasta.
+Libere espaço nesse volume — pelo menos os MB que a mensagem diz que faltam — e rode de novo. Ou baixe o pacote pelo navegador para outro disco e passe-o com `--iso`. Sem espaço para guardar a cópia dele, a tela diz `nao deu para guardar em <pasta> (precisa de 536 MB livres, e ha <N> MB) · este preparo segue do --iso`, e o preparo segue do arquivo do `--iso`.
 
 ### `o disco N NAO e mais o que estava no plano`
 
@@ -2121,12 +2145,12 @@ Cada uma custou uma execução real para existir. Elas têm identificadores no c
 | ID | Regra |
 |---|---|
 | **PR-1** | Versão do Clonezilla **fixada**, com o SHA256 **compilado no binário** — nunca baixado junto do arquivo. Não batendo, recusar antes de extrair |
-| **PR-2** | `--iso <caminho>` instala de um arquivo local, conferido pelo mesmo SHA256, sem passar pelo `curl` |
+| **PR-2** | `--iso <caminho>` instala de um arquivo local, conferido pelo mesmo SHA256, sem passar pelo `curl`. O arquivo que passa é copiado para o pacote guardado deste PC, e o próximo preparo sem `--iso` não baixa |
 | **PR-3** | Guardar no `ARCAVAULT` uma cópia do pacote usado, **depois** de o SHA256 passar |
 | **PR-4** | Imprimir o **plano inteiro** antes de agir, perguntar, **reler o disco** e só escrever depois da confirmação digitada |
 | **PR-5** | Criar e rotular as duas partições atrás de **sete defesas**, nenhuma opcional. Disco fixo é recusa dura, sem opção de forçar |
 | **PR-6** | **Ler o firmware antes do ponto sem volta**, e fazer do `/set device` a primeira escrita depois dele |
-| **PR-7** | **Nenhum download depois do ponto sem volta.** Sem `--iso`, o pacote é obtido e conferido no pré-voo — do pacote guardado no PC ou baixando-o —, e uma fonte que não conecta em 30 s ou fica 60 s sem entregar nada é abandonada |
+| **PR-7** | **Nenhum download depois do ponto sem volta.** Sem `--iso`, o pacote é obtido e conferido no pré-voo — do pacote guardado no PC ou baixando-o —, e uma fonte que não conecta em 30 s ou fica 60 s sem entregar nada é abandonada. Uma fonte que, na velocidade dos últimos 20 s, levaria mais de 10 minutos para terminar perde a vez; se todas forem lentas, a mais rápida medida volta e vai até o fim. A tela mostra a barra, a porcentagem, quanto veio, a velocidade e quanto falta |
 
 ### Armadilhas conhecidas, e quem as defende
 
@@ -2193,6 +2217,7 @@ src/
     verificacao.rs  # a conferência de V-1
     nome.rs         # B-2
     imagens.rs      # imagem × resíduo × veredito
+    andamento.rs    # a barra do download e o julgamento da fonte lenta (PR-7)
     espaco.rs, formato.rs, ordem.rs, firmware.rs, sondagem.rs,
     pacote.rs, resumo.rs, dispositivo.rs, confirmacao.rs,
     elevacao.rs, registro.rs, erro.rs
@@ -2353,6 +2378,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 | 0026 | **A recusa do `bcdedit` não apaga o que ele listou** — e o `prepare` lê o firmware antes de apagar |
 | 0027 | O `ARCABOOT` **pode levar um nome**, e o `ARCAVAULT` não |
 | 0028 | **Nenhum download depois do ponto sem volta**, e o pacote fica guardado no PC |
+| 0029 | **A fonte lenta perde a vez**, o download mostra quanto falta, e o `--iso` fica guardado no PC |
 
 ---
 
@@ -2362,7 +2388,7 @@ O primeiro existe porque os testes provam o que a **string** contém, e não o q
 |---|---|---|
 | **Dispositivo** | O SSD externo que carrega o Clonezilla e as imagens juntos, com as partições `ARCABOOT` e `ARCAVAULT`. O que separa um disco de um dispositivo é o `arca prepare` — e não haver sido comprado como tal | pendrive, mídia, unidade, drive |
 | **Preparar** | Transformar um disco num dispositivo. É a **única** operação que destrói dados sem reiniciar | formatar, instalar, inicializar |
-| **Pacote guardado** | A cópia conferida do zip do Clonezilla neste PC, em `%LOCALAPPDATA%\ARCA\`, de onde o `arca prepare` sem `--iso` tira o Clonezilla. É conferida pelo SHA256 a cada uso. **Não é a cópia de PR-3**, que mora no `ARCAVAULT` do dispositivo e que o passo 5 do próximo preparo apaga | cache, cópia local, pacote baixado, ISO |
+| **Pacote guardado** | A cópia conferida do zip do Clonezilla neste PC, em `%LOCALAPPDATA%\ARCA\`, de onde o `arca prepare` sem `--iso` tira o Clonezilla. Vem de um download ou de um `--iso` que passou no SHA256. É conferida pelo SHA256 a cada uso. **Não é a cópia de PR-3**, que mora no `ARCAVAULT` do dispositivo e que o passo 5 do próximo preparo apaga | cache, cópia local, pacote baixado, ISO |
 | **`ARCABOOT`** | A partição FAT32 de onde a máquina boota. Guarda o Clonezilla, o `grub.cfg` e o estado do job. **Sempre fora da imagem**. O rótulo é `ARCABOOT`, ou `ARCA-<texto>` quando o dispositivo tem nome (C-16) | partição de boot, EFI |
 | **`ARCAVAULT`** | A partição NTFS onde as imagens e os logs ficam. É o que o Clonezilla monta como `/home/partimag` | repositório, storage, cofre |
 | **Imagem** | Uma pasta no `ARCAVAULT` com o resultado de um `savedisk`. Nomeada por você, **nunca sobrescrita** | backup, snapshot, ponto de restauração |

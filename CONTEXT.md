@@ -17,6 +17,8 @@ _Evitar_: formatar, instalar, inicializar
 **Pacote guardado**:
 A cópia conferida do zip do Clonezilla neste PC, em `%LOCALAPPDATA%\ARCA\`, na mesma pasta do `arca.log`, nomeada pela versão: `clonezilla-live-3.3.3-15-amd64.zip`. É de onde o `arca prepare` sem `--iso` tira o Clonezilla desde PR-7, e só existe com esse nome depois de passar no SHA256 compilado — o download em andamento mora ao lado, num `.parcial`, que se retoma. Guardado não é confiado: o SHA256 é conferido a cada uso, no pré-voo e de novo no passo 7.
 
+**Dois caminhos o alimentam, e dão o mesmo pacote.** Um é o download do pré-voo. O outro, desde 23/10/2026, é o `--iso` que passa no SHA256 compilado, copiado pelo mesmo `.parcial` e conferido antes de ganhar o nome. O arquivo do `--iso` fica onde está, e o preparo daquela vez continua saindo dele. O que faz do arquivo o pacote é o SHA256, e não de onde ele veio. Antes disso, quem baixava pelo navegador e passava o `--iso` copiava o arquivo à mão a cada preparo ([ADR-0029](docs/adr/0029-a-fonte-lenta-perde-a-vez-e-o-iso-fica-guardado.md)).
+
 **Não é a cópia de PR-3.** Aquela mora no dispositivo, no `ARCAVAULT`, para o dispositivo se reconstruir sozinho, e o passo 5 do próximo preparo a apaga junto com o resto. O pacote guardado mora fora do dispositivo justamente por isso: o que o leva embora é uma restauração do `C:`, e ela custa um download, nada mais ([ADR-0028](docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md)).
 _Evitar_: cache, cópia local, pacote baixado, ISO
 
