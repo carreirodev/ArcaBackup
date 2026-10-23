@@ -411,12 +411,12 @@ mod testes {
 
     #[test]
     fn a_linha_viva_cabe_em_120_colunas() {
-        // A largura e contada em caracteres, que e o que o console desenha
-        // quando cada um ocupa uma coluna. Para o `·` isso foi medido, em
-        // `examples/ponto_no_console.rs`. Para o `█` e o `░` nao: os dois
-        // existem na CP850 como caracteres de uma casa, mas se o console
-        // desta mesa os desenha e o Unresolved 4 da WPC-220, e ate la a conta
-        // e esta.
+        // A largura e contada em caracteres, e a linha so tem caracteres que
+        // o console desenha com uma coluna cada — o que a ultima assercao
+        // cobra. O `·` foi medido em `examples/ponto_no_console.rs`; o `█` e
+        // o `░`, em `examples/barra_no_console.rs`, em 23/10/2026, nesta
+        // mesa, com a CP 850: cada um avancou o cursor uma coluna, e uma
+        // linha viva de 109 caracteres ocupou 109 colunas.
         let mut recebidos: Vec<u64> = (0..=1_000)
             .map(|milesimo| TAMANHO_BYTES * milesimo / 1_000)
             .collect();
@@ -440,8 +440,15 @@ mod testes {
         velocidades.push((1u64 << 30) as f64);
 
         let mut maior = (0, String::new());
+        let mut fora_do_medido: Vec<char> = Vec::new();
         let mut medir = |valor: String| {
-            let largura = com_o_rotulo(&valor).chars().count();
+            let linha = com_o_rotulo(&valor);
+            fora_do_medido.extend(
+                linha
+                    .chars()
+                    .filter(|c| !(c.is_ascii_graphic() || " ·█░".contains(*c))),
+            );
+            let largura = linha.chars().count();
             if largura > maior.0 {
                 maior = (largura, valor);
             }
@@ -472,6 +479,34 @@ mod testes {
             "{} colunas: {}",
             maior.0,
             com_o_rotulo(&maior.1)
+        );
+        assert_eq!(
+            fora_do_medido,
+            Vec::<char>::new(),
+            "caracteres que ninguem mediu no console"
+        );
+    }
+
+    #[test]
+    fn o_limite_de_600_s_e_estrito() {
+        // A borda dos critérios 8 e 10: a 64 KB/s, com 39.321.600 bytes
+        // faltando, faltam exatamente 600 s, e a fonte continua; um byte a
+        // mais e ela sai. `>=` no lugar de `>` passaria pelos outros testes,
+        // que ficam em 567 s e em 8.547 s.
+        let no_limite = medindo(520_846_328, &[(20.0, 522_157_048)]);
+        assert_eq!(no_limite.lentidao(), None);
+
+        let um_byte_alem = medindo(520_846_327, &[(20.0, 522_157_047)]);
+        assert!(
+            matches!(
+                um_byte_alem.lentidao(),
+                Some(Lentidao::Faltariam {
+                    velocidade: 65_536,
+                    ..
+                })
+            ),
+            "{:?}",
+            um_byte_alem.lentidao()
         );
     }
 

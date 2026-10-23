@@ -3444,15 +3444,8 @@ mod testes {
         bancada.sistema = SistemaDeMentira::novo()
             .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
             .com_resposta_do_certutil(&guardado.to_string_lossy(), -2147024864, recusa);
-        let motivo = crate::resumo::do_certutil(
-            &crate::portas::SaidaDeFerramenta {
-                codigo: -2147024864,
-                texto: recusa.to_string(),
-            },
-            crate::resumo::Algoritmo::Sha256,
-        )
-        .unwrap_err()
-        .to_string();
+        let motivo = "o `certutil` saiu com codigo -2147024864 e nao resumiu o arquivo: \
+                      CertUtil: -hashfile comando FALHOU: 0x80070020 (WIN32: 32 ERROR_SHARING_VIOLATION)";
 
         let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
 
@@ -3602,18 +3595,118 @@ mod testes {
             SistemaDeMentira::novo().com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256);
         let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
         assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
-        let motivo = crate::resumo::do_certutil(
-            &bancada.sistema.resumo_padrao,
-            crate::resumo::Algoritmo::Sha256,
-        )
-        .unwrap_err()
-        .to_string();
-        cobrar(&bancada, &tela, &motivo);
+        cobrar(&bancada, &tela, CERTUTIL_SEM_O_ARQUIVO);
         assert_eq!(
             bancada.arquivos.conteudo_de(bancada.parcial()).as_deref(),
             Some("o zip, de mentira"),
             "a copia que nao se mediu foi zerada"
         );
+
+        // (6) e (7): o espaço que não se deixa medir, e a renomeação
+        // recusada depois de a cópia passar. Nenhum dos outros duplos chega
+        // a esses dois braços, e o guardado continua não existindo.
+        for falha in [Falha::Espaco, Falha::Renomear] {
+            let bancada = com_um_iso_que_passa("copia-falha-tarde", pacote::SHA256);
+            let mut dentro = ArquivosEmMemoria::novo().com(&iso, "o zip, de mentira");
+            dentro.espaco_livre = MUITO_ESPACO;
+            let arquivos = ArquivosQueFalhamEm { dentro, falha };
+            let contexto = Contexto {
+                arquivos: &arquivos,
+                ..bancada.contexto(false)
+            };
+            let mut tela = String::new();
+
+            let pacote =
+                obter_o_pacote_no_pre_voo(&contexto, Some(&iso), &mut |texto| tela.push_str(texto));
+
+            assert_eq!(
+                pacote.unwrap(),
+                PacoteDoPreVoo::DoIso(iso.clone()),
+                "{falha:?}"
+            );
+            cobrar(&bancada, &tela, "Acesso negado. (os error 5)");
+            assert_eq!(
+                arquivos.dentro.conteudo_de(bancada.guardado()),
+                None,
+                "{falha:?}: o guardado existe"
+            );
+        }
+    }
+
+    /// O que o `certutil` responde, pelo `resumo_padrao` do duplo, sobre um
+    /// arquivo que ele não acha — o texto medido em 23/08/2026 —, como a
+    /// recusa de PR-1 o cita.
+    const CERTUTIL_SEM_O_ARQUIVO: &str = "o `certutil` saiu com codigo -2147024894 e nao resumiu o arquivo: \
+         CertUtil: -hashfile comando FALHOU: 0x80070002 (WIN32: 2 ERROR_FILE_NOT_FOUND) · \
+         CertUtil: O sistema nao pode encontrar o arquivo especificado.";
+
+    /// A operação que falha em [`ArquivosQueFalhamEm`].
+    #[derive(Debug, Clone, Copy)]
+    enum Falha {
+        Espaco,
+        Renomear,
+    }
+
+    /// Um sistema de arquivos em memória em que uma operação só falha, com o
+    /// `Acesso negado` do Windows. Existe para os dois braços da cópia do
+    /// `--iso` (WPC-220) que vêm depois de a pasta aceitar escrita: o
+    /// `ArquivosQueRecusam` recusa por caminho, e a pasta e o `.parcial`
+    /// recusados param a cópia antes deles.
+    struct ArquivosQueFalhamEm {
+        dentro: ArquivosEmMemoria,
+        falha: Falha,
+    }
+
+    impl ArquivosQueFalhamEm {
+        fn recusa(&self, operacao: &'static str, caminho: &Path) -> Erro {
+            Erro::Arquivo {
+                operacao,
+                caminho: caminho.to_path_buf(),
+                origem: std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "Acesso negado. (os error 5)",
+                ),
+            }
+        }
+    }
+
+    impl crate::portas::Arquivos for ArquivosQueFalhamEm {
+        fn existe(&self, caminho: &Path) -> bool {
+            self.dentro.existe(caminho)
+        }
+        fn o_que_ha(&self, caminho: &Path) -> Resultado<OQueHa> {
+            self.dentro.o_que_ha(caminho)
+        }
+        fn ler_texto(&self, caminho: &Path) -> Resultado<String> {
+            self.dentro.ler_texto(caminho)
+        }
+        fn ler_texto_alheio(&self, caminho: &Path) -> Resultado<String> {
+            self.dentro.ler_texto_alheio(caminho)
+        }
+        fn escrever_atomico(&self, caminho: &Path, conteudo: &str) -> Resultado<()> {
+            self.dentro.escrever_atomico(caminho, conteudo)
+        }
+        fn criar_diretorio(&self, caminho: &Path) -> Resultado<()> {
+            self.dentro.criar_diretorio(caminho)
+        }
+        fn listar(&self, caminho: &Path) -> Resultado<Vec<crate::portas::Entrada>> {
+            self.dentro.listar(caminho)
+        }
+        fn copiar(&self, origem: &Path, destino: &Path) -> Resultado<()> {
+            self.dentro.copiar(origem, destino)
+        }
+        fn renomear(&self, origem: &Path, destino: &Path) -> Resultado<()> {
+            match self.falha {
+                Falha::Renomear => Err(self.recusa("renomeacao", destino)),
+                Falha::Espaco => self.dentro.renomear(origem, destino),
+            }
+        }
+        fn espaco_livre(&self, caminho: &Path) -> Resultado<u64> {
+            match self.falha {
+                Falha::Espaco => Err(self.recusa("espaco livre", caminho)),
+                Falha::Renomear => self.dentro.espaco_livre(caminho),
+            }
+        }
     }
 
     #[test]
@@ -3820,11 +3913,12 @@ mod testes {
             .com(&guardado, O_PACOTE_GUARDADO);
         bancada.arquivos.espaco_livre = MUITO_ESPACO;
         let (_, tela) = bancada.pre_voo(true, Some(&iso));
-        assert!(
-            tela.contains(
-                "  Pacote guardado ................. nao deu para medir o que ja esta guardado ("
-            ),
-            "{tela}"
+        assert_eq!(
+            tela,
+            format!(
+                "{}  Pacote guardado ................. nao deu para medir o que ja esta guardado ({CERTUTIL_SEM_O_ARQUIVO}) · deixado como esta\n",
+                linha_do_iso()
+            )
         );
         assert_eq!(bancada.arquivos.escritos(), Vec::<PathBuf>::new());
 
@@ -4357,10 +4451,9 @@ mod testes {
         // A tela mostra o mesmo número que decide (Key decision 3).
         assert!(tela.contains(" · 64,0 KB/s · faltam 2 h 23 min"), "{tela}");
         assert!(
-            tela.contains(&format!(
-                "  Fonte ........................... 3.3.3-15 · free.nchc.org.tw (stable) · retomando de {}\n",
-                tamanho(VINTE_SEGUNDOS_A_64_KB)
-            )),
+            tela.contains(
+                "  Fonte ........................... 3.3.3-15 · free.nchc.org.tw (stable) · retomando de 1,2 MB\n"
+            ),
             "{tela}"
         );
         assert_eq!(
@@ -4489,10 +4582,9 @@ mod testes {
             "a segunda volta pediu para encerrar"
         );
         assert!(
-            tela.contains(&format!(
-                "  Fonte ........................... 3.3.3-15 · downloads.sourceforge.net · segunda volta · retomando de {}\n",
-                tamanho(DEPOIS_DAS_TRES_LENTAS)
-            )),
+            tela.contains(
+                "  Fonte ........................... 3.3.3-15 · downloads.sourceforge.net · segunda volta · retomando de 3,8 MB\n"
+            ),
             "{tela}"
         );
     }
@@ -4570,10 +4662,7 @@ mod testes {
         );
         let segunda_volta = &tela[tela.find("segunda volta").expect("nao houve segunda volta")..];
         let linhas = [
-            format!(
-                "  Fonte abandonada ................ downloads.sourceforge.net · parou de mandar por 60 s, com {} de 535,5 MB\n",
-                tamanho(DEPOIS_DAS_TRES_LENTAS)
-            ),
+            "  Fonte abandonada ................ downloads.sourceforge.net · parou de mandar por 60 s, com 3,8 MB de 535,5 MB\n".to_string(),
             "  Fonte abandonada ................ free.nchc.org.tw (oldstable) · nao respondeu em 30 s\n".to_string(),
             "  Fonte abandonada ................ free.nchc.org.tw (stable) · HTTP 404\n".to_string(),
         ];
@@ -4645,20 +4734,24 @@ mod testes {
 
         let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
 
+        assert!(
+            matches!(
+                erro,
+                Erro::PacoteRecusado(pacote::RecusaDoPacote::NenhumaFonteEntregou { .. })
+            ),
+            "{erro}"
+        );
         // Uma linha por fonte, na ordem de `FONTES`, com a resposta da
         // segunda volta — e não uma por tentativa, que seriam seis.
         assert_eq!(
             erro.to_string(),
-            format!(
-                "nao deu para baixar o Clonezilla 3.3.3-15 de nenhuma das 3 fontes:\n  \
-                 free.nchc.org.tw (oldstable) — nao respondeu em 30 s\n  \
-                 free.nchc.org.tw (stable) — HTTP 404\n  \
-                 downloads.sourceforge.net — parou de mandar por 60 s, com {} de 535,5 MB\n\
-                 O que ja veio fica guardado, e a proxima tentativa continua de onde parou. Para nao depender do download do ARCA, baixe pelo navegador\n  \
-                 https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip\n\
-                 e passe o arquivo com --iso. Nada foi apagado (PR-7)",
-                tamanho(DEPOIS_DAS_TRES_LENTAS)
-            )
+            "nao deu para baixar o Clonezilla 3.3.3-15 de nenhuma das 3 fontes:\n  \
+             free.nchc.org.tw (oldstable) — nao respondeu em 30 s\n  \
+             free.nchc.org.tw (stable) — HTTP 404\n  \
+             downloads.sourceforge.net — parou de mandar por 60 s, com 3,8 MB de 535,5 MB\n\
+             O que ja veio fica guardado, e a proxima tentativa continua de onde parou. Para nao depender do download do ARCA, baixe pelo navegador\n  \
+             https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip\n\
+             e passe o arquivo com --iso. Nada foi apagado (PR-7)"
         );
         assert_eq!(bancada.particionador.enumeracoes.get(), 0);
     }

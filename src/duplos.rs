@@ -914,6 +914,11 @@ pub struct SistemaDeMentira {
     /// O que o `bsdtar -t` lista. O padrao e o pacote de verdade, abreviado —
     /// ver [`SistemaDeMentira::listando`].
     pub listagem: Resultado<SaidaDeFerramenta>,
+
+    /// Os pacotes listados, na ordem. Existe desde a WPC-220: a copia do
+    /// `--iso` no `.parcial` e conferida pelos quatro caminhos, e sem isto
+    /// nenhum teste distinguiria a listagem do `--iso` da listagem da copia.
+    pub listados: RefCell<Vec<PathBuf>>,
 }
 
 impl Default for SistemaDeMentira {
@@ -952,6 +957,7 @@ impl Default for SistemaDeMentira {
                 codigo: 0,
                 texto: LISTAGEM_DO_PACOTE.to_string(),
             }),
+            listados: RefCell::new(Vec::new()),
         }
     }
 }
@@ -1258,7 +1264,8 @@ impl Sistema for SistemaDeMentira {
         }
     }
 
-    fn listar_pacote(&self, _pacote: &Path) -> Resultado<SaidaDeFerramenta> {
+    fn listar_pacote(&self, pacote: &Path) -> Resultado<SaidaDeFerramenta> {
+        self.listados.borrow_mut().push(pacote.to_path_buf());
         match &self.listagem {
             Ok(saida) => Ok(saida.clone()),
             Err(erro) => Err(clonar_a_recusa(erro)),

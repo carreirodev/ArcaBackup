@@ -14,6 +14,7 @@ Sources:
 - `docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md` - a decisão 6 e a linha de PR-2 de "O que fica como estava", que esta feature revê (C29), e as medições do `curl` de 04/10/2026, que continuam valendo
 - `PRD/PRD-ARCA-v5_1.md` §9.6 - PR-1 fica; PR-2 e PR-7 ganham o texto do Decided (C30)
 - Medições de 23/10/2026 e a conversa do mesmo dia, transcritas em Sources do issue - entram no ADR-0029 (C28)
+- **Medição de 23/10/2026, nesta mesa, na rodada 1 da verificação** (`examples/barra_no_console.rs`, num console de verdade aberto por `Start-Process`, CP 850): `[█░]` avançou o cursor 4 colunas, e uma linha viva de 109 caracteres ocupou 109 colunas, com o desenhado igual ao escrito - é a evidência de que C7 mede colunas ao contar caracteres
 
 ## Out of scope
 
@@ -23,7 +24,7 @@ Sources:
 - Lembrar, entre execuções, qual fonte foi a mais rápida - o `.parcial` já retoma
 - A barra do `curl` - continua calada (ADR-0028)
 - Mover o arquivo do `--iso`, ou usar a cópia guardada nos passos 6 e 7 - o arquivo é de quem chamou, e o passo 7 já o confere
-- Os cinco Unresolved do issue - cada critério segue o "Until answered" dele: a recusa sem a frase nova (1), a linha `Fonte` (2), `parada ha` a partir de 5 s (3), `█` e `░` (4), `lenta: nada veio nos ultimos 20 s` (5). Medir se o console desenha `█` e `░` (4) não foi feito aqui
+- Os cinco Unresolved do issue - cada critério segue o "Until answered" dele: a recusa sem a frase nova (1), a linha `Fonte` (2), `parada ha` a partir de 5 s (3), `█` e `░` (4), `lenta: nada veio nos ultimos 20 s` (5). O 4 foi **medido** na rodada 1 da verificação (ver Sources): o console desta mesa desenha `█` e `░` com uma coluna cada, que é o que o "Until answered" dele já usa. Fechar o Unresolved continua sendo do usuário
 
 ## Landing
 
@@ -85,8 +86,9 @@ Proof: `cargo test --lib andamento::testes::a_fonte_que_nao_cresce_ha_5_s_diz_ha
 Proof: `cargo test --lib comandos::prepare::testes::a_fonte_que_entrega_deixa_a_linha_em_100_por_cento -- --exact`
 Proof: `cargo test --lib andamento::testes::a_barra_e_a_porcentagem_arredondam_para_baixo -- --exact`
 
-**C7** (critério 7) - Para todo `recebido` de uma varredura de 0 a 561.478.648 (as bordas de cada escala de `tamanho` e um passo de 1/1000 do pacote) e toda velocidade de uma varredura de 1 B/s a 1 GB/s (as bordas de cada escala, 1023 e 1024 de cada uma), nos quatro estados da linha (medindo, baixando, parada até 3600 s, entregue), a linha com o prefixo tem no máximo 120 caracteres — e os quatro glifos dela (`█`, `░`, `·`, letras ASCII) ocupam uma coluna cada
+**C7** (critério 7; **redação corrigida na rodada 1 da verificação**, sem mudar a régua: antes afirmava a largura dos glifos sem prova) - Para todo `recebido` de uma varredura de 0 a 561.478.648 (as bordas de cada escala de `tamanho` e um passo de 1/1000 do pacote) e toda velocidade de uma varredura de 1 B/s a 1 GB/s (as bordas de cada escala, 1023 e 1024 de cada uma), nos quatro estados da linha (medindo, baixando, parada até 3600 s, entregue), a linha com o prefixo tem no máximo 120 caracteres, e todo caractere dela é ASCII visível, espaço, `·`, `█` ou `░`; e cada um desses ocupa uma coluna no console desta mesa, medido em 23/10/2026 com a CP 850 (ver Sources)
 Proof: `cargo test --lib andamento::testes::a_linha_viva_cabe_em_120_colunas -- --exact`
+Proof: `cargo build --example barra_no_console`, e então, num console de verdade (PowerShell): `Start-Process target\debug\examples\barra_no_console.exe -ArgumentList '"<relatorio>"' -Wait`, com o relatório dizendo, para cada marca, `o cursor andou` tantas colunas quantos caracteres e `desenhado igual = true`. Não roda no `cargo test`: precisa de uma janela de console que ninguém redirecionou
 
 ### S2 - Fontes do pacote · 4 files · 344 KB · ~86k (11k novos sobre S1)
 
@@ -94,6 +96,7 @@ Proof: `cargo test --lib andamento::testes::a_linha_viva_cabe_em_120_colunas -- 
 Proof: `cargo test --lib andamento::testes::a_fonte_lenta_e_julgada_pelo_que_falta -- --exact`
 Proof: `cargo test --lib comandos::prepare::testes::uma_fonte_lenta_perde_a_vez_e_a_seguinte_continua_do_mesmo_parcial -- --exact`
 Proof: `cargo test --lib adaptadores::windows::sistema::testes::pedir_para_encerrar_encerra_o_curl_e_o_parcial_fica_com_o_que_veio -- --exact`
+Proof: `cargo test --lib andamento::testes::o_limite_de_600_s_e_estrito -- --exact` (acrescentada na rodada 1 da verificação: com 39.321.600 bytes faltando a 64 KB/s, faltam exatamente 600 s e a fonte continua; um byte a mais e ela sai)
 
 **C9** (critério 9) - WHEN a fonte da primeira volta corre há 19,999 s sem nada recebido, e WHEN corre há 19 s com 1 byte THEN o julgamento é continuar; e WHEN o pré-voo recebe (5 s, 1 B), (10 s, 2 B) e (19 s, 3 B) e a fonte entrega THEN nenhum `Break` é devolvido, a tela não traz `Fonte abandonada`, e `baixados == [oldstable]`
 Proof: `cargo test --lib andamento::testes::antes_de_20_s_nenhuma_fonte_e_lenta -- --exact`
@@ -102,6 +105,7 @@ Proof: `cargo test --lib comandos::prepare::testes::uma_fonte_com_menos_de_20_s_
 **C10** (critério 10) - WHEN a medida começa com 522.977.280 bytes e tem 524.288.000 aos 20 s (1.310.720 nos últimos 20 s; faltam 567 s) THEN o julgamento é continuar e a linha viva traz `64,0 KB/s · faltam 10 min`; e WHEN o pré-voo recebe essas amostras na primeira fonte e ela entrega THEN não há `Fonte abandonada` e `baixados == [oldstable]`
 Proof: `cargo test --lib andamento::testes::perto_do_fim_a_fonte_lenta_termina -- --exact`
 Proof: `cargo test --lib comandos::prepare::testes::uma_fonte_lenta_perto_do_fim_vai_ate_o_fim -- --exact`
+Proof: `cargo test --lib andamento::testes::o_limite_de_600_s_e_estrito -- --exact`
 
 **C11** (critério 11) - WHEN a medida começa com 1.048.576 bytes e continua com eles aos 20 s, e WHEN cresce até 1.048.576 aos 5 s e fica nisso até os 25 s THEN, na primeira volta, a fonte sai por lenta, com o texto `lenta: nada veio nos ultimos 20 s`; e o pré-voo escreve `\n  Fonte abandonada ................ free.nchc.org.tw (oldstable) · lenta: nada veio nos ultimos 20 s\n`
 Proof: `cargo test --lib andamento::testes::nada_em_20_s_e_lenta -- --exact`
@@ -134,7 +138,7 @@ Proof: `cargo test --lib comandos::prepare::testes::nenhuma_fonte_e_tentada_mais
 
 ### S3 - `--iso` · 6 files · 289 KB · ~72k (4k novos sobre S2)
 
-**C18** (critério 18) - WHEN o `--iso` passa e não há pacote guardado THEN o pré-voo devolve `DoIso(<iso>)`, `enumeracoes == 0`, as escritas são exatamente `[pasta, .parcial, .parcial, guardado]` (criar a pasta, copiar, renomear), a cópia sai do `--iso` para o `.parcial`, `resumidos == [<iso>, .parcial]`, o guardado tem o conteúdo do `--iso`, o `.parcial` não existe mais, o `--iso` não foi escrito e tem o conteúdo de antes, e a tela é exatamente `  Pacote conferido ................ ok · 00cee7700433 · <iso> · nada tocado ainda (PR-2)\n  Pacote guardado ................. copiado do --iso para <guardado> · o proximo preparo nao baixa (PR-2)\n`
+**C18** (critério 18) - WHEN o `--iso` passa e não há pacote guardado THEN o pré-voo devolve `DoIso(<iso>)`, `enumeracoes == 0`, as escritas são exatamente `[pasta, .parcial, .parcial, guardado]` (criar a pasta, copiar, renomear), a cópia sai do `--iso` para o `.parcial`, `resumidos == [<iso>, .parcial]` e `listados == [<iso>, .parcial]` — a cópia é conferida pelo SHA256 **e pelos quatro caminhos**, como o critério 18 diz (a listagem entrou na rodada 1 da verificação; o checklist só transcrevia o SHA256) —, o guardado tem o conteúdo do `--iso`, o `.parcial` não existe mais, o `--iso` não foi escrito e tem o conteúdo de antes, e a tela é exatamente `  Pacote conferido ................ ok · 00cee7700433 · <iso> · nada tocado ainda (PR-2)\n  Pacote guardado ................. copiado do --iso para <guardado> · o proximo preparo nao baixa (PR-2)\n`
 Proof: `cargo test --lib comandos::prepare::testes::um_iso_que_passa_vira_o_pacote_guardado -- --exact`
 
 **C19** (critério 19) - WHEN o `--iso` passa e o guardado bate THEN, depois do comando inteiro, nenhum caminho dentro da pasta do pacote guardado foi escrito, `baixados` está vazio, o disco foi particionado, a tela do pré-voo é exatamente a linha `Pacote conferido` de C18, e a linha do Clonezilla no plano é exatamente `  Clonezilla 3.3.3-15 · do arquivo local <iso> (PR-2)\n`
@@ -146,11 +150,12 @@ Proof: `cargo test --lib comandos::prepare::testes::um_iso_que_passa_substitui_o
 **C21** (critério 21) - WHEN o `--iso` passa e o `certutil` não resume o guardado, e WHEN o Windows não deixa olhar o guardado THEN nada é escrito na pasta, nada é copiado, e a segunda linha da tela é exatamente `  Pacote guardado ................. nao deu para medir o que ja esta guardado (<motivo>) · deixado como esta\n`, com o motivo do `certutil` no primeiro caso e o do Windows no segundo
 Proof: `cargo test --lib comandos::prepare::testes::um_guardado_que_nao_se_deixa_medir_nao_e_tocado_pelo_iso -- --exact`
 
-**C22** (critério 22) - WHEN o `--iso` passa e (1) a pasta não se deixa criar, (2) o `.parcial` não aceita a cópia, (3) o volume tem 561.478.647 bytes livres, (4) há uma pasta com o nome do pacote, ou (5) o `certutil` não resume a cópia (borda 5) THEN o pré-voo devolve `DoIso(<iso>)`, a segunda linha da tela é exatamente `  Pacote guardado ................. nao deu para guardar em <pasta> (<motivo>) · este preparo segue do --iso\n`, o `arca.log` ganha um `AVISO` com o mesmo motivo, e o guardado não existe; os motivos são `Acesso negado. (os error 5)` em (1) e (2), `precisa de 536 MB livres, e ha 535 MB` em (3) e `` `clonezilla-live-3.3.3-15-amd64.zip` e uma pasta `` em (4); em (3) e (4) nada é copiado; e WHEN o volume tem exatamente 561.478.648 bytes livres THEN a cópia acontece
+**C22** (critério 22) - WHEN o `--iso` passa e (1) a pasta não se deixa criar, (2) o `.parcial` não aceita a cópia, (3) o volume tem 561.478.647 bytes livres, (4) há uma pasta com o nome do pacote, (5) o `certutil` não resume a cópia (borda 5), (6) o espaço livre não se deixa medir, ou (7) a renomeação do `.parcial` é recusada (os dois últimos entraram na rodada 1 da verificação) THEN o pré-voo devolve `DoIso(<iso>)`, a segunda linha da tela é exatamente `  Pacote guardado ................. nao deu para guardar em <pasta> (<motivo>) · este preparo segue do --iso\n`, o `arca.log` ganha um `AVISO` com o mesmo motivo, e o guardado não existe; os motivos são `Acesso negado. (os error 5)` em (1), (2), (6) e (7), `precisa de 536 MB livres, e ha 535 MB` em (3) e `` `clonezilla-live-3.3.3-15-amd64.zip` e uma pasta `` em (4); em (3) e (4) nada é copiado; e WHEN o volume tem exatamente 561.478.648 bytes livres THEN a cópia acontece
 Proof: `cargo test --lib comandos::prepare::testes::uma_copia_do_iso_que_nao_se_faz_vira_aviso_e_o_preparo_segue -- --exact`
 
-**C23** (critério 23) - WHEN o `--iso` passa e a cópia no `.parcial` não bate THEN o `.parcial` termina vazio, e a escrita que o zera vem depois da conferência dele; o guardado não existe; o pré-voo devolve `DoIso(<iso>)`; e a segunda linha da tela é exatamente `  Pacote guardado ................. a copia nao bateu com o SHA256 · este preparo segue do --iso\n`
+**C23** (critério 23; **redação corrigida na rodada 1 da verificação**, sem mudar a régua do critério: "a escrita que o zera vem depois da conferência dele" afirmava uma ordem entre dois registros que os duplos guardam separados) - WHEN o `--iso` passa e a cópia no `.parcial` não bate THEN o `.parcial` termina vazio — as escritas nele são a cópia e o zero, e mais nenhuma —; o zero só acontece nesse braço: quando a cópia bate (C18), o guardado chega com o conteúdo do `--iso`, e um zero antes da conferência o deixaria vazio; o guardado não existe; o pré-voo devolve `DoIso(<iso>)`; e a segunda linha da tela é exatamente `  Pacote guardado ................. a copia nao bateu com o SHA256 · este preparo segue do --iso\n`
 Proof: `cargo test --lib comandos::prepare::testes::uma_copia_do_iso_que_nao_bate_e_zerada_e_o_preparo_segue -- --exact`
+Proof: `cargo test --lib comandos::prepare::testes::um_iso_que_passa_vira_o_pacote_guardado -- --exact`
 
 **C24** (critério 24) - WHEN `executar` roda com um `--iso` que passa, sem pacote guardado, até depois do passo 8 THEN `resumidos == [<iso>, .parcial, <iso>]` (o pré-voo, a cópia e o passo 7), a extração sai do `--iso`, a cópia de PR-3 no `ARCAVAULT` sai do `--iso`, e `baixados` está vazio; e o teste de `c0b4824` do `--iso` bom continua cobrando as duas conferências do `--iso`, com a da cópia no meio
 Proof: `cargo test --lib comandos::prepare::testes::com_iso_o_passo_7_a_extracao_e_a_copia_saem_do_iso -- --exact`
@@ -209,7 +214,7 @@ Proof: `awk '/^\*\*Pacote guardado\*\*:/,/^_Evitar_/' CONTEXT.md | grep -F -- '-
 | a linha viva (4 estados) | medindo C1, C2 · baixando C3, C4 · parada C5 · entregue C6 · os quatro na largura C7 | - |
 | o guardado diante de um `--iso` que passa (5) | ausente C18 · bate C19 · não bate C20 · não se deixa medir C21 · pasta com o nome C22(4) | - |
 | o mesmo no ensaio (5) | ausente C26 · bate C26 · não bate C26 · não se deixa medir C26 · pasta C26 | - |
-| a cópia que não se faz (6) | pasta C22(1) · `.parcial` C22(2) · espaço C22(3) · pasta com o nome C22(4) · a cópia não se mede C22(5) · a cópia não bate C23 | a renomeação recusada: cai no mesmo braço de C22 pelo código, sem teste próprio |
+| a cópia que não se faz (8) | pasta C22(1) · `.parcial` C22(2) · espaço C22(3) · pasta com o nome C22(4) · a cópia não se mede C22(5) · o espaço não se mede C22(6) · a renomeação recusada C22(7) · a cópia não bate C23 | a listagem da cópia que falha ou não tem os quatro caminhos: o `SistemaDeMentira` lista o mesmo texto para todo pacote, e a cópia tem os bytes do `--iso`, que acabou de passar na mesma listagem |
 | a recusa do `--iso` no pré-voo (5) | `NaoEstaLa` · `EUmaPasta` · `NaoDeuParaOlhar` · `ResumoDivergente` · `PacoteIncompleto`, as cinco em C25 | - |
 
 - Nenhum check afirma código de saída, rota ou forma de resposta HTTP: as respostas das fontes cruzam a fronteira no adaptador (C3, C8, C17) e no duplo (o resto)
@@ -230,3 +235,11 @@ S1-S3 = ~93k, todos em `src/` (o pré-voo, a porta, o adaptador e os duplos). S4
 - **Onde a fronteira caiu**: C28-C32 fechados em `c7b68c4`, só em documentação (o ADR-0029 novo, o ADR-0028, o PRD, o README e o `CONTEXT.md`), com as oito provas de S4 saindo com 0 no Git Bash e o hook verde. As frases desmentidas do bloco acima foram corrigidas, e a varredura achou mais quatro: a linha `Conexão de rede` do §2, a tabela de ADRs do §16 sem a 0029, o **Pacote guardado** do glossário do §17 e o "De onde vem" do §7.2 do PRD. `src/`, `recursos/capturas/` e `.specs/features/wpc-134/` não foram tocados
 - **O que decidi que não estava escrito**: (1) a nota que aponta o ADR-0029 entrou no topo da decisão 6 do ADR-0028, e não no fim dela. Rejeitado o fim: quem lê "cada uma tentada uma vez por execução" leria a regra antiga como vigente antes de chegar à nota. (2) O ADR-0029 também lista como revista a forma do `andamento` na tabela de portas do ADR-0028, que o brief não nomeava. Rejeitado deixá-la calada: aquela linha continuaria dizendo `FnMut(u64)` sem ninguém apontar para a forma nova. (3) O "Instalar sem rede" do README ganhou uma tabela com as sete saídas da linha `Pacote guardado`. Rejeitada só a prosa, que deixaria o usuário sem saber o que significa um aviso que não recusa nada
 - **O que foi abandonado**: (1) um exemplo no README com uma fonte lenta saindo e a seguinte `retomando de` 1.310.720 bytes. Nenhum teste prova o literal de `tamanho(1.310.720)` (C8 o deixa como `<tamanho(1.310.720)>`), e o exemplo ficou só com as linhas que C1 e C3 provam. (2) A frase do ADR-0029 que dizia que a fonte mais rápida de 04/10/2026 não era a de 23/10/2026: era falsa, porque o mirror foi o mais rápido nas duas. Ficou o que as medições dizem, que a velocidade de cada fonte mudou mais de duas vezes entre os dois dias
+
+**Rodada 1 da verificação (23/10/2026):** FAIL, 30 de 32 checks provados por inteiro, nenhuma prova vermelha (`verification.md`). As oito lacunas foram corrigidas sem afrouxar nenhuma régua:
+
+- **C18** passa a transcrever a listagem da cópia, que o critério 18 pedia e o checklist tinha deixado de fora, e o `SistemaDeMentira` passa a anotar os pacotes listados (`listados`)
+- **C7** passa a cobrar que a linha só tem os caracteres medidos, e a medição de `█` e `░` entra no repositório, em `examples/barra_no_console.rs`, como o `ponto_no_console.rs` fez com o `·`. Medido nesta mesa: uma coluna cada. O Unresolved 4 continua aberto para o usuário fechar
+- **C8 e C10** ganham a borda dos 600 s (`o_limite_de_600_s_e_estrito`), que é o mutante `>` por `>=`
+- **C23** perde a ordem que nenhum duplo enxerga e ganha a prova de C18, que é quem mostra que o zero só acontece no braço da divergência
+- **C26** cobra a linha de C21 inteira no ensaio, **C15** cobra a variante do erro no `executar`, os tamanhos e os motivos do `certutil` esperados viram literais, e **C22** ganha os braços do espaço que não se mede e da renomeação recusada, com um duplo local ao teste, `ArquivosQueFalhamEm`
