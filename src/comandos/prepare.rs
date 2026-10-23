@@ -1246,12 +1246,16 @@ fn nao_guardou(contexto: &Contexto, tela: &mut dyn FnMut(&str), motivo: String) 
 }
 
 /// O motivo de uma medida que não se fez: o que o `certutil` respondeu, sem a
-/// frase da recusa de PR-1 em volta, ou o que o Windows respondeu.
+/// frase da recusa de PR-1 em volta; a recusa do pacote, sem o "o pacote do
+/// Clonezilla foi recusado" que o `erro:` põe na frente; ou o que o Windows
+/// respondeu. Ele vai entre parênteses no meio de uma linha que já diz de que
+/// pacote se trata.
 fn motivo_da_medida(erro: &Erro) -> String {
     match erro {
         Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaResumir(porque)) => {
             porque.to_string()
         }
+        Erro::PacoteRecusado(recusa) => recusa.to_string(),
         outro => outro.motivo(),
     }
 }
@@ -3354,6 +3358,12 @@ mod testes {
             bancada.sistema.resumidos(),
             vec![iso.clone(), parcial.clone()]
         );
+        // O SHA256 e os quatro caminhos: a cópia é listada como o `--iso` foi.
+        assert_eq!(
+            *bancada.sistema.listados.borrow(),
+            vec![iso.clone(), parcial.clone()],
+            "a copia nao foi conferida pelos quatro caminhos"
+        );
         assert_eq!(
             bancada.arquivos.conteudo_de(&guardado).as_deref(),
             Some("o zip, de mentira")
@@ -3631,6 +3641,33 @@ mod testes {
                 "{falha:?}: o guardado existe"
             );
         }
+
+        // (8) A cópia bate o SHA256 e não tem os quatro caminhos. Não
+        // acontece de verdade — a cópia tem os bytes do `--iso`, que acabou
+        // de passar na mesma listagem —, e o código não a renomeia: um
+        // pacote guardado sem o que boota seria pior que nenhum. Não é a
+        // divergência de C23, e por isso a cópia não é zerada.
+        let mut bancada = com_um_iso_que_passa("copia-incompleta", pacote::SHA256);
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .listando_em(
+                &bancada.parcial().to_string_lossy(),
+                "boot/grub/grub.cfg\nlive/vmlinuz\nlive/initrd.img\n",
+            );
+        let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+        cobrar(
+            &bancada,
+            &tela,
+            "o pacote foi extraido e nao tem o que faz um dispositivo bootar: falta EFI/boot/bootx64.efi. \
+             O `bsdtar` ter saido com codigo zero nao e prova de que o conteudo esta la",
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(bancada.parcial()).as_deref(),
+            Some("o zip, de mentira"),
+            "a copia incompleta foi zerada"
+        );
     }
 
     /// O que o `certutil` responde, pelo `resumo_padrao` do duplo, sobre um
@@ -3723,8 +3760,9 @@ mod testes {
 
         assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
         assert_eq!(bancada.arquivos.conteudo_de(&parcial).as_deref(), Some(""));
-        // Copiar, conferir e só então zerar: a segunda escrita no `.parcial`
-        // é a que o zera, e ela vem depois da conferência dele.
+        // As escritas no `.parcial` são a cópia e o zero, e mais nenhuma. Que
+        // o zero só acontece no braço da divergência é C18 quem mostra: lá a
+        // cópia chega intacta ao guardado.
         assert_eq!(bancada.sistema.resumidos(), vec![iso, parcial.clone()]);
         assert_eq!(
             bancada.arquivos.escritos(),

@@ -136,7 +136,7 @@ Cinco perguntas do WPC-220 ficaram sem resposta, e o código segue a resposta pr
 1. **A recusa `nao deu para baixar o Clonezilla` passa a dizer que o arquivo passado com `--iso` fica guardado?** O texto dela foi aprovado na WPC-134, e continua o mesmo. A frase recomendada é `Ele fica guardado neste PC, e o proximo preparo nao baixa.`
 2. **A versão e o rótulo da fonte vão para a linha `Fonte`, fora da linha viva?** É o que o código faz, pela razão da decisão 3.
 3. **`parada ha <N> s` aparece a partir de quantos segundos sem o `.parcial` crescer?** O código usa 5 s.
-4. **O console desenha `█` e `░`?** Ninguém mediu, como `examples/ponto_no_console.rs` mediu o `·`. Se não desenhar, a barra passa a `#` e `-`.
+4. **O console desenha `█` e `░`?** Medido em 23/10/2026, nesta mesa, com a CP 850, por `examples/barra_no_console.rs`, como `examples/ponto_no_console.rs` mediu o `·`: desenha, com uma coluna cada, e uma linha viva de 109 caracteres ocupou 109 colunas. A barra fica com `█` e `░`; se outro console não os desenhar, ela passa a `#` e `-`. Fechar a pergunta continua sendo do usuário.
 5. **A fonte que nada mandou em 20 s sai por lenta na primeira volta, com `lenta: nada veio nos ultimos 20 s`?** É o que o código faz. Decorre da decisão 1, e o desenho foi emendado para dizê-lo.
 
 ## Testes que mudaram de premissa, e não para ficar verdes

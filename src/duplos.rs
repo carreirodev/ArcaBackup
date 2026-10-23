@@ -919,6 +919,13 @@ pub struct SistemaDeMentira {
     /// `--iso` no `.parcial` e conferida pelos quatro caminhos, e sem isto
     /// nenhum teste distinguiria a listagem do `--iso` da listagem da copia.
     pub listados: RefCell<Vec<PathBuf>>,
+
+    /// O que o `bsdtar -t` lista dentro de um pacote em particular, por
+    /// caminho em minusculas, no lugar de `listagem`. Existe para a copia do
+    /// `--iso` que nao tem os quatro caminhos, ao lado de um `--iso` que tem
+    /// (WPC-220): um caso que nao acontece de verdade, porque a copia tem os
+    /// bytes do `--iso`, e que o codigo trata mesmo assim.
+    pub listagens: RefCell<BTreeMap<String, SaidaDeFerramenta>>,
 }
 
 impl Default for SistemaDeMentira {
@@ -958,6 +965,7 @@ impl Default for SistemaDeMentira {
                 texto: LISTAGEM_DO_PACOTE.to_string(),
             }),
             listados: RefCell::new(Vec::new()),
+            listagens: RefCell::new(BTreeMap::new()),
         }
     }
 }
@@ -1096,6 +1104,18 @@ impl SistemaDeMentira {
             codigo,
             texto: texto.to_string(),
         });
+        self
+    }
+
+    /// O que o `bsdtar -t` lista dentro do pacote em `caminho`, e so dele.
+    pub fn listando_em(self, caminho: &str, texto: &str) -> SistemaDeMentira {
+        self.listagens.borrow_mut().insert(
+            caminho.to_ascii_lowercase(),
+            SaidaDeFerramenta {
+                codigo: 0,
+                texto: texto.to_string(),
+            },
+        );
         self
     }
 
@@ -1266,6 +1286,10 @@ impl Sistema for SistemaDeMentira {
 
     fn listar_pacote(&self, pacote: &Path) -> Resultado<SaidaDeFerramenta> {
         self.listados.borrow_mut().push(pacote.to_path_buf());
+        let chave = pacote.to_string_lossy().to_ascii_lowercase();
+        if let Some(saida) = self.listagens.borrow().get(&chave) {
+            return Ok(saida.clone());
+        }
         match &self.listagem {
             Ok(saida) => Ok(saida.clone()),
             Err(erro) => Err(clonar_a_recusa(erro)),

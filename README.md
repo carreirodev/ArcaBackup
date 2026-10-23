@@ -2317,6 +2317,7 @@ cargo run --example <nome>
 | `receita_ao_lado_da_que_rodou` | Como a receita gerada se parece com a que rodou em hardware, quando alguém olha |
 | `codificacao_do_bcdedit` | Em que página de código o `bcdedit` escreve quando o ARCA o chama |
 | `ponto_no_console` | O `·` das telas sobrevive ao console sem mexer na página de código |
+| `barra_no_console` | O `█` e o `░` da barra do download ocupam uma coluna cada no console, e a linha viva cabe no que conta (23/10/2026: cabe) |
 | `escrita_atomica_no_fat32` | A escrita atômica se comporta em FAT32 como em NTFS |
 | `estado_no_arcaboot` | O `estado.json` no `ARCABOOT` de verdade, que é FAT32 |
 | `orcamento_da_linha_do_kernel` | Quanto da linha de comando do kernel o marco de 22/08 gastou |
