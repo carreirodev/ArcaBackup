@@ -90,6 +90,16 @@ pub fn dia_e_hora(momento: Option<DateTime<Local>>) -> String {
     }
 }
 
+/// Megabytes com uma casa e sem a unidade, como o `120,0` de `120,0 de 535,5
+/// MB`.
+///
+/// Existe para a linha do download (WPC-220), que diz quanto veio na unidade
+/// do total: com [`tamanho`], os primeiros bytes sairiam `512,0 KB de 535,5
+/// MB`, e a largura da linha mudaria a cada escala.
+pub fn em_megabytes(bytes: u64) -> String {
+    com_virgula(bytes as f64 / (UNIDADE * UNIDADE) as f64)
+}
+
 /// Uma casa decimal, com a virgula do portugues.
 fn com_virgula(valor: f64) -> String {
     format!("{valor:.1}").replace('.', ",")

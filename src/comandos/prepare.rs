@@ -126,7 +126,18 @@
 //! e dali em diante o comando segue o caminho que o `--iso` já seguia. Nenhum
 //! download acontece depois do ponto sem volta. Ver o
 //! [ADR-0028](../../docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md).
+//!
+//! ## E desde 23/10/2026 a fonte lenta perde a vez, e o `--iso` fica guardado
+//!
+//! O download não terminava em todo PC: uma fonte a 64 KB/s ainda manda
+//! bytes, e o limite de 60 s nunca a largava. A saída era baixar pelo
+//! navegador e passar o `--iso`, e ela não ficava — o preparo seguinte baixava
+//! de novo. Agora uma fonte lenta perde a vez para a seguinte, e se todas
+//! forem lentas a mais rápida medida volta e vai até o fim; a tela mostra a
+//! barra, a velocidade e quanto falta; e o `--iso` que passa no SHA256 vira o
+//! pacote guardado deste PC (WPC-220).
 
+use crate::andamento::{self, Medicao};
 use crate::app::Contexto;
 use crate::confirmacao;
 use crate::dispositivo::{self, ARCABOOT, ARCAVAULT};
@@ -138,6 +149,7 @@ use crate::pacote;
 use crate::portas::OQueHa;
 use crate::portas::particionador::{DiscoParaPreparar, ParticoesFeitas};
 use crate::preparacao::{self, Preparacao};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 /// O `.efi` para onde a entrada de firmware aponta, dentro do `ARCABOOT`.
@@ -690,8 +702,12 @@ fn obter_o_pacote_no_pre_voo(
     tela: &mut dyn FnMut(&str),
 ) -> Resultado<PacoteDoPreVoo> {
     if let Some(caminho) = iso {
-        // PR-2 fica como estava: o `--iso` não lê nem escreve o pacote
-        // guardado, e a tela é a de antes de PR-7.
+        // Até 23/10/2026 o `--iso` não lia nem escrevia o pacote guardado, e
+        // cada preparo sem `--iso` daquele PC baixava de novo — e falhava de
+        // novo, onde o download falhava. Agora o que passa aqui vira o pacote
+        // guardado, e a cópia manual acontece uma vez por PC (WPC-220). O
+        // preparo continua saindo do arquivo do `--iso`, e uma cópia que não
+        // se faz é aviso, e não recusa: este preparo nunca dependeu dela.
         let resumo = conferir_o_pacote_local(contexto, caminho)?;
         tela(&linha(
             "Pacote conferido",
@@ -701,6 +717,7 @@ fn obter_o_pacote_no_pre_voo(
                 caminho.display()
             ),
         ));
+        guardar_o_iso(contexto, caminho, tela);
         return Ok(PacoteDoPreVoo::DoIso(caminho.to_path_buf()));
     }
 
@@ -779,9 +796,25 @@ fn obter_o_pacote_no_pre_voo(
 ///
 /// # Nenhuma fonte é confiável, e por isso elas são intercambiáveis
 ///
-/// Cada fonte é tentada uma vez, em ordem, e a seguinte continua do byte em
-/// que a anterior parou: o `.parcial` é um só. Quem decide se o que veio é o
-/// pacote é o SHA256 compilado, depois da última fonte que entregou.
+/// Toda troca de fonte continua do byte em que o `.parcial` está: ele é um
+/// só. Quem decide se o que veio é o pacote é o SHA256 compilado, depois da
+/// fonte que entregou.
+///
+/// # As duas voltas, e o que as fez nascer
+///
+/// Até 23/10/2026 cada fonte ia uma vez, e só saía a que ficava 60 s sem
+/// mandar um byte. Uma fonte a 64 KB/s manda: naquele dia o navegador baixava
+/// este pacote a 63,9 KB/s numa conexão de 800 Mb, com duas horas pela
+/// frente, e o mirror do projeto, medido desta mesa no mesmo dia, o entregava
+/// a 5,1 MB/s. O ARCA ficaria mais de duas horas na fonte lenta, com a
+/// rápida esperando.
+///
+/// Agora, na primeira volta, cada fonte vai uma vez, na ordem de
+/// [`pacote::FONTES`], e a lenta perde a vez
+/// ([`crate::andamento::Medicao::lentidao`]). Na segunda voltam só as que
+/// saíram por lentas, da mais rápida medida para a mais lenta, e nenhuma é
+/// julgada lenta: a primeira vai até o fim, e só a parada, a falta de conexão
+/// ou um erro a tiram. Nada é recusado por ser lento. Ver o ADR-0029.
 fn baixar_o_pacote_guardado(
     contexto: &Contexto,
     pasta: &Path,
@@ -789,26 +822,11 @@ fn baixar_o_pacote_guardado(
     tela: &mut dyn FnMut(&str),
 ) -> Resultado<crate::resumo::Resumo> {
     let parcial = pacote::parcial_em(pasta);
-    let nao_deu_para_guardar = |erro: Erro| {
-        Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaGuardar {
-            pasta: pasta.to_path_buf(),
-            motivo: erro.motivo(),
-        })
-    };
 
     contexto
         .arquivos
         .criar_diretorio(pasta)
-        .map_err(nao_deu_para_guardar)?;
-
-    // Zerar é escrever o `.parcial` vazio por cima. É a única substituição que
-    // o download faz, e é também a prova de que a pasta aceita escrita.
-    let zerar = || {
-        contexto
-            .arquivos
-            .escrever_atomico(&parcial, "")
-            .map_err(nao_deu_para_guardar)
-    };
+        .map_err(|erro| nao_deu_para_guardar(pasta, erro))?;
 
     let mut ja_veio = match (
         do_zero,
@@ -816,7 +834,7 @@ fn baixar_o_pacote_guardado(
     ) {
         (false, pacote::Comeco::Retomando(bytes)) => bytes,
         _ => {
-            zerar()?;
+            zerar_o_parcial(contexto, pasta)?;
             0
         }
     };
@@ -831,102 +849,225 @@ fn baixar_o_pacote_guardado(
         }));
     }
 
-    let mut tentativas = Vec::new();
-    for fonte in pacote::FONTES {
-        // Uma fonte que deixou o `.parcial` do tamanho do pacote ou maior e
-        // não entregou deixou um arquivo que não se retoma: retomar pediria
-        // um byte que o pacote não tem.
-        if pacote::como_comecar(Some(ja_veio)) == pacote::Comeco::DoZero {
-            zerar()?;
-            ja_veio = 0;
-        }
+    // O que cada fonte respondeu por último, na ordem de `FONTES`: é o que a
+    // recusa lista, uma linha por fonte, se nenhuma entregar.
+    let mut ultimas: Vec<Option<pacote::Resposta>> = vec![None; pacote::FONTES.len()];
+    let mut lentas: Vec<(usize, u64)> = Vec::new();
 
-        let antes = ja_veio;
-        let mut linha_viva = LinhaViva::default();
-        linha_viva.escrever(
-            tela,
-            &if antes > 0 {
-                format!(
-                    "{} · retomando de {} · {}",
-                    pacote::VERSAO,
-                    tamanho(antes),
-                    fonte.rotulo
-                )
-            } else {
-                montar_o_andamento(0, fonte.rotulo)
-            },
-        );
-
-        let transferencia =
-            contexto
-                .sistema
-                .baixar(fonte.url, &parcial, pacote::LIMITES, &mut |bytes| {
-                    linha_viva.escrever(tela, &montar_o_andamento(bytes, fonte.rotulo))
-                });
-        tela("\n");
-        let transferencia = transferencia?;
-
-        let resposta = pacote::o_que_a_fonte_respondeu(&transferencia);
-        ja_veio = transferencia.tamanho_no_destino;
-        contexto.registro.info(format!(
-            "fonte {} · {resposta} · {} bytes desta fonte",
-            fonte.url,
-            ja_veio.saturating_sub(antes)
-        ));
-
-        if resposta == pacote::Resposta::Entregou {
-            // PR-1 antes do nome: o `.parcial` só vira o pacote guardado
-            // depois de passar.
-            let resumo = match conferir_o_pacote(contexto, &parcial) {
-                Ok(resumo) => resumo,
-
-                // O que não bate é zerado, e a próxima execução baixa do
-                // zero. Deixá-lo prenderia o ARCA nele: uma página de login
-                // de Wi-Fi entregue no lugar do zip é menor que o pacote, e
-                // seria retomada para sempre. Decidido pelo usuário em
-                // 04/10/2026 (WPC-134). "Não consegui medir" não cai aqui, e
-                // não zera nada.
-                Err(
-                    divergente @ Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente {
-                        ..
-                    }),
-                ) => {
-                    if let Err(nao_zerou) = zerar() {
-                        contexto.registro.aviso(format!(
-                            "o .parcial que nao bate nao foi zerado: {nao_zerou}"
-                        ));
-                    }
-                    return Err(divergente);
+    for (indice, fonte) in pacote::FONTES.iter().enumerate() {
+        match tentar_a_fonte(contexto, pasta, fonte, Volta::Primeira, &mut ja_veio, tela)? {
+            Tentativa::Entregou(resumo) => return Ok(resumo),
+            Tentativa::Abandonada(resposta) => {
+                if let pacote::Resposta::Lenta(lentidao) = &resposta {
+                    lentas.push((indice, lentidao.velocidade()));
                 }
-                Err(outro) => return Err(outro),
-            };
-            contexto
-                .arquivos
-                .renomear(&parcial, &pacote::guardado_em(pasta))?;
-            return Ok(resumo);
+                ultimas[indice] = Some(resposta);
+            }
         }
-
-        // Uma escrita que falhou não é resposta da fonte: as outras cairiam
-        // no mesmo `.parcial` (decidido pelo usuário em 04/10/2026).
-        if let pacote::Resposta::NaoConseguiuEscrever(frase) = resposta {
-            return Err(Erro::PacoteRecusado(
-                pacote::RecusaDoPacote::NaoDeuParaGuardar {
-                    pasta: pasta.to_path_buf(),
-                    motivo: frase,
-                },
-            ));
-        }
-
-        tela(&linha(
-            "Fonte abandonada",
-            &format!("{} · {resposta}", fonte.rotulo),
-        ));
-        tentativas.push((fonte.rotulo, resposta));
     }
 
+    // Da mais rápida medida para a mais lenta. O `sort_by_key` é estável: as
+    // empatadas ficam na ordem de `FONTES`.
+    lentas.sort_by_key(|&(_, velocidade)| std::cmp::Reverse(velocidade));
+    for (indice, _) in lentas {
+        let fonte = &pacote::FONTES[indice];
+        match tentar_a_fonte(contexto, pasta, fonte, Volta::Segunda, &mut ja_veio, tela)? {
+            Tentativa::Entregou(resumo) => return Ok(resumo),
+            Tentativa::Abandonada(resposta) => ultimas[indice] = Some(resposta),
+        }
+    }
+
+    let tentativas = pacote::FONTES
+        .iter()
+        .zip(ultimas)
+        .map(|(fonte, resposta)| {
+            (
+                fonte.rotulo,
+                resposta.expect("toda fonte vai ao menos na primeira volta"),
+            )
+        })
+        .collect();
     Err(Erro::PacoteRecusado(
         pacote::RecusaDoPacote::NenhumaFonteEntregou { tentativas },
     ))
+}
+
+/// Em qual volta uma fonte está.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Volta {
+    /// Cada fonte, uma vez, em ordem, e a lenta perde a vez.
+    Primeira,
+
+    /// As que saíram por lentas, sem julgar lentidão.
+    Segunda,
+}
+
+/// Como uma fonte saiu.
+enum Tentativa {
+    /// O pacote veio, passou e já é o pacote guardado.
+    Entregou(crate::resumo::Resumo),
+
+    /// A fonte saiu sem entregar, e a próxima continua do mesmo `.parcial`.
+    Abandonada(pacote::Resposta),
+}
+
+/// Uma fonte, numa volta: a linha `Fonte`, a linha viva enquanto ela corre, e
+/// o que ela respondeu.
+///
+/// A versão, o rótulo e a retomada ficam na linha `Fonte`, e não na que se
+/// reescreve: com eles dentro, como a linha foi mostrada ao usuário em
+/// 23/10/2026, ela passaria de 120 colunas, e uma linha que quebra não se
+/// reescreve no lugar (Unresolved 2 da WPC-220).
+fn tentar_a_fonte(
+    contexto: &Contexto,
+    pasta: &Path,
+    fonte: &pacote::Fonte,
+    volta: Volta,
+    ja_veio: &mut u64,
+    tela: &mut dyn FnMut(&str),
+) -> Resultado<Tentativa> {
+    let parcial = pacote::parcial_em(pasta);
+
+    // Uma fonte que deixou o `.parcial` do tamanho do pacote ou maior e não
+    // entregou deixou um arquivo que não se retoma: retomar pediria um byte
+    // que o pacote não tem.
+    if pacote::como_comecar(Some(*ja_veio)) == pacote::Comeco::DoZero {
+        zerar_o_parcial(contexto, pasta)?;
+        *ja_veio = 0;
+    }
+
+    let antes = *ja_veio;
+    let mut valor = format!("{} · {}", pacote::VERSAO, fonte.rotulo);
+    if volta == Volta::Segunda {
+        valor.push_str(" · segunda volta");
+    }
+    if antes > 0 {
+        valor.push_str(&format!(" · retomando de {}", tamanho(antes)));
+    }
+    tela(&linha("Fonte", &valor));
+
+    let mut medicao = Medicao::comecando_com(antes);
+    let mut linha_viva = LinhaViva::default();
+    linha_viva.escrever(tela, &medicao.linha_viva());
+
+    // Quem julga a fonte lenta é código puro, sobre as amostras do
+    // adaptador; o adaptador só encerra o `curl` (ADR-0029). A tela e o
+    // julgamento saem da mesma `medicao`, e por isso a linha que diz que a
+    // fonte saiu traz os números que a linha viva mostrava.
+    let mut lentidao = None;
+    let transferencia =
+        contexto
+            .sistema
+            .baixar(fonte.url, &parcial, pacote::LIMITES, &mut |amostra| {
+                // Decidido, nada muda: uma amostra depois da decisão mudaria
+                // os números que a linha `Fonte abandonada` vai dizer.
+                if lentidao.is_some() {
+                    return ControlFlow::Break(());
+                }
+                medicao.anotar(amostra);
+                linha_viva.escrever(tela, &medicao.linha_viva());
+                if volta == Volta::Primeira {
+                    lentidao = medicao.lentidao();
+                }
+                match lentidao {
+                    Some(_) => ControlFlow::Break(()),
+                    None => ControlFlow::Continue(()),
+                }
+            });
+    let transferencia = match transferencia {
+        Ok(transferencia) => transferencia,
+        Err(erro) => {
+            tela("\n");
+            return Err(erro);
+        }
+    };
+
+    let resposta = match lentidao {
+        Some(lentidao) if transferencia.encerrada => pacote::Resposta::Lenta(lentidao),
+        _ => pacote::o_que_a_fonte_respondeu(&transferencia),
+    };
+    if resposta == pacote::Resposta::Entregou {
+        linha_viva.escrever(
+            tela,
+            &medicao.linha_de_entrega(transferencia.tamanho_no_destino),
+        );
+    }
+    tela("\n");
+
+    *ja_veio = transferencia.tamanho_no_destino;
+    contexto.registro.info(format!(
+        "fonte {} · {resposta} · {} bytes desta fonte",
+        fonte.url,
+        ja_veio.saturating_sub(antes)
+    ));
+
+    if resposta == pacote::Resposta::Entregou {
+        // PR-1 antes do nome: o `.parcial` só vira o pacote guardado depois
+        // de passar.
+        let resumo = match conferir_o_pacote(contexto, &parcial) {
+            Ok(resumo) => resumo,
+
+            // O que não bate é zerado, e a próxima execução baixa do zero.
+            // Deixá-lo prenderia o ARCA nele: uma página de login de Wi-Fi
+            // entregue no lugar do zip é menor que o pacote, e seria retomada
+            // para sempre. Decidido pelo usuário em 04/10/2026 (WPC-134).
+            // "Não consegui medir" não cai aqui, e não zera nada.
+            Err(
+                divergente @ Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente {
+                    ..
+                }),
+            ) => {
+                if let Err(nao_zerou) = zerar_o_parcial(contexto, pasta) {
+                    contexto.registro.aviso(format!(
+                        "o .parcial que nao bate nao foi zerado: {nao_zerou}"
+                    ));
+                }
+                return Err(divergente);
+            }
+            Err(outro) => return Err(outro),
+        };
+        contexto
+            .arquivos
+            .renomear(&parcial, &pacote::guardado_em(pasta))?;
+        return Ok(Tentativa::Entregou(resumo));
+    }
+
+    // Uma escrita que falhou não é resposta da fonte: as outras cairiam no
+    // mesmo `.parcial` (decidido pelo usuário em 04/10/2026).
+    if let pacote::Resposta::NaoConseguiuEscrever(frase) = resposta {
+        return Err(Erro::PacoteRecusado(
+            pacote::RecusaDoPacote::NaoDeuParaGuardar {
+                pasta: pasta.to_path_buf(),
+                motivo: frase,
+            },
+        ));
+    }
+
+    tela(&linha(
+        "Fonte abandonada",
+        &format!("{} · {resposta}", fonte.rotulo),
+    ));
+    Ok(Tentativa::Abandonada(resposta))
+}
+
+/// A recusa de uma pasta que não aceita escrita, com o que o Windows
+/// respondeu.
+fn nao_deu_para_guardar(pasta: &Path, erro: Erro) -> Erro {
+    Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaGuardar {
+        pasta: pasta.to_path_buf(),
+        motivo: erro.motivo(),
+    })
+}
+
+/// Zera o `.parcial`, escrevendo-o vazio por cima.
+///
+/// É a única substituição que o download faz, e é também a prova de que a
+/// pasta aceita escrita.
+fn zerar_o_parcial(contexto: &Contexto, pasta: &Path) -> Resultado<()> {
+    contexto
+        .arquivos
+        .escrever_atomico(&pacote::parcial_em(pasta), "")
+        .map_err(|erro| nao_deu_para_guardar(pasta, erro))
 }
 
 /// O tamanho do `.parcial`, ou `None` quando ele não está lá.
@@ -952,8 +1093,7 @@ struct LinhaViva {
 
 impl LinhaViva {
     fn escrever(&mut self, tela: &mut dyn FnMut(&str), valor: &str) {
-        let texto = linha("Baixando Clonezilla", valor);
-        let texto = texto.trim_end_matches('\n');
+        let texto = andamento::com_o_rotulo(valor);
         let largura = texto.chars().count();
 
         // A primeira escrita começa a linha; as seguintes voltam ao começo dela.
@@ -965,14 +1105,155 @@ impl LinhaViva {
     }
 }
 
-/// O valor da linha do andamento: quanto já veio, de quanto, e de onde (PR-7).
-pub fn montar_o_andamento(recebido: u64, rotulo: &str) -> String {
-    format!(
-        "{} · {} de {} · {rotulo}",
-        pacote::VERSAO,
-        tamanho(recebido),
-        tamanho(pacote::TAMANHO_BYTES)
-    )
+/// O `--iso` que passou vira o pacote guardado deste PC, por cópia (PR-2,
+/// WPC-220).
+///
+/// # Por que cópia, pelo `.parcial`, e nunca recusa
+///
+/// O arquivo do `--iso` é de quem chamou, e fica onde está. A cópia passa
+/// pelo `.parcial`, é conferida e só então renomeada: o pacote guardado
+/// continua só existindo sob o nome final depois de passar no SHA256. A cópia
+/// de PR-3 vai direto para o nome final no `ARCAVAULT`, e esse precedente não
+/// serve aqui — ali o disco acabou de ser particionado, e aqui mora um
+/// pacote que o próximo preparo usa sem rede.
+///
+/// Nada aqui recusa o preparo: ele sai do arquivo do `--iso` de qualquer
+/// jeito, e uma cópia que não se faz vira uma linha de aviso na tela e no
+/// `arca.log`. Um guardado que não se deixou medir não é tocado — não ter
+/// conseguido medir não é o mesmo que não bater.
+fn guardar_o_iso(contexto: &Contexto, iso: &Path, tela: &mut dyn FnMut(&str)) {
+    let pasta = contexto.registro.pasta();
+    let guardado = pacote::guardado_em(pasta);
+    let parcial = pacote::parcial_em(pasta);
+
+    let o_guardado_nao_batia = match contexto.arquivos.o_que_ha(&guardado) {
+        Err(erro) => return nao_deu_para_medir(tela, &erro),
+        Ok(OQueHa::Pasta) => {
+            return nao_guardou(contexto, tela, format!("`{}` e uma pasta", pacote::ARQUIVO));
+        }
+        Ok(OQueHa::Nada) => false,
+        Ok(OQueHa::Arquivo) => match conferir_o_pacote(contexto, &guardado) {
+            // O guardado que bate não é reescrito, e a tela é a de antes.
+            Ok(_) => return,
+            Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente { .. })) => true,
+            Err(erro) => return nao_deu_para_medir(tela, &erro),
+        },
+    };
+
+    // O ensaio diz o que o preparo de verdade faria, e não escreve nada.
+    if contexto.dry_run {
+        tela(&linha(
+            "Pacote guardado",
+            "o preparo de verdade copia o --iso para este PC; o ensaio nao escreve",
+        ));
+        return;
+    }
+
+    if let Err(erro) = contexto.arquivos.criar_diretorio(pasta) {
+        return nao_guardou(contexto, tela, erro.motivo());
+    }
+    match contexto.arquivos.espaco_livre(pasta) {
+        Err(erro) => return nao_guardou(contexto, tela, erro.motivo()),
+        Ok(livre) if livre < pacote::TAMANHO_BYTES => {
+            return nao_guardou(
+                contexto,
+                tela,
+                format!(
+                    "precisa de {} MB livres, e ha {} MB",
+                    pacote::TAMANHO_BYTES.div_ceil(pacote::MEGABYTE),
+                    livre / pacote::MEGABYTE
+                ),
+            );
+        }
+        Ok(_) => {}
+    }
+    if let Err(erro) = contexto.arquivos.copiar(iso, &parcial) {
+        return nao_guardou(contexto, tela, erro.motivo());
+    }
+
+    match conferir_o_pacote(contexto, &parcial) {
+        Ok(_) => {}
+        // A cópia que não bate é zerada, como o download que não bate: um
+        // `.parcial` que a próxima execução retomasse seria o pacote errado
+        // pela metade.
+        Err(Erro::PacoteRecusado(pacote::RecusaDoPacote::ResumoDivergente { .. })) => {
+            if let Err(nao_zerou) = zerar_o_parcial(contexto, pasta) {
+                contexto.registro.aviso(format!(
+                    "o .parcial copiado do --iso que nao bate nao foi zerado: {nao_zerou}"
+                ));
+            }
+            contexto
+                .registro
+                .aviso("a copia do --iso nao bateu com o SHA256 · este preparo segue do --iso");
+            tela(&linha(
+                "Pacote guardado",
+                "a copia nao bateu com o SHA256 · este preparo segue do --iso",
+            ));
+            return;
+        }
+        Err(erro) => return nao_guardou(contexto, tela, motivo_da_medida(&erro)),
+    }
+    if let Err(erro) = contexto.arquivos.renomear(&parcial, &guardado) {
+        return nao_guardou(contexto, tela, erro.motivo());
+    }
+
+    contexto.registro.info(format!(
+        "pacote guardado copiado do --iso · {} · {}",
+        iso.display(),
+        guardado.display()
+    ));
+    tela(&linha(
+        "Pacote guardado",
+        &if o_guardado_nao_batia {
+            "nao batia com o SHA256 deste ARCA · substituido pela copia do --iso".to_string()
+        } else {
+            format!(
+                "copiado do --iso para {} · o proximo preparo nao baixa (PR-2)",
+                guardado.display()
+            )
+        },
+    ));
+}
+
+/// A linha do guardado que não se deixou medir, e que fica como está.
+fn nao_deu_para_medir(tela: &mut dyn FnMut(&str), erro: &Erro) {
+    tela(&linha(
+        "Pacote guardado",
+        &format!(
+            "nao deu para medir o que ja esta guardado ({}) · deixado como esta",
+            motivo_da_medida(erro)
+        ),
+    ));
+}
+
+/// A linha da cópia que não se fez, e o aviso no `arca.log` — que o ensaio
+/// não escreve, porque ele só diz o que o preparo de verdade faria.
+fn nao_guardou(contexto: &Contexto, tela: &mut dyn FnMut(&str), motivo: String) {
+    let pasta = contexto.registro.pasta();
+    if !contexto.dry_run {
+        contexto.registro.aviso(format!(
+            "o --iso nao foi guardado em {} ({motivo}) · este preparo segue do --iso",
+            pasta.display()
+        ));
+    }
+    tela(&linha(
+        "Pacote guardado",
+        &format!(
+            "nao deu para guardar em {} ({motivo}) · este preparo segue do --iso",
+            pasta.display()
+        ),
+    ));
+}
+
+/// O motivo de uma medida que não se fez: o que o `certutil` respondeu, sem a
+/// frase da recusa de PR-1 em volta, ou o que o Windows respondeu.
+fn motivo_da_medida(erro: &Erro) -> String {
+    match erro {
+        Erro::PacoteRecusado(pacote::RecusaDoPacote::NaoDeuParaResumir(porque)) => {
+            porque.to_string()
+        }
+        outro => outro.motivo(),
+    }
 }
 
 /// A linha do pacote guardado que passou na conferência (PR-7).
@@ -1811,7 +2092,7 @@ mod testes {
     use crate::duplos::{
         ArquivosEmMemoria, ArquivosQueRecusam, ConsoleDeMentira, DiscosDeMentira,
         EntropiaDeMentira, FirmwareDeMentira, ParticionadorDeMentira, RelogioParado,
-        SistemaDeMentira, discos_para_preparar_desta_mesa, o_que_o_particionamento_deixou,
+        SistemaDeMentira, amostra, discos_para_preparar_desta_mesa, o_que_o_particionamento_deixou,
     };
     use crate::registro::Registro;
 
@@ -1907,11 +2188,23 @@ mod testes {
             dry_run: bool,
             iso: Option<&Path>,
         ) -> (Resultado<PacoteDoPreVoo>, String) {
-            let mut tela = String::new();
+            let (pacote, escritas) = self.pre_voo_escrita_a_escrita(dry_run, iso);
+            (pacote, escritas.concat())
+        }
+
+        /// O mesmo pré-voo, com cada escrita na tela separada das outras: a
+        /// linha viva é reescrita no lugar, e o que um teste dela afirma é
+        /// uma escrita, e não o texto junto (WPC-220).
+        fn pre_voo_escrita_a_escrita(
+            &self,
+            dry_run: bool,
+            iso: Option<&Path>,
+        ) -> (Resultado<PacoteDoPreVoo>, Vec<String>) {
+            let mut escritas = Vec::new();
             let pacote = obter_o_pacote_no_pre_voo(&self.contexto(dry_run), iso, &mut |texto| {
-                tela.push_str(texto)
+                escritas.push(texto.to_string())
             });
-            (pacote, tela)
+            (pacote, escritas)
         }
 
         fn contexto(&self, dry_run: bool) -> Contexto<'_> {
@@ -1956,6 +2249,10 @@ mod testes {
     ) -> Bancada {
         let mut bancada = Bancada::nova(etiqueta, console);
         bancada.arquivos = ArquivosEmMemoria::novo().com(caminho, "o zip, de mentira");
+        // Desde a WPC-220 o `--iso` que passa é copiado para o pacote
+        // guardado, e a cópia pergunta pelo espaço: um volume sem nenhum
+        // byte livre tiraria a cópia de todo teste do `--iso` sem dizer.
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
         bancada.sistema = SistemaDeMentira::novo().com_resumo(caminho, sha256);
         bancada
     }
@@ -2098,10 +2395,15 @@ mod testes {
             !bancada.sistema.extraidos.borrow().is_empty(),
             "o pacote certo nao chegou a ser extraido"
         );
+        // Entre as duas conferências do `--iso` está, desde a WPC-220, a da
+        // cópia dele no `.parcial`, que vai virar o pacote guardado. A
+        // igualdade continua exata: uma conferência do `--iso` a mais ou a
+        // menos aparece aqui.
         assert_eq!(
             bancada.sistema.resumidos(),
             vec![
                 PathBuf::from(NA_PASTA_DE_DOWNLOADS),
+                bancada.parcial(),
                 PathBuf::from(NA_PASTA_DE_DOWNLOADS)
             ],
             "o pacote tem de ser conferido duas vezes: antes e depois do ponto sem volta"
@@ -2236,6 +2538,7 @@ mod testes {
             texto: "curl: (28) Connection timed out after 30002 milliseconds".to_string(),
             http: None,
             parou: false,
+            encerrada: false,
             tamanho_no_destino: no_destino,
         }
     }
@@ -2247,6 +2550,7 @@ mod testes {
             texto: String::new(),
             http: Some(200),
             parou: true,
+            encerrada: false,
             tamanho_no_destino: no_destino,
         }
     }
@@ -2258,6 +2562,7 @@ mod testes {
             texto: "curl: (22) The requested URL returned error: 404".to_string(),
             http: Some(404),
             parou: false,
+            encerrada: false,
             tamanho_no_destino: no_destino,
         }
     }
@@ -2425,14 +2730,20 @@ mod testes {
         );
         bancada.arquivos.espaco_livre = MUITO_ESPACO;
 
-        let (pacote, tela) = bancada.pre_voo(false, None);
+        let (pacote, escritas) = bancada.pre_voo_escrita_a_escrita(false, None);
 
+        // O critério 2 da WPC-220. Até ela, a retomada ia dentro da linha
+        // viva, `3.3.3-15 · retomando de 120,0 MB · <rotulo>`; a versão, o
+        // rótulo e a retomada passaram para a linha `Fonte`, e a linha viva
+        // começa na barra, no ponto em que o `.parcial` está.
         assert!(pacote.is_ok(), "{pacote:?}");
-        assert!(
-            tela.starts_with(
-                "  Baixando Clonezilla ............. 3.3.3-15 · retomando de 120,0 MB · free.nchc.org.tw (oldstable)"
-            ),
-            "{tela}"
+        assert_eq!(
+            escritas[..2],
+            [
+                "  Fonte ........................... 3.3.3-15 · free.nchc.org.tw (oldstable) · retomando de 120,0 MB\n",
+                "  Baixando Clonezilla ............. [████░░░░░░░░░░░░░░░░]  22% · 120,0 de 535,5 MB · medindo",
+            ],
+            "{escritas:?}"
         );
         assert_eq!(
             bancada.arquivos.conteudo_de(bancada.guardado()).as_deref(),
@@ -2492,7 +2803,11 @@ mod testes {
         let [primeira, segunda, terceira] = pacote::FONTES;
         bancada.sistema = SistemaDeMentira::novo()
             .baixando_de(primeira.url, nao_respondeu(0), &[])
-            .baixando_de(segunda.url, parou(CENTO_E_VINTE_MB), &[CENTO_E_VINTE_MB])
+            .baixando_de(
+                segunda.url,
+                parou(CENTO_E_VINTE_MB),
+                &[amostra(1.0, CENTO_E_VINTE_MB)],
+            )
             .baixando_de(terceira.url, nao_achou(CENTO_E_VINTE_MB), &[]);
 
         let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
@@ -2603,10 +2918,13 @@ mod testes {
             "{primeira:?}"
         );
 
+        // Desde a WPC-220 a retomada é dita na linha `Fonte`, e a linha viva
+        // começa no ponto em que o `.parcial` está: do zero, as duas dizem.
         let (_, tela) = bancada.pre_voo(false, None);
         assert!(
             tela.starts_with(
-                "  Baixando Clonezilla ............. 3.3.3-15 · 0 B de 535,5 MB · free.nchc.org.tw (oldstable)"
+                "  Fonte ........................... 3.3.3-15 · free.nchc.org.tw (oldstable)\n  \
+                 Baixando Clonezilla ............. [░░░░░░░░░░░░░░░░░░░░]   0% · 0,0 de 535,5 MB · medindo"
             ),
             "a execucao seguinte retomou a pagina: {tela}"
         );
@@ -2664,6 +2982,7 @@ mod testes {
                 texto: "curl: cannot open \r\ncurl: 'C:\\ARCA\\clonezilla\r\ncurl: .parcial'\r\ncurl: (23) Failed writing received data to disk/application\r\n".to_string(),
                 http: None,
                 parou: false,
+                encerrada: false,
                 tamanho_no_destino: CENTO_E_VINTE_MB,
             },
             &[],
@@ -2897,7 +3216,15 @@ mod testes {
     }
 
     #[test]
-    fn com_iso_o_pacote_guardado_nem_e_olhado() {
+    fn um_iso_que_passa_com_o_guardado_que_bate_nao_escreve_nada() {
+        // **A premissa deste teste mudou por decisão, e não para ficar
+        // verde.** Até 23/10/2026 ele se chamava
+        // `com_iso_o_pacote_guardado_nem_e_olhado` e cobrava o critério 12 da
+        // WPC-134: o `--iso` nem olhava o pacote guardado. A WPC-220 revogou
+        // isso — o `--iso` que passa vira o pacote guardado, e para saber se
+        // copia ele tem de medir o que já está lá. O que continua valendo, e
+        // é o critério 19 dela: um guardado que bate não é reescrito, nada é
+        // escrito na pasta, e a tela é a de antes.
         let mut bancada = com_o_pacote_em(
             "iso-com-guardado",
             NA_PASTA_DE_DOWNLOADS,
@@ -2912,6 +3239,10 @@ mod testes {
         bancada.arquivos = ArquivosEmMemoria::novo()
             .com(NA_PASTA_DE_DOWNLOADS, "o zip, de mentira")
             .com(&guardado, O_PACOTE_GUARDADO);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+            .com_resumo(&guardado.to_string_lossy(), pacote::SHA256);
 
         let (pacote, tela) = bancada.pre_voo(false, Some(Path::new(NA_PASTA_DE_DOWNLOADS)));
         let _ = executar(
@@ -2924,12 +3255,11 @@ mod testes {
             bancada.particionador.particionou(),
             "o caminho do `--iso` nao chegou ao fim"
         );
+        assert!(
+            bancada.sistema.resumidos().contains(&guardado),
+            "o guardado nao foi medido"
+        );
         for caminho in [&pasta, &guardado, &parcial] {
-            assert!(
-                !bancada.arquivos.foi_consultado(caminho),
-                "o `--iso` olhou {}",
-                caminho.display()
-            );
             assert!(
                 !bancada.arquivos.foi_escrito(caminho),
                 "o `--iso` escreveu {}",
@@ -2959,6 +3289,620 @@ mod testes {
                 "  Clonezilla 3.3.3-15 · do arquivo local {NA_PASTA_DE_DOWNLOADS} (PR-2)\n"
             )),
             "{plano}"
+        );
+    }
+
+    // ─────────── o `--iso` que passa vira o pacote guardado (WPC-220) ───────────
+
+    /// A outra versão, para o guardado e a cópia que não batem.
+    const OUTRA_VERSAO: &str = "1d76439d27aa20ec74a8e22c486dcfab67473b6fd6bbc7376a806fede0293b10";
+
+    /// A linha `Pacote conferido` do `--iso`, a de antes da WPC-220.
+    fn linha_do_iso() -> String {
+        format!(
+            "  Pacote conferido ................ ok · 00cee7700433 · {NA_PASTA_DE_DOWNLOADS} · nada tocado ainda (PR-2)\n"
+        )
+    }
+
+    /// Uma bancada com o `--iso` que passa, sem pacote guardado, e o
+    /// `certutil` respondendo `parcial` sobre a cópia no `.parcial`.
+    fn com_um_iso_que_passa(etiqueta: &str, parcial: &str) -> Bancada {
+        let mut bancada = com_o_pacote_em(
+            etiqueta,
+            NA_PASTA_DE_DOWNLOADS,
+            pacote::SHA256,
+            ConsoleDeMentira::mudo(),
+        );
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+            .com_resumo(&bancada.parcial().to_string_lossy(), parcial);
+        bancada
+    }
+
+    /// Os caminhos escritos dentro da pasta do pacote guardado.
+    fn escritos_na_pasta(escritos: Vec<PathBuf>, pasta: &Path) -> Vec<PathBuf> {
+        escritos
+            .into_iter()
+            .filter(|escrito| escrito.starts_with(pasta))
+            .collect()
+    }
+
+    #[test]
+    fn um_iso_que_passa_vira_o_pacote_guardado() {
+        let bancada = com_um_iso_que_passa("iso-vira-guardado", pacote::SHA256);
+        let (pasta, guardado, parcial) = (
+            bancada.registro.pasta().to_path_buf(),
+            bancada.guardado(),
+            bancada.parcial(),
+        );
+        let iso = PathBuf::from(NA_PASTA_DE_DOWNLOADS);
+
+        let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
+
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+        assert_eq!(bancada.particionador.enumeracoes.get(), 0);
+        assert_eq!(
+            bancada.arquivos.escritos(),
+            vec![pasta, parcial.clone(), parcial.clone(), guardado.clone()],
+            "criar a pasta, copiar para o `.parcial` e renomea-lo"
+        );
+        assert_eq!(
+            bancada.arquivos.copiados(),
+            vec![(iso.clone(), parcial.clone())]
+        );
+        assert_eq!(
+            bancada.sistema.resumidos(),
+            vec![iso.clone(), parcial.clone()]
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&guardado).as_deref(),
+            Some("o zip, de mentira")
+        );
+        assert_eq!(bancada.arquivos.conteudo_de(&parcial), None);
+        assert!(!bancada.arquivos.foi_escrito(&iso), "o `--iso` foi escrito");
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&iso).as_deref(),
+            Some("o zip, de mentira"),
+            "o `--iso` mudou"
+        );
+        assert!(bancada.sistema.baixados.borrow().is_empty());
+        assert_eq!(
+            tela,
+            format!(
+                "{}  Pacote guardado ................. copiado do --iso para {} · o proximo preparo nao baixa (PR-2)\n",
+                linha_do_iso(),
+                guardado.display()
+            )
+        );
+    }
+
+    #[test]
+    fn um_iso_que_passa_substitui_o_guardado_que_nao_bate_depois_de_conferido() {
+        let iso = PathBuf::from(NA_PASTA_DE_DOWNLOADS);
+        for (parcial_resume, guardado_termina) in [
+            (pacote::SHA256, "o zip, de mentira"),
+            (OUTRA_VERSAO, "o pacote que nao bate"),
+        ] {
+            let mut bancada = com_um_iso_que_passa("iso-substitui", parcial_resume);
+            let (pasta, guardado, parcial) = (
+                bancada.registro.pasta().to_path_buf(),
+                bancada.guardado(),
+                bancada.parcial(),
+            );
+            bancada.arquivos = ArquivosEmMemoria::novo()
+                .com(&iso, "o zip, de mentira")
+                .com(&guardado, "o pacote que nao bate");
+            bancada.arquivos.espaco_livre = MUITO_ESPACO;
+            bancada.sistema = SistemaDeMentira::novo()
+                .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+                .com_resumo(&guardado.to_string_lossy(), OUTRA_VERSAO)
+                .com_resumo(&parcial.to_string_lossy(), parcial_resume);
+
+            let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
+
+            assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+            assert_eq!(
+                bancada.arquivos.conteudo_de(&guardado).as_deref(),
+                Some(guardado_termina),
+                "{parcial_resume}"
+            );
+            if parcial_resume == pacote::SHA256 {
+                assert_eq!(
+                    bancada.sistema.resumidos(),
+                    vec![iso.clone(), guardado.clone(), parcial.clone()]
+                );
+                // O guardado só é escrito pela renomeação, depois de o
+                // `.parcial` passar.
+                assert_eq!(
+                    bancada.arquivos.escritos(),
+                    vec![pasta, parcial.clone(), parcial, guardado]
+                );
+                assert_eq!(
+                    tela,
+                    format!(
+                        "{}  Pacote guardado ................. nao batia com o SHA256 deste ARCA · substituido pela copia do --iso\n",
+                        linha_do_iso()
+                    )
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn um_guardado_que_nao_se_deixa_medir_nao_e_tocado_pelo_iso() {
+        let iso = PathBuf::from(NA_PASTA_DE_DOWNLOADS);
+
+        // O `certutil` não resume o guardado.
+        let mut bancada = com_um_iso_que_passa("guardado-sem-medida", pacote::SHA256);
+        let (pasta, guardado) = (bancada.registro.pasta().to_path_buf(), bancada.guardado());
+        bancada.arquivos = ArquivosEmMemoria::novo()
+            .com(&iso, "o zip, de mentira")
+            .com(&guardado, O_PACOTE_GUARDADO);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        let recusa =
+            "CertUtil: -hashfile comando FALHOU: 0x80070020 (WIN32: 32 ERROR_SHARING_VIOLATION)";
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+            .com_resposta_do_certutil(&guardado.to_string_lossy(), -2147024864, recusa);
+        let motivo = crate::resumo::do_certutil(
+            &crate::portas::SaidaDeFerramenta {
+                codigo: -2147024864,
+                texto: recusa.to_string(),
+            },
+            crate::resumo::Algoritmo::Sha256,
+        )
+        .unwrap_err()
+        .to_string();
+
+        let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
+
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+        assert_eq!(
+            escritos_na_pasta(bancada.arquivos.escritos(), &pasta),
+            Vec::<PathBuf>::new()
+        );
+        assert!(
+            bancada.arquivos.copiados().is_empty(),
+            "o `--iso` foi copiado"
+        );
+        assert_eq!(
+            tela,
+            format!(
+                "{}  Pacote guardado ................. nao deu para medir o que ja esta guardado ({motivo}) · deixado como esta\n",
+                linha_do_iso()
+            )
+        );
+
+        // O Windows não deixa olhar o guardado.
+        let bancada = com_um_iso_que_passa("guardado-sem-olhar", pacote::SHA256);
+        let arquivos = ArquivosQueRecusam::com(
+            bancada.guardado(),
+            std::io::ErrorKind::PermissionDenied,
+            "Acesso negado. (os error 5)",
+        )
+        .com_arquivo(&iso, "o zip, de mentira")
+        .com_espaco_livre(MUITO_ESPACO);
+        let contexto = Contexto {
+            arquivos: &arquivos,
+            ..bancada.contexto(false)
+        };
+        let mut tela = String::new();
+
+        let pacote =
+            obter_o_pacote_no_pre_voo(&contexto, Some(&iso), &mut |texto| tela.push_str(texto));
+
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+        assert_eq!(arquivos.escritos(), Vec::<PathBuf>::new());
+        assert_eq!(
+            tela,
+            format!(
+                "{}  Pacote guardado ................. nao deu para medir o que ja esta guardado (Acesso negado. (os error 5)) · deixado como esta\n",
+                linha_do_iso()
+            )
+        );
+    }
+
+    #[test]
+    fn uma_copia_do_iso_que_nao_se_faz_vira_aviso_e_o_preparo_segue() {
+        let iso = PathBuf::from(NA_PASTA_DE_DOWNLOADS);
+        let linha_de = |pasta: &Path, motivo: &str| {
+            format!(
+                "{}  Pacote guardado ................. nao deu para guardar em {} ({motivo}) · este preparo segue do --iso\n",
+                linha_do_iso(),
+                pasta.display()
+            )
+        };
+        let cobrar = |bancada: &Bancada, tela: &str, motivo: &str| {
+            let pasta = bancada.registro.pasta();
+            assert_eq!(tela, linha_de(pasta, motivo));
+            let registrado = bancada.registrado();
+            assert!(
+                registrado
+                    .lines()
+                    .any(|linha| linha.contains("AVISO") && linha.contains(motivo)),
+                "{motivo}: sem aviso no arca.log: {registrado}"
+            );
+            assert!(
+                !bancada.arquivos.foi_escrito(bancada.guardado()),
+                "{motivo}: o guardado foi escrito"
+            );
+        };
+
+        // (1) e (2): a pasta e o `.parcial` que não aceitam escrita.
+        for recusado in ["pasta", "parcial"] {
+            let bancada = com_um_iso_que_passa("copia-recusada", pacote::SHA256);
+            let caminho = match recusado {
+                "pasta" => bancada.registro.pasta().to_path_buf(),
+                _ => bancada.parcial(),
+            };
+            let arquivos = ArquivosQueRecusam::com(
+                caminho,
+                std::io::ErrorKind::PermissionDenied,
+                "Acesso negado. (os error 5)",
+            )
+            .com_arquivo(&iso, "o zip, de mentira")
+            .com_espaco_livre(MUITO_ESPACO);
+            let contexto = Contexto {
+                arquivos: &arquivos,
+                ..bancada.contexto(false)
+            };
+            let mut tela = String::new();
+
+            let pacote =
+                obter_o_pacote_no_pre_voo(&contexto, Some(&iso), &mut |texto| tela.push_str(texto));
+
+            assert_eq!(
+                pacote.unwrap(),
+                PacoteDoPreVoo::DoIso(iso.clone()),
+                "{recusado}"
+            );
+            cobrar(&bancada, &tela, "Acesso negado. (os error 5)");
+            assert!(
+                !arquivos.escritos().contains(&bancada.guardado()),
+                "{recusado}: o guardado foi escrito"
+            );
+        }
+
+        // (3) Um byte a menos que o pacote, e nada é copiado.
+        let mut bancada = com_um_iso_que_passa("copia-sem-espaco", pacote::SHA256);
+        bancada.arquivos.espaco_livre = pacote::TAMANHO_BYTES - 1;
+        let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+        cobrar(&bancada, &tela, "precisa de 536 MB livres, e ha 535 MB");
+        assert!(bancada.arquivos.copiados().is_empty(), "copiou sem espaco");
+
+        // E com o tamanho exato do pacote, a cópia acontece.
+        let mut bancada = com_um_iso_que_passa("copia-no-limite", pacote::SHA256);
+        bancada.arquivos.espaco_livre = pacote::TAMANHO_BYTES;
+        let (_, tela) = bancada.pre_voo(false, Some(&iso));
+        assert!(tela.contains("copiado do --iso para"), "{tela}");
+
+        // (4) Uma pasta com o nome do pacote, e nada é copiado.
+        let mut bancada = com_um_iso_que_passa("copia-sobre-pasta", pacote::SHA256);
+        bancada.arquivos = ArquivosEmMemoria::novo()
+            .com(&iso, "o zip, de mentira")
+            .com_pasta_vazia(bancada.guardado());
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+        cobrar(
+            &bancada,
+            &tela,
+            "`clonezilla-live-3.3.3-15-amd64.zip` e uma pasta",
+        );
+        assert!(
+            bancada.arquivos.copiados().is_empty(),
+            "copiou sobre a pasta"
+        );
+
+        // (5) O `certutil` não resume a cópia (borda 5 do checklist): ela não
+        // é zerada, porque não ter conseguido medir não é não bater.
+        let mut bancada = com_um_iso_que_passa("copia-sem-medida", pacote::SHA256);
+        bancada.sistema =
+            SistemaDeMentira::novo().com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256);
+        let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+        let motivo = crate::resumo::do_certutil(
+            &bancada.sistema.resumo_padrao,
+            crate::resumo::Algoritmo::Sha256,
+        )
+        .unwrap_err()
+        .to_string();
+        cobrar(&bancada, &tela, &motivo);
+        assert_eq!(
+            bancada.arquivos.conteudo_de(bancada.parcial()).as_deref(),
+            Some("o zip, de mentira"),
+            "a copia que nao se mediu foi zerada"
+        );
+    }
+
+    #[test]
+    fn uma_copia_do_iso_que_nao_bate_e_zerada_e_o_preparo_segue() {
+        let bancada = com_um_iso_que_passa("copia-divergente", OUTRA_VERSAO);
+        let (pasta, guardado, parcial) = (
+            bancada.registro.pasta().to_path_buf(),
+            bancada.guardado(),
+            bancada.parcial(),
+        );
+        let iso = PathBuf::from(NA_PASTA_DE_DOWNLOADS);
+
+        let (pacote, tela) = bancada.pre_voo(false, Some(&iso));
+
+        assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+        assert_eq!(bancada.arquivos.conteudo_de(&parcial).as_deref(), Some(""));
+        // Copiar, conferir e só então zerar: a segunda escrita no `.parcial`
+        // é a que o zera, e ela vem depois da conferência dele.
+        assert_eq!(bancada.sistema.resumidos(), vec![iso, parcial.clone()]);
+        assert_eq!(
+            bancada.arquivos.escritos(),
+            vec![pasta, parcial.clone(), parcial]
+        );
+        assert_eq!(bancada.arquivos.conteudo_de(&guardado), None);
+        assert_eq!(
+            tela,
+            format!(
+                "{}  Pacote guardado ................. a copia nao bateu com o SHA256 · este preparo segue do --iso\n",
+                linha_do_iso()
+            )
+        );
+    }
+
+    #[test]
+    fn com_iso_o_passo_7_a_extracao_e_a_copia_saem_do_iso() {
+        let mut bancada = com_um_iso_que_passa("iso-ate-o-fim", pacote::SHA256);
+        bancada.console = ConsoleDeMentira::respondendo(&["s", "JMicron Generic"]);
+        let (guardado, parcial) = (bancada.guardado(), bancada.parcial());
+        let iso = PathBuf::from(NA_PASTA_DE_DOWNLOADS);
+        let copia = PathBuf::from(format!(
+            "{}:\\",
+            o_que_o_particionamento_deixou().vault.letra
+        ))
+        .join(pacote::ARQUIVO);
+
+        // O comando morre no `grub.cfg` que o `bsdtar` de mentira não
+        // extraiu; a extração registrada é a prova de que ele passou do 7.
+        let _ = executar(&bancada.contexto(false), Some(1), Some(&iso));
+
+        assert!(bancada.particionador.particionou());
+        assert_eq!(
+            bancada.sistema.resumidos(),
+            vec![iso.clone(), parcial.clone(), iso.clone()],
+            "o pre-voo, a copia e o passo 7"
+        );
+        assert_eq!(
+            bancada
+                .sistema
+                .extraidos
+                .borrow()
+                .first()
+                .map(|(de, _)| de.clone()),
+            Some(iso.clone()),
+            "a extracao nao saiu do `--iso`"
+        );
+        let copiados = bancada.arquivos.copiados();
+        assert!(
+            copiados.contains(&(iso.clone(), copia.clone())),
+            "a copia de PR-3 nao saiu do `--iso`: {copiados:?}"
+        );
+        assert!(
+            !copiados.contains(&(guardado, copia)),
+            "a copia de PR-3 saiu do guardado: {copiados:?}"
+        );
+        assert!(bancada.sistema.baixados.borrow().is_empty());
+    }
+
+    #[test]
+    fn um_iso_recusado_no_pre_voo_nao_escreve_na_pasta_do_arca() {
+        let iso = PathBuf::from(NA_PASTA_DE_DOWNLOADS);
+        let pasta_do_iso = PathBuf::from(A_PASTA_DE_DOWNLOADS);
+
+        // NaoEstaLa, ResumoDivergente e PacoteIncompleto, num ArquivosEmMemoria.
+        let ausente = Bancada::nova("recusa-ausente", ConsoleDeMentira::mudo());
+        let divergente = com_o_pacote_em(
+            "recusa-divergente",
+            NA_PASTA_DE_DOWNLOADS,
+            OUTRA_VERSAO,
+            ConsoleDeMentira::mudo(),
+        );
+        let mut incompleto = com_o_pacote_em(
+            "recusa-incompleto",
+            NA_PASTA_DE_DOWNLOADS,
+            pacote::SHA256,
+            ConsoleDeMentira::mudo(),
+        );
+        incompleto.sistema = SistemaDeMentira::novo()
+            .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+            .listando(0, "boot/grub/grub.cfg\nlive/vmlinuz\nlive/initrd.img\n");
+        let mut pasta = Bancada::nova("recusa-pasta", ConsoleDeMentira::mudo());
+        pasta.arquivos = ArquivosEmMemoria::novo().com_pasta_vazia(&pasta_do_iso);
+        pasta.arquivos.espaco_livre = MUITO_ESPACO;
+
+        for (bancada, caminho, esperada) in [
+            (&ausente, &iso, "NaoEstaLa"),
+            (&pasta, &pasta_do_iso, "EUmaPasta"),
+            (&divergente, &iso, "ResumoDivergente"),
+            (&incompleto, &iso, "PacoteIncompleto"),
+        ] {
+            let (pacote, _) = bancada.pre_voo(false, Some(caminho));
+            let recusa = match pacote {
+                Err(Erro::PacoteRecusado(recusa)) => recusa,
+                outro => panic!("{esperada}: {outro:?}"),
+            };
+            assert!(
+                format!("{recusa:?}").starts_with(esperada),
+                "{esperada}: {recusa:?}"
+            );
+            assert_eq!(
+                escritos_na_pasta(bancada.arquivos.escritos(), bancada.registro.pasta()),
+                Vec::<PathBuf>::new(),
+                "{esperada}"
+            );
+        }
+
+        // NaoDeuParaOlhar, num ArquivosQueRecusam.
+        let bancada = Bancada::nova("recusa-sem-olhar", ConsoleDeMentira::mudo());
+        let arquivos = ArquivosQueRecusam::com(
+            &iso,
+            std::io::ErrorKind::PermissionDenied,
+            "Acesso negado. (os error 5)",
+        )
+        .com_espaco_livre(MUITO_ESPACO);
+        let contexto = Contexto {
+            arquivos: &arquivos,
+            ..bancada.contexto(false)
+        };
+        let pacote = obter_o_pacote_no_pre_voo(&contexto, Some(&iso), &mut |_| {});
+        assert!(
+            matches!(
+                pacote,
+                Err(Erro::PacoteRecusado(
+                    pacote::RecusaDoPacote::NaoDeuParaOlhar { .. }
+                ))
+            ),
+            "{pacote:?}"
+        );
+        assert_eq!(arquivos.escritos(), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn o_ensaio_com_iso_nao_copia_e_diz_que_o_preparo_copia() {
+        let iso = PathBuf::from(NA_PASTA_DE_DOWNLOADS);
+        let copia_no_preparo = format!(
+            "{}  Pacote guardado ................. o preparo de verdade copia o --iso para este PC; o ensaio nao escreve\n",
+            linha_do_iso()
+        );
+
+        // Sem guardado, e com um que não bate: o preparo de verdade copiaria.
+        for guardado_resume in [None, Some(OUTRA_VERSAO)] {
+            let mut bancada = com_um_iso_que_passa("ensaio-iso", pacote::SHA256);
+            if let Some(resumo) = guardado_resume {
+                let guardado = bancada.guardado();
+                bancada.arquivos = ArquivosEmMemoria::novo()
+                    .com(&iso, "o zip, de mentira")
+                    .com(&guardado, "o pacote que nao bate");
+                bancada.arquivos.espaco_livre = MUITO_ESPACO;
+                bancada.sistema = SistemaDeMentira::novo()
+                    .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+                    .com_resumo(&guardado.to_string_lossy(), resumo);
+            }
+
+            let (pacote, tela) = bancada.pre_voo(true, Some(&iso));
+
+            assert_eq!(pacote.unwrap(), PacoteDoPreVoo::DoIso(iso.clone()));
+            assert_eq!(tela, copia_no_preparo, "{guardado_resume:?}");
+            assert_eq!(
+                bancada.arquivos.escritos(),
+                Vec::<PathBuf>::new(),
+                "{guardado_resume:?}: o ensaio escreveu"
+            );
+        }
+
+        // Com um guardado que bate, a tela é a de antes.
+        let mut bancada = com_um_iso_que_passa("ensaio-iso-bate", pacote::SHA256);
+        let guardado = bancada.guardado();
+        bancada.arquivos = ArquivosEmMemoria::novo()
+            .com(&iso, "o zip, de mentira")
+            .com(&guardado, O_PACOTE_GUARDADO);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+            .com_resumo(&guardado.to_string_lossy(), pacote::SHA256);
+        let (_, tela) = bancada.pre_voo(true, Some(&iso));
+        assert_eq!(tela, linha_do_iso());
+        assert_eq!(bancada.arquivos.escritos(), Vec::<PathBuf>::new());
+
+        // Borda 6: onde o preparo de verdade não copiaria, o ensaio diz o
+        // mesmo que ele diria — e não escreve aviso no `arca.log`.
+        let mut bancada = com_um_iso_que_passa("ensaio-iso-sem-medida", pacote::SHA256);
+        let guardado = bancada.guardado();
+        bancada.arquivos = ArquivosEmMemoria::novo()
+            .com(&iso, "o zip, de mentira")
+            .com(&guardado, O_PACOTE_GUARDADO);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        let (_, tela) = bancada.pre_voo(true, Some(&iso));
+        assert!(
+            tela.contains(
+                "  Pacote guardado ................. nao deu para medir o que ja esta guardado ("
+            ),
+            "{tela}"
+        );
+        assert_eq!(bancada.arquivos.escritos(), Vec::<PathBuf>::new());
+
+        let mut bancada = com_um_iso_que_passa("ensaio-iso-pasta", pacote::SHA256);
+        bancada.arquivos = ArquivosEmMemoria::novo()
+            .com(&iso, "o zip, de mentira")
+            .com_pasta_vazia(bancada.guardado());
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        let (_, tela) = bancada.pre_voo(true, Some(&iso));
+        assert_eq!(
+            tela,
+            format!(
+                "{}  Pacote guardado ................. nao deu para guardar em {} (`clonezilla-live-3.3.3-15-amd64.zip` e uma pasta) · este preparo segue do --iso\n",
+                linha_do_iso(),
+                bancada.registro.pasta().display()
+            )
+        );
+        assert_eq!(bancada.arquivos.escritos(), Vec::<PathBuf>::new());
+        assert!(
+            !bancada.registrado().contains("nao foi guardado"),
+            "{}",
+            bancada.registrado()
+        );
+    }
+
+    #[test]
+    fn a_copia_do_iso_nao_mexe_nos_outros_arquivos_da_pasta() {
+        use crate::portas::Arquivos as _;
+
+        let mut bancada = com_um_iso_que_passa("iso-outros-arquivos", pacote::SHA256);
+        let (pasta, guardado, parcial) = (
+            bancada.registro.pasta().to_path_buf(),
+            bancada.guardado(),
+            bancada.parcial(),
+        );
+        let iso = PathBuf::from(NA_PASTA_DE_DOWNLOADS);
+        let antigo = pasta.join("clonezilla-live-3.3.2-1-amd64.zip");
+        let log = pasta.join("arca.log");
+        bancada.arquivos = ArquivosEmMemoria::novo()
+            .com(&iso, "o zip, de mentira")
+            .com(&guardado, "o pacote que nao bate")
+            .com(&antigo, "a versao anterior")
+            .com(&log, "o registro");
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(NA_PASTA_DE_DOWNLOADS, pacote::SHA256)
+            .com_resumo(&guardado.to_string_lossy(), OUTRA_VERSAO)
+            .com_resumo(&parcial.to_string_lossy(), pacote::SHA256);
+
+        let (pacote, _) = bancada.pre_voo(false, Some(&iso));
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&antigo).as_deref(),
+            Some("a versao anterior")
+        );
+        assert_eq!(
+            bancada.arquivos.conteudo_de(&log).as_deref(),
+            Some("o registro")
+        );
+        let chaves: Vec<PathBuf> = bancada
+            .arquivos
+            .listar(&pasta)
+            .unwrap()
+            .into_iter()
+            .map(|entrada| entrada.caminho)
+            .collect();
+        assert_eq!(
+            chaves,
+            vec![log, antigo, guardado.clone()],
+            "sobrou ou sumiu arquivo na pasta"
+        );
+        assert!(
+            escritos_na_pasta(bancada.arquivos.escritos(), &pasta)
+                .iter()
+                .all(|escrito| [&pasta, &parcial, &guardado].contains(&escrito)),
+            "{:?}",
+            bancada.arquivos.escritos()
         );
     }
 
@@ -3034,8 +3978,79 @@ mod testes {
 
     // ─────────── as fontes do pacote (PR-7) ───────────
 
+    /// As escritas da linha viva da `n`-ésima fonte tentada: as que vêm
+    /// depois da linha `Fonte` dela e antes do `\n` que a termina.
+    fn linha_viva_da_fonte(escritas: &[String], n: usize) -> Vec<String> {
+        let inicio = escritas
+            .iter()
+            .enumerate()
+            .filter(|(_, escrita)| escrita.starts_with("  Fonte ."))
+            .nth(n)
+            .unwrap_or_else(|| panic!("a fonte {n} nao foi tentada: {escritas:?}"))
+            .0
+            + 1;
+        let fim = inicio
+            + escritas[inicio..]
+                .iter()
+                .position(|escrita| escrita == "\n")
+                .expect("a linha viva termina num `\\n`");
+        escritas[inicio..fim].to_vec()
+    }
+
+    /// O que uma escrita da linha viva mostra: ela sem os espaços do fim,
+    /// cobrando que eles são exatamente os que cobrem a sobra da mais longa
+    /// das anteriores. É o mecanismo da `LinhaViva` da WPC-134, e a borda 1
+    /// do checklist da WPC-220: o literal de um critério é o que o console
+    /// mostra.
+    fn sem_a_sobra(linha_viva: &[String], indice: usize) -> String {
+        let largura = |escrita: &str| {
+            escrita
+                .trim_start_matches('\r')
+                .trim_end_matches(' ')
+                .chars()
+                .count()
+        };
+        let escrita = &linha_viva[indice];
+        let visivel = escrita.trim_end_matches(' ');
+        let maior_antes = linha_viva[..indice]
+            .iter()
+            .map(|anterior| largura(anterior))
+            .max()
+            .unwrap_or(0);
+        assert_eq!(
+            escrita.len() - visivel.len(),
+            maior_antes.saturating_sub(largura(escrita)),
+            "a sobra de {escrita:?} nao e a que cobre {linha_viva:?}"
+        );
+        visivel.to_string()
+    }
+
+    #[test]
+    fn uma_fonte_que_comeca_do_zero_ganha_a_linha_fonte_e_a_barra_vazia() {
+        let bancada =
+            Bancada::nova("fonte-do-zero", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+
+        let (pacote, escritas) = bancada.pre_voo_escrita_a_escrita(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert_eq!(
+            escritas[..2],
+            [
+                "  Fonte ........................... 3.3.3-15 · free.nchc.org.tw (oldstable)\n",
+                "  Baixando Clonezilla ............. [░░░░░░░░░░░░░░░░░░░░]   0% · 0,0 de 535,5 MB · medindo",
+            ],
+            "{escritas:?}"
+        );
+    }
+
     #[test]
     fn o_andamento_reescreve_a_linha_no_lugar() {
+        // **A premissa deste teste mudou por decisão, e não para ficar
+        // verde.** Até 23/10/2026 ele cobrava a linha
+        // `3.3.3-15 · <recebido> de 535,5 MB · <rotulo>`, reescrita a cada
+        // tamanho. Desde a WPC-220 a linha é a barra, a velocidade dos
+        // últimos 20 s e quanto falta, e o duplo ensina amostras com tempo.
+        // As amostras e o literal são os do critério 3.
         let mut bancada =
             Bancada::nova("andamento", ConsoleDeMentira::mudo()).sem_pacote_guardado();
         bancada.sistema = SistemaDeMentira::novo()
@@ -3043,21 +4058,96 @@ mod testes {
             .baixando_de(
                 pacote::FONTES[0].url,
                 crate::duplos::entregou(),
-                &[10_485_760, CENTO_E_VINTE_MB],
+                &[
+                    amostra(0.0, 0),
+                    amostra(10.0, 10_485_760),
+                    amostra(30.0, 115_343_360),
+                ],
             );
 
-        let (_, tela) = bancada.pre_voo(false, None);
+        let (_, escritas) = bancada.pre_voo_escrita_a_escrita(false, None);
+        let viva = linha_viva_da_fonte(&escritas, 0);
 
-        let primeira = "  Baixando Clonezilla ............. 3.3.3-15 · 0 B de 535,5 MB · free.nchc.org.tw (oldstable)";
-        let reescrita = "\r  Baixando Clonezilla ............. 3.3.3-15 · 120,0 MB de 535,5 MB · free.nchc.org.tw (oldstable)";
-        assert!(tela.starts_with(primeira), "{tela:?}");
-        let ate_o_fim_da_linha = &tela[..tela.find('\n').unwrap()];
-        assert!(ate_o_fim_da_linha.contains(reescrita), "{tela:?}");
+        // Uma antes das amostras, uma por amostra e a da entrega, todas na
+        // mesma linha: só a primeira não volta ao começo dela.
+        assert_eq!(viva.len(), 5, "{viva:?}");
+        assert!(!viva[0].starts_with('\r'), "{viva:?}");
         assert!(
-            ate_o_fim_da_linha
-                .contains("\r  Baixando Clonezilla ............. 3.3.3-15 · 10,0 MB de 535,5 MB"),
-            "{tela:?}"
+            viva[1..].iter().all(|escrita| escrita.starts_with('\r')),
+            "{viva:?}"
         );
+        assert!(
+            viva.iter().all(|escrita| !escrita.contains('\n')),
+            "{viva:?}"
+        );
+        assert_eq!(
+            viva[3],
+            "\r  Baixando Clonezilla ............. [████░░░░░░░░░░░░░░░░]  20% · 110,0 de 535,5 MB · 5,0 MB/s · faltam 2 min"
+        );
+    }
+
+    #[test]
+    fn a_linha_viva_diz_ha_quanto_tempo_a_fonte_parou() {
+        let mut bancada =
+            Bancada::nova("parada-ha", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                pacote::FONTES[0].url,
+                crate::duplos::entregou(),
+                &[
+                    amostra(0.0, 0),
+                    amostra(10.0, 10_485_760),
+                    amostra(15.0, 10_485_760),
+                ],
+            );
+
+        let (_, escritas) = bancada.pre_voo_escrita_a_escrita(false, None);
+        let viva = linha_viva_da_fonte(&escritas, 0);
+
+        assert_eq!(
+            sem_a_sobra(&viva, 3),
+            "\r  Baixando Clonezilla ............. [░░░░░░░░░░░░░░░░░░░░]   1% · 10,0 de 535,5 MB · 0 B/s · parada ha 5 s"
+        );
+    }
+
+    #[test]
+    fn a_fonte_que_entrega_deixa_a_linha_em_100_por_cento() {
+        let mut bancada =
+            Bancada::nova("entrega-100", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                pacote::FONTES[0].url,
+                crate::duplos::entregou(),
+                &[
+                    amostra(0.0, 0),
+                    amostra(90.0, 456_621_048),
+                    amostra(110.0, pacote::TAMANHO_BYTES),
+                ],
+            );
+
+        let (pacote, escritas) = bancada.pre_voo_escrita_a_escrita(false, None);
+        assert!(pacote.is_ok(), "{pacote:?}");
+        let viva = linha_viva_da_fonte(&escritas, 0);
+
+        let ultima = sem_a_sobra(&viva, viva.len() - 1);
+        assert_eq!(
+            ultima,
+            "\r  Baixando Clonezilla ............. [████████████████████] 100% · 535,5 de 535,5 MB · 5,0 MB/s"
+        );
+        assert!(!viva.last().unwrap().contains("faltam"), "{viva:?}");
+        // Logo depois da última escrita da linha viva vem o `\n` que a
+        // termina, e nenhuma escrita dela tem outro.
+        assert!(
+            viva.iter().all(|escrita| !escrita.contains('\n')),
+            "{viva:?}"
+        );
+        let fonte = escritas
+            .iter()
+            .position(|escrita| escrita.starts_with("  Fonte ."))
+            .unwrap();
+        assert_eq!(escritas[fonte + 1 + viva.len()], "\n");
     }
 
     #[test]
@@ -3103,9 +4193,10 @@ mod testes {
             ),
             "{tela}"
         );
+        // A retomada saiu da linha viva para a linha `Fonte` (WPC-220).
         assert!(
             tela.contains(
-                "  Baixando Clonezilla ............. 3.3.3-15 · retomando de 120,0 MB · free.nchc.org.tw (stable)"
+                "  Fonte ........................... 3.3.3-15 · free.nchc.org.tw (stable) · retomando de 120,0 MB\n"
             ),
             "{tela}"
         );
@@ -3176,6 +4267,483 @@ mod testes {
             assert!(
                 linha.ends_with(esperada.as_str()),
                 "{linha}\nesperava: {esperada}"
+            );
+        }
+    }
+
+    // ─────────── a fonte lenta e a segunda volta (WPC-220) ───────────
+
+    /// 1.310.720 bytes: o que uma fonte a 64,0 KB/s manda em 20 s.
+    const VINTE_SEGUNDOS_A_64_KB: u64 = 1_310_720;
+
+    /// Uma fonte que saiu com o texto do `curl`: sem nome que resolva.
+    fn nao_resolveu(no_destino: u64) -> crate::portas::Transferencia {
+        crate::portas::Transferencia {
+            codigo: 6,
+            texto: "curl: (6) Could not resolve host: downloads.sourceforge.net".to_string(),
+            http: None,
+            parou: false,
+            encerrada: false,
+            tamanho_no_destino: no_destino,
+        }
+    }
+
+    /// A primeira volta em que as três saem por lentas: oldstable a 64,0
+    /// KB/s, stable sem nada nos últimos 20 s, e o SourceForge a 128,0 KB/s.
+    /// O `.parcial` termina a volta com 3.932.160 bytes. O que se ensina é a
+    /// segunda volta de cada uma, na ordem de `FONTES`: a resposta e as
+    /// amostras.
+    fn tres_lentas(
+        sistema: SistemaDeMentira,
+        segunda_volta: [(crate::portas::Transferencia, &[crate::portas::Amostra]); 3],
+    ) -> SistemaDeMentira {
+        let [oldstable, stable, sourceforge] = pacote::FONTES;
+        let [
+            (de_oldstable, amostras_de_oldstable),
+            (de_stable, amostras_de_stable),
+            (de_sourceforge, amostras_de_sourceforge),
+        ] = segunda_volta;
+        sistema
+            .baixando_de(
+                oldstable.url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, VINTE_SEGUNDOS_A_64_KB)],
+            )
+            .baixando_de(oldstable.url, de_oldstable, amostras_de_oldstable)
+            .baixando_de(
+                stable.url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, VINTE_SEGUNDOS_A_64_KB)],
+            )
+            .baixando_de(stable.url, de_stable, amostras_de_stable)
+            .baixando_de(
+                sourceforge.url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, DEPOIS_DAS_TRES_LENTAS)],
+            )
+            .baixando_de(sourceforge.url, de_sourceforge, amostras_de_sourceforge)
+    }
+
+    /// O que o `.parcial` tem depois da primeira volta de [`tres_lentas`].
+    const DEPOIS_DAS_TRES_LENTAS: u64 = 3 * VINTE_SEGUNDOS_A_64_KB;
+
+    #[test]
+    fn uma_fonte_lenta_perde_a_vez_e_a_seguinte_continua_do_mesmo_parcial() {
+        let mut bancada = Bancada::nova("lenta", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let (pasta, parcial, guardado) = (
+            bancada.registro.pasta().to_path_buf(),
+            bancada.parcial(),
+            bancada.guardado(),
+        );
+        let [oldstable, stable, _] = pacote::FONTES;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&parcial.to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                oldstable.url,
+                crate::duplos::entregou(),
+                &[amostra(0.0, 0), amostra(20.0, VINTE_SEGUNDOS_A_64_KB)],
+            );
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert_eq!(*bancada.sistema.encerrados.borrow(), vec![oldstable.url]);
+        assert!(
+            tela.contains(
+                "\n  Fonte abandonada ................ free.nchc.org.tw (oldstable) · lenta: faltariam 2 h 23 min a 64,0 KB/s\n"
+            ),
+            "{tela}"
+        );
+        // A tela mostra o mesmo número que decide (Key decision 3).
+        assert!(tela.contains(" · 64,0 KB/s · faltam 2 h 23 min"), "{tela}");
+        assert!(
+            tela.contains(&format!(
+                "  Fonte ........................... 3.3.3-15 · free.nchc.org.tw (stable) · retomando de {}\n",
+                tamanho(VINTE_SEGUNDOS_A_64_KB)
+            )),
+            "{tela}"
+        );
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![oldstable.url, stable.url]
+        );
+        assert_eq!(
+            *bancada.sistema.destinos.borrow(),
+            vec![parcial.clone(), parcial.clone()]
+        );
+        // Zerado só no começo, porque não existia; entre as duas fontes,
+        // nada o toca.
+        assert_eq!(
+            bancada.arquivos.escritos(),
+            vec![pasta, parcial.clone(), parcial, guardado]
+        );
+    }
+
+    #[test]
+    fn uma_fonte_com_menos_de_20_s_nao_sai_por_lenta() {
+        let mut bancada =
+            Bancada::nova("menos-de-20", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                pacote::FONTES[0].url,
+                crate::duplos::entregou(),
+                &[amostra(5.0, 1), amostra(10.0, 2), amostra(19.0, 3)],
+            );
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert!(bancada.sistema.encerrados.borrow().is_empty());
+        assert!(!tela.contains("Fonte abandonada"), "{tela}");
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![pacote::FONTES[0].url]
+        );
+    }
+
+    #[test]
+    fn uma_fonte_lenta_perto_do_fim_vai_ate_o_fim() {
+        let mut bancada =
+            Bancada::nova("perto-do-fim", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let parcial = bancada.parcial();
+        bancada.arquivos =
+            ArquivosEmMemoria::novo().com_tamanho(&parcial, "quase tudo", 522_977_280);
+        bancada.arquivos.espaco_livre = MUITO_ESPACO;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&parcial.to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                pacote::FONTES[0].url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, 524_288_000)],
+            );
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert!(!tela.contains("Fonte abandonada"), "{tela}");
+        assert!(tela.contains(" · 64,0 KB/s · faltam 10 min"), "{tela}");
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![pacote::FONTES[0].url]
+        );
+    }
+
+    #[test]
+    fn uma_fonte_que_nada_mandou_em_20_s_sai_por_lenta() {
+        let mut bancada =
+            Bancada::nova("nada-em-20", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                pacote::FONTES[0].url,
+                crate::duplos::entregou(),
+                &[amostra(10.0, 0), amostra(20.0, 0)],
+            );
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert!(
+            tela.contains(
+                "\n  Fonte abandonada ................ free.nchc.org.tw (oldstable) · lenta: nada veio nos ultimos 20 s\n"
+            ),
+            "{tela}"
+        );
+        assert_eq!(bancada.sistema.baixados.borrow()[1], pacote::FONTES[1].url);
+    }
+
+    #[test]
+    fn todas_lentas_a_mais_rapida_medida_volta_na_segunda_volta() {
+        let mut bancada =
+            Bancada::nova("segunda-volta", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let [oldstable, stable, sourceforge] = pacote::FONTES;
+        // Na segunda volta, o SourceForge manda a 64 KB/s, o que na primeira
+        // o tiraria aos 20 s, e vai até o fim.
+        bancada.sistema = tres_lentas(
+            SistemaDeMentira::novo()
+                .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256),
+            [
+                (nao_respondeu(DEPOIS_DAS_TRES_LENTAS), &[]),
+                (nao_respondeu(DEPOIS_DAS_TRES_LENTAS), &[]),
+                (
+                    crate::duplos::entregou(),
+                    &[
+                        amostra(20.0, DEPOIS_DAS_TRES_LENTAS + VINTE_SEGUNDOS_A_64_KB),
+                        amostra(40.0, DEPOIS_DAS_TRES_LENTAS + 2 * VINTE_SEGUNDOS_A_64_KB),
+                    ],
+                ),
+            ],
+        );
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![oldstable.url, stable.url, sourceforge.url, sourceforge.url]
+        );
+        assert_eq!(
+            *bancada.sistema.encerrados.borrow(),
+            vec![oldstable.url, stable.url, sourceforge.url],
+            "a segunda volta pediu para encerrar"
+        );
+        assert!(
+            tela.contains(&format!(
+                "  Fonte ........................... 3.3.3-15 · downloads.sourceforge.net · segunda volta · retomando de {}\n",
+                tamanho(DEPOIS_DAS_TRES_LENTAS)
+            )),
+            "{tela}"
+        );
+    }
+
+    #[test]
+    fn na_segunda_volta_o_empate_segue_a_ordem_das_fontes() {
+        let mut bancada = Bancada::nova("empate", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let [oldstable, stable, sourceforge] = pacote::FONTES;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                oldstable.url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, VINTE_SEGUNDOS_A_64_KB)],
+            )
+            .baixando_de(oldstable.url, parou(2 * VINTE_SEGUNDOS_A_64_KB), &[])
+            .baixando_de(stable.url, nao_achou(VINTE_SEGUNDOS_A_64_KB), &[])
+            .baixando_de(
+                sourceforge.url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, 2 * VINTE_SEGUNDOS_A_64_KB)],
+            )
+            .baixando_de(sourceforge.url, parou(2 * VINTE_SEGUNDOS_A_64_KB), &[]);
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_err(), "{pacote:?}");
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![
+                oldstable.url,
+                stable.url,
+                sourceforge.url,
+                oldstable.url,
+                sourceforge.url
+            ]
+        );
+    }
+
+    #[test]
+    fn na_segunda_volta_a_fonte_que_falha_da_a_vez_a_seguinte() {
+        let mut bancada =
+            Bancada::nova("segunda-falha", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let [oldstable, stable, sourceforge] = pacote::FONTES;
+        bancada.sistema = tres_lentas(
+            SistemaDeMentira::novo(),
+            [
+                (nao_respondeu(DEPOIS_DAS_TRES_LENTAS), &[]),
+                (nao_achou(DEPOIS_DAS_TRES_LENTAS), &[]),
+                (parou(DEPOIS_DAS_TRES_LENTAS), &[]),
+            ],
+        );
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(
+            matches!(
+                pacote,
+                Err(Erro::PacoteRecusado(
+                    pacote::RecusaDoPacote::NenhumaFonteEntregou { .. }
+                ))
+            ),
+            "{pacote:?}"
+        );
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![
+                oldstable.url,
+                stable.url,
+                sourceforge.url,
+                sourceforge.url,
+                oldstable.url,
+                stable.url
+            ]
+        );
+        let segunda_volta = &tela[tela.find("segunda volta").expect("nao houve segunda volta")..];
+        let linhas = [
+            format!(
+                "  Fonte abandonada ................ downloads.sourceforge.net · parou de mandar por 60 s, com {} de 535,5 MB\n",
+                tamanho(DEPOIS_DAS_TRES_LENTAS)
+            ),
+            "  Fonte abandonada ................ free.nchc.org.tw (oldstable) · nao respondeu em 30 s\n".to_string(),
+            "  Fonte abandonada ................ free.nchc.org.tw (stable) · HTTP 404\n".to_string(),
+        ];
+        let posicoes: Vec<usize> = linhas
+            .iter()
+            .map(|linha| {
+                segunda_volta
+                    .find(linha.as_str())
+                    .unwrap_or_else(|| panic!("falta {linha:?} em {segunda_volta}"))
+            })
+            .collect();
+        assert!(posicoes.windows(2).all(|par| par[0] < par[1]), "{tela}");
+    }
+
+    #[test]
+    fn a_fonte_que_saiu_sem_ser_lenta_nao_volta() {
+        let [oldstable, stable, sourceforge] = pacote::FONTES;
+
+        // Nenhuma saiu por lenta: não há segunda volta.
+        let mut bancada =
+            Bancada::nova("sem-segunda-volta", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .baixando_de(oldstable.url, nao_respondeu(0), &[])
+            .baixando_de(stable.url, nao_achou(0), &[])
+            .baixando_de(sourceforge.url, nao_resolveu(0), &[]);
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_err(), "{pacote:?}");
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![oldstable.url, stable.url, sourceforge.url]
+        );
+
+        // Só a lenta volta.
+        let mut bancada =
+            Bancada::nova("so-a-lenta-volta", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = SistemaDeMentira::novo()
+            .baixando_de(
+                oldstable.url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, VINTE_SEGUNDOS_A_64_KB)],
+            )
+            .baixando_de(oldstable.url, parou(VINTE_SEGUNDOS_A_64_KB), &[])
+            .baixando_de(stable.url, nao_achou(VINTE_SEGUNDOS_A_64_KB), &[])
+            .baixando_de(sourceforge.url, nao_respondeu(VINTE_SEGUNDOS_A_64_KB), &[]);
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_err(), "{pacote:?}");
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![oldstable.url, stable.url, sourceforge.url, oldstable.url]
+        );
+    }
+
+    #[test]
+    fn a_recusa_lista_cada_fonte_com_a_ultima_resposta() {
+        let mut bancada =
+            Bancada::nova("recusa-por-fonte", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = tres_lentas(
+            SistemaDeMentira::novo(),
+            [
+                (nao_respondeu(DEPOIS_DAS_TRES_LENTAS), &[]),
+                (nao_achou(DEPOIS_DAS_TRES_LENTAS), &[]),
+                (parou(DEPOIS_DAS_TRES_LENTAS), &[]),
+            ],
+        );
+
+        let erro = executar(&bancada.contexto(false), Some(1), None).unwrap_err();
+
+        // Uma linha por fonte, na ordem de `FONTES`, com a resposta da
+        // segunda volta — e não uma por tentativa, que seriam seis.
+        assert_eq!(
+            erro.to_string(),
+            format!(
+                "nao deu para baixar o Clonezilla 3.3.3-15 de nenhuma das 3 fontes:\n  \
+                 free.nchc.org.tw (oldstable) — nao respondeu em 30 s\n  \
+                 free.nchc.org.tw (stable) — HTTP 404\n  \
+                 downloads.sourceforge.net — parou de mandar por 60 s, com {} de 535,5 MB\n\
+                 O que ja veio fica guardado, e a proxima tentativa continua de onde parou. Para nao depender do download do ARCA, baixe pelo navegador\n  \
+                 https://free.nchc.org.tw/clonezilla-live/oldstable/3.3.3-15/clonezilla-live-3.3.3-15-amd64.zip\n\
+                 e passe o arquivo com --iso. Nada foi apagado (PR-7)",
+                tamanho(DEPOIS_DAS_TRES_LENTAS)
+            )
+        );
+        assert_eq!(bancada.particionador.enumeracoes.get(), 0);
+    }
+
+    #[test]
+    fn a_fonte_lenta_fica_no_arca_log_nas_duas_voltas() {
+        let mut bancada =
+            Bancada::nova("log-das-voltas", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let [oldstable, stable, sourceforge] = pacote::FONTES;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                oldstable.url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, VINTE_SEGUNDOS_A_64_KB)],
+            )
+            .baixando_de(oldstable.url, crate::duplos::entregou(), &[])
+            .baixando_de(
+                stable.url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, VINTE_SEGUNDOS_A_64_KB)],
+            )
+            .baixando_de(sourceforge.url, nao_respondeu(VINTE_SEGUNDOS_A_64_KB), &[]);
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+        assert!(pacote.is_ok(), "{pacote:?}");
+
+        let registrado = bancada.registrado();
+        let linhas: Vec<&str> = registrado
+            .lines()
+            .filter(|linha| linha.contains("fonte https://"))
+            .collect();
+        let esperadas = [
+            format!(
+                "fonte {} · lenta: faltariam 2 h 23 min a 64,0 KB/s · 1310720 bytes desta fonte",
+                oldstable.url
+            ),
+            format!(
+                "fonte {} · lenta: nada veio nos ultimos 20 s · 0 bytes desta fonte",
+                stable.url
+            ),
+            format!(
+                "fonte {} · nao respondeu em 30 s · 0 bytes desta fonte",
+                sourceforge.url
+            ),
+            format!(
+                "fonte {} · entregou · 560167928 bytes desta fonte",
+                oldstable.url
+            ),
+        ];
+        assert_eq!(linhas.len(), 4, "{registrado}");
+        for (linha, esperada) in linhas.iter().zip(&esperadas) {
+            assert!(
+                linha.ends_with(esperada.as_str()),
+                "{linha}\nesperava: {esperada}"
+            );
+        }
+    }
+
+    #[test]
+    fn nenhuma_fonte_e_tentada_mais_de_duas_vezes() {
+        let mut bancada =
+            Bancada::nova("duas-vezes", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        bancada.sistema = tres_lentas(
+            SistemaDeMentira::novo(),
+            [
+                (nao_resolveu(DEPOIS_DAS_TRES_LENTAS), &[]),
+                (nao_resolveu(DEPOIS_DAS_TRES_LENTAS), &[]),
+                (nao_resolveu(DEPOIS_DAS_TRES_LENTAS), &[]),
+            ],
+        );
+
+        let (pacote, _) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_err(), "{pacote:?}");
+        let baixados = bancada.sistema.baixados.borrow();
+        assert_eq!(baixados.len(), 6, "{baixados:?}");
+        let primeira_volta: Vec<&str> = pacote::FONTES.iter().map(|fonte| fonte.url).collect();
+        assert_eq!(baixados[..3], primeira_volta[..]);
+        for fonte in pacote::FONTES {
+            assert_eq!(
+                baixados.iter().filter(|url| **url == fonte.url).count(),
+                2,
+                "{}: {baixados:?}",
+                fonte.rotulo
             );
         }
     }

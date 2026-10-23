@@ -26,6 +26,7 @@
 
 use crate::erro::Resultado;
 use crate::resumo::Algoritmo;
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::time::Duration;
 
@@ -88,8 +89,33 @@ pub struct Transferencia {
     /// destino crescer.
     pub parou: bool,
 
+    /// Se quem chamou pediu para encerrar, devolvendo
+    /// [`ControlFlow::Break`] ao andamento. Como em `parou`, o `codigo` nao
+    /// significa nada: quem encerrou o `curl` foi o adaptador.
+    pub encerrada: bool,
+
     /// Quantos bytes o destino tem ao fim.
     pub tamanho_no_destino: u64,
+}
+
+/// O que o andamento de [`Sistema::baixar`] recebe: quanto o destino tem, e
+/// ha quanto tempo esta transferencia corre.
+///
+/// # Por que o tempo vem do adaptador, e nao do `Relogio`
+///
+/// O [`crate::portas::Relogio`] e hora de parede: existe para exibir data, e
+/// um ajuste de hora do Windows no meio do download daria velocidade
+/// negativa. `decorrido` e monotonico, medido pelo adaptador desde o comeco
+/// desta chamada — e e a fonte, e nao a execucao, que se julga lenta (WPC-220,
+/// ADR-0029). S-6 nao e tocado: ele governa desfecho, e o download nao julga
+/// desfecho.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Amostra {
+    /// O tamanho do destino.
+    pub recebido: u64,
+
+    /// O tempo desde o comeco desta chamada de [`Sistema::baixar`].
+    pub decorrido: Duration,
 }
 
 pub trait Sistema {
@@ -161,11 +187,22 @@ pub trait Sistema {
     ///
     /// # Ninguem espera calado
     ///
-    /// `andamento` recebe o tamanho do destino ao menos a cada segundo,
-    /// enquanto o `curl` roda. Uma conexao que nao se completa em
-    /// [`Limites::conectar`] e o `curl` desistindo; um destino que nao cresce
-    /// em [`Limites::parado`] e o adaptador encerrando o `curl`, com
-    /// [`Transferencia::parou`].
+    /// `andamento` recebe uma [`Amostra`] ao menos a cada segundo, enquanto o
+    /// `curl` roda, e uma ultima quando ele sai. Uma conexao que nao se
+    /// completa em [`Limites::conectar`] e o `curl` desistindo; um destino que
+    /// nao cresce em [`Limites::parado`] e o adaptador encerrando o `curl`,
+    /// com [`Transferencia::parou`].
+    ///
+    /// # Quem julga a fonte lenta e quem chama, e o adaptador so encerra
+    ///
+    /// `andamento` responde se a transferencia continua. Com
+    /// [`ControlFlow::Break`], o adaptador encerra o `curl` como encerra a
+    /// fonte parada, devolve [`Transferencia::encerrada`] e nao manda a
+    /// amostra final: quem pediu ja tem a ultima. A regra da fonte lenta e
+    /// codigo puro, em [`crate::andamento`], testada com amostras inventadas
+    /// e sem esperar 20 s; um terceiro limite em [`Limites`] so se testaria
+    /// com tempo de verdade, e a tela calcularia o mesmo numero por outro
+    /// caminho (WPC-220, ADR-0029).
     ///
     /// O segundo limite e do adaptador, e nao do `--speed-time` do `curl`,
     /// porque o `curl` mede velocidade por media: medido em 04/10/2026, ele
@@ -199,7 +236,7 @@ pub trait Sistema {
         url: &str,
         destino: &Path,
         limites: Limites,
-        andamento: &mut dyn FnMut(u64),
+        andamento: &mut dyn FnMut(Amostra) -> ControlFlow<()>,
     ) -> Resultado<Transferencia>;
 
     /// Extrai `pacote` dentro de `destino` com o `bsdtar` do `System32`.

@@ -51,4 +51,4 @@ pub use firmware::Firmware;
 pub use particionador::Particionador;
 pub use privilegios::Privilegios;
 pub use relogio::Relogio;
-pub use sistema::{Limites, SaidaDeFerramenta, Sistema, Transferencia};
+pub use sistema::{Amostra, Limites, SaidaDeFerramenta, Sistema, Transferencia};

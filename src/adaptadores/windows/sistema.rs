@@ -12,10 +12,11 @@
 //!   caso do `bcdedit` da E2, e `de_pagina_de_codigo` resolve.
 
 use crate::erro::{Erro, Resultado};
-use crate::portas::{Limites, SaidaDeFerramenta, Sistema, Transferencia};
+use crate::portas::{Amostra, Limites, SaidaDeFerramenta, Sistema, Transferencia};
 use crate::resumo::Algoritmo;
 use std::ffi::OsString;
 use std::io::Read;
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -232,7 +233,7 @@ impl Sistema for SistemaDoWindows {
         url: &str,
         destino: &Path,
         limites: Limites,
-        andamento: &mut dyn FnMut(u64),
+        andamento: &mut dyn FnMut(Amostra) -> ControlFlow<()>,
     ) -> Resultado<Transferencia> {
         let falhou = |origem| Erro::Ferramenta {
             ferramenta: "curl",
@@ -259,11 +260,17 @@ impl Sistema for SistemaDoWindows {
         // O primeiro aviso vem depois do primeiro intervalo, e nao agora: a
         // linha que quem chamou acabou de escrever — de quanto retoma — fica
         // na tela esse segundo.
+        //
+        // `comeco` e o mesmo tipo de relogio: monotonico, e so deste processo.
+        // E dele que sai o `decorrido` de cada amostra, com que quem chama
+        // mede a velocidade e julga a fonte lenta (WPC-220).
+        let comeco = Instant::now();
         let mut tamanho = tamanho_de(destino);
         let mut cresceu_em = Instant::now();
         let mut avisado_em = Instant::now();
 
         let mut parou = false;
+        let mut encerrada = false;
         let terminou = loop {
             if let Some(estado) = curl.try_wait().map_err(falhou)? {
                 break Some(estado);
@@ -276,8 +283,19 @@ impl Sistema for SistemaDoWindows {
                 cresceu_em = Instant::now();
             }
             if avisado_em.elapsed() >= INTERVALO_DO_ANDAMENTO {
-                andamento(tamanho);
+                let pedido = andamento(Amostra {
+                    recebido: tamanho,
+                    decorrido: comeco.elapsed(),
+                });
                 avisado_em = Instant::now();
+                if pedido.is_break() {
+                    // O mesmo encerramento da fonte parada, logo abaixo, e
+                    // pelo mesmo motivo o `.parcial` fica com o que veio.
+                    let _ = curl.kill();
+                    let _ = curl.wait();
+                    encerrada = true;
+                    break None;
+                }
             }
             if cresceu_em.elapsed() >= limites.parado {
                 // Encerrar e o que um Ctrl+C faz, e o `.parcial` fica com o
@@ -293,14 +311,25 @@ impl Sistema for SistemaDoWindows {
         let escrito = de_pagina_de_codigo(&stdout.join().unwrap_or_default(), pagina);
         let texto = de_pagina_de_codigo(&stderr.join().unwrap_or_default(), pagina);
 
+        // A amostra final, para a linha da tela terminar no que o destino tem.
+        // Quem pediu para encerrar nao a recebe: ele ja decidiu sobre a
+        // ultima, e uma amostra depois da decisao mudaria os numeros da linha
+        // que diz por que a fonte saiu. A resposta a esta e ignorada — o
+        // `curl` ja saiu.
         let tamanho_no_destino = tamanho_de(destino);
-        andamento(tamanho_no_destino);
+        if !encerrada {
+            let _ = andamento(Amostra {
+                recebido: tamanho_no_destino,
+                decorrido: comeco.elapsed(),
+            });
+        }
 
         Ok(Transferencia {
             codigo: terminou.and_then(|estado| estado.code()).unwrap_or(-1),
             texto,
             http: http_do_curl(&escrito),
             parou,
+            encerrada,
             tamanho_no_destino,
         })
     }
@@ -674,7 +703,7 @@ mod testes {
 
         let inicio = Instant::now();
         let transferencia = SistemaDoWindows
-            .baixar(&url, &destino, CURTOS, &mut |_| {})
+            .baixar(&url, &destino, CURTOS, &mut |_| ControlFlow::Continue(()))
             .expect("o curl roda");
         let levou = inicio.elapsed();
 
@@ -696,7 +725,7 @@ mod testes {
         std::fs::write(&destino, &corpo()[..100]).unwrap();
 
         let transferencia = SistemaDoWindows
-            .baixar(&url, &destino, CURTOS, &mut |_| {})
+            .baixar(&url, &destino, CURTOS, &mut |_| ControlFlow::Continue(()))
             .expect("o curl roda");
 
         let pedido = pedidos.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -723,7 +752,7 @@ mod testes {
         std::fs::set_permissions(&destino, permissoes.clone()).unwrap();
 
         let transferencia = SistemaDoWindows
-            .baixar(&url, &destino, CURTOS, &mut |_| {})
+            .baixar(&url, &destino, CURTOS, &mut |_| ControlFlow::Continue(()))
             .expect("o curl roda");
 
         assert_eq!(transferencia.codigo, 23, "{transferencia:?}");
@@ -746,7 +775,7 @@ mod testes {
         let destino = parcial("404");
 
         let transferencia = SistemaDoWindows
-            .baixar(&url, &destino, CURTOS, &mut |_| {})
+            .baixar(&url, &destino, CURTOS, &mut |_| ControlFlow::Continue(()))
             .expect("o curl roda");
 
         assert_eq!(transferencia.codigo, 22, "{transferencia:?}");
@@ -760,28 +789,90 @@ mod testes {
     #[test]
     fn o_andamento_chega_ao_menos_a_cada_2_s() {
         // Uns 4 s de download. O que se cobra e o intervalo entre dois
-        // avisos, que e o que mantem a linha da tela viva (PR-7).
+        // avisos, que e o que mantem a linha da tela viva (PR-7), e, desde a
+        // WPC-220, o tempo dentro de cada aviso: e dele que sai a velocidade.
+        // Ele cresce sempre e anda junto com o relogio de quem recebe.
         let (url, _pedidos) = servir(Servidor::Devagar);
         let destino = parcial("andamento");
 
-        let mut avisos: Vec<(Instant, u64)> = Vec::new();
+        let mut avisos: Vec<(Instant, Amostra)> = Vec::new();
         let transferencia = SistemaDoWindows
-            .baixar(&url, &destino, CURTOS, &mut |bytes| {
-                avisos.push((Instant::now(), bytes))
+            .baixar(&url, &destino, CURTOS, &mut |amostra| {
+                avisos.push((Instant::now(), amostra));
+                ControlFlow::Continue(())
             })
             .expect("o curl roda");
 
         assert_eq!(transferencia.codigo, 0, "{transferencia:?}");
+        assert!(!transferencia.encerrada, "{transferencia:?}");
         assert!(avisos.len() >= 3, "so {} avisos", avisos.len());
         for par in avisos.windows(2) {
+            let ((antes, a), (depois, b)) = (par[0], par[1]);
             assert!(
-                par[1].0 - par[0].0 <= Duration::from_secs(2),
+                depois - antes <= Duration::from_secs(2),
                 "{:?} entre dois avisos",
-                par[1].0 - par[0].0
+                depois - antes
             );
-            assert!(par[1].1 >= par[0].1, "o andamento voltou: {avisos:?}");
+            assert!(b.decorrido > a.decorrido, "o tempo nao cresceu: {avisos:?}");
+            assert!(
+                b.decorrido - a.decorrido <= Duration::from_secs(2),
+                "{:?} de decorrido entre dois avisos",
+                b.decorrido - a.decorrido
+            );
+            assert!(b.recebido >= a.recebido, "o andamento voltou: {avisos:?}");
         }
-        assert_eq!(avisos.last().map(|(_, bytes)| *bytes), Some(1000));
+        assert_eq!(avisos.last().map(|(_, a)| a.recebido), Some(1000));
+
+        let _ = std::fs::remove_dir_all(destino.parent().unwrap());
+    }
+
+    #[test]
+    fn pedir_para_encerrar_encerra_o_curl_e_o_parcial_fica_com_o_que_veio() {
+        // A fonte lenta da WPC-220: quem julga e quem chama, e o adaptador so
+        // encerra. O servidor `Devagar` leva uns 4 s para mandar os 1000
+        // bytes; o pedido vem no primeiro aviso que ja trouxe alguma coisa,
+        // perto de 1 s, e o que se cobra e que o `curl` sai bem antes do fim,
+        // com o `.parcial` guardando o que tinha chegado — e que nenhum aviso
+        // chega depois do pedido.
+        let (url, _pedidos) = servir(Servidor::Devagar);
+        let destino = parcial("encerrar");
+
+        let mut avisos = 0;
+        let mut pediu_com = None;
+        let inicio = Instant::now();
+        let transferencia = SistemaDoWindows
+            .baixar(&url, &destino, CURTOS, &mut |amostra| {
+                avisos += 1;
+                assert!(pediu_com.is_none(), "um aviso chegou depois do pedido");
+                if amostra.recebido > 0 {
+                    pediu_com = Some(amostra.recebido);
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            })
+            .expect("o curl roda");
+        let levou = inicio.elapsed();
+
+        assert!(transferencia.encerrada, "{transferencia:?}");
+        assert!(!transferencia.parou, "{transferencia:?}");
+        assert!(pediu_com.is_some(), "nenhum aviso trouxe bytes: {avisos}");
+        assert!(
+            levou < Duration::from_secs(3),
+            "o curl levou {levou:?} para sair depois do pedido"
+        );
+        let veio = std::fs::read(&destino).unwrap();
+        assert!(
+            !veio.is_empty() && veio.len() < 1000,
+            "o `.parcial` tem {} bytes",
+            veio.len()
+        );
+        assert_eq!(
+            veio,
+            &corpo()[..veio.len()],
+            "o `.parcial` nao e o comeco do corpo"
+        );
+        assert_eq!(transferencia.tamanho_no_destino, veio.len() as u64);
 
         let _ = std::fs::remove_dir_all(destino.parent().unwrap());
     }

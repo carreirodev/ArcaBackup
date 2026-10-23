@@ -9,6 +9,7 @@
 //! residuo. Onde o codigo diverge do glossario, e o codigo que esta errado.
 
 pub mod adaptadores;
+pub mod andamento;
 pub mod app;
 pub mod armar;
 pub mod blkdev;

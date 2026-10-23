@@ -12,7 +12,7 @@ use crate::portas::{
 };
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 /// Um momento a partir de um `2026-08-21T12:56:31`.
@@ -555,10 +555,17 @@ pub struct ArquivosEmMemoria {
     /// Todo caminho em que alguem escreveu, criou, renomeou ou copiou para,
     /// na ordem.
     ///
-    /// Existe pelo outro lado de `consultados`: "o `--iso` nao lê nem escreve
-    /// o pacote guardado" e "o ensaio nao escreve nada" (PR-7) so viram teste
-    /// se der para perguntar ao duplo o que foi escrito.
+    /// Existe pelo outro lado de `consultados`: "o ensaio nao escreve nada"
+    /// (PR-7) e "um `--iso` recusado nao escreve na pasta do ARCA" (WPC-220)
+    /// so viram teste se der para perguntar ao duplo o que foi escrito.
     escritos: RefCell<Vec<PathBuf>>,
+
+    /// Cada copia, de onde para onde, na ordem.
+    ///
+    /// Existe desde a WPC-220, quando o `--iso` passou a ser copiado para o
+    /// pacote guardado: o guardado e o `--iso` ficam com o mesmo conteudo, e
+    /// so a origem da copia de PR-3 diz de qual dos dois ela saiu.
+    copiados: RefCell<Vec<(PathBuf, PathBuf)>>,
 
     /// O tamanho que a listagem diz de um arquivo, no lugar do comprimento do
     /// conteudo. Existe para o `.parcial` de meio giga do `arca prepare`
@@ -629,6 +636,11 @@ impl ArquivosEmMemoria {
     /// Os caminhos escritos, criados, renomeados ou copiados para, na ordem.
     pub fn escritos(&self) -> Vec<PathBuf> {
         self.escritos.borrow().clone()
+    }
+
+    /// As copias feitas, de onde para onde, na ordem.
+    pub fn copiados(&self) -> Vec<(PathBuf, PathBuf)> {
+        self.copiados.borrow().clone()
     }
 
     /// Se alguem escreveu neste caminho, de qualquer forma.
@@ -754,6 +766,9 @@ impl Arquivos for ArquivosEmMemoria {
         // `escritos`, porque ela escreve.
         self.anotar_consulta(origem);
         self.anotar_escrita(destino);
+        self.copiados
+            .borrow_mut()
+            .push((origem.to_path_buf(), destino.to_path_buf()));
 
         // Um arquivo que nao existe e erro, como no sistema de arquivos de
         // verdade. Copiar o nada em silencio deixaria o `arca prepare`
@@ -867,17 +882,27 @@ pub struct SistemaDeMentira {
     /// **quais** arquivos foram lidos, e nao so quantos.
     pub resumidos: RefCell<Vec<PathBuf>>,
 
-    /// O que cada fonte responde, por URL. Uma URL que ninguem ensinou
-    /// entrega o pacote inteiro, que e o caso normal.
+    /// O que cada fonte responde, por URL, uma resposta por pedido. Uma URL
+    /// que ninguem ensinou entrega o pacote inteiro, que e o caso normal.
+    ///
+    /// Uma fila, e nao uma resposta so, desde a segunda volta da WPC-220: a
+    /// mesma fonte e pedida duas vezes, e a fonte lenta da primeira volta
+    /// pode entregar na segunda. Cada pedido tira a primeira resposta da
+    /// fila, e a ultima fica para os pedidos seguintes.
     ///
     /// O duplo nao escreve no sistema de arquivos — ele nao alcanca o
     /// [`ArquivosEmMemoria`] da bancada. O que ele diz do destino e o
     /// `tamanho_no_destino` ensinado, e quem prepara o `.parcial` e o teste.
-    pub downloads: RefCell<BTreeMap<String, DownloadDeMentira>>,
+    pub downloads: RefCell<BTreeMap<String, VecDeque<DownloadDeMentira>>>,
 
     /// As URLs pedidas, na ordem. `arca prepare --iso` **nao** pode baixar
     /// nada, e este vetor e o que torna isso afirmavel.
     pub baixados: RefCell<Vec<String>>,
+
+    /// As URLs cujo andamento pediu para encerrar, na ordem. E o que separa
+    /// "a fonte saiu por lenta" de "a fonte nunca foi julgada" — a segunda
+    /// volta nao pode pedir.
+    pub encerrados: RefCell<Vec<String>>,
 
     /// O destino de cada pedido, na mesma ordem de `baixados`.
     pub destinos: RefCell<Vec<PathBuf>>,
@@ -916,6 +941,7 @@ impl Default for SistemaDeMentira {
             resumidos: RefCell::new(Vec::new()),
             downloads: RefCell::new(BTreeMap::new()),
             baixados: RefCell::new(Vec::new()),
+            encerrados: RefCell::new(Vec::new()),
             destinos: RefCell::new(Vec::new()),
             extracao: Ok(SaidaDeFerramenta {
                 codigo: 0,
@@ -947,10 +973,10 @@ syslinux/isolinux.cfg
 utils/
 ";
 
-/// O que uma fonte responde ao duplo, e os avisos de andamento no caminho.
+/// O que uma fonte responde ao duplo, e as amostras de andamento no caminho.
 pub struct DownloadDeMentira {
     pub resposta: Resultado<crate::portas::Transferencia>,
-    pub andamento: Vec<u64>,
+    pub amostras: Vec<crate::portas::Amostra>,
 }
 
 /// Uma transferencia que entregou o pacote inteiro.
@@ -960,7 +986,30 @@ pub fn entregou() -> crate::portas::Transferencia {
         texto: String::new(),
         http: Some(200),
         parou: false,
+        encerrada: false,
         tamanho_no_destino: crate::pacote::TAMANHO_BYTES,
+    }
+}
+
+/// Uma amostra de andamento: `recebido` bytes no destino, `segundos` depois
+/// do comeco da fonte.
+pub fn amostra(segundos: f64, recebido: u64) -> crate::portas::Amostra {
+    crate::portas::Amostra {
+        recebido,
+        decorrido: std::time::Duration::from_secs_f64(segundos),
+    }
+}
+
+/// O que o adaptador devolve quando o andamento pede para encerrar: o `curl`
+/// morto, sem codigo e sem o `-w` do HTTP, e o destino com o que veio.
+fn encerrada_com(recebido: u64) -> crate::portas::Transferencia {
+    crate::portas::Transferencia {
+        codigo: -1,
+        texto: String::new(),
+        http: None,
+        parou: false,
+        encerrada: true,
+        tamanho_no_destino: recebido,
     }
 }
 
@@ -969,34 +1018,46 @@ impl SistemaDeMentira {
         SistemaDeMentira::default()
     }
 
-    /// O que a fonte de `url` responde, e os tamanhos que o andamento avisa
-    /// antes disso.
+    /// O que a fonte de `url` responde no proximo pedido ainda nao ensinado,
+    /// e as amostras que o andamento recebe antes disso. Chamado duas vezes
+    /// para a mesma URL, ensina a primeira e a segunda volta.
+    ///
+    /// Quando o andamento pede para encerrar numa amostra, as seguintes nao
+    /// sao mandadas e a resposta ensinada e trocada pela do adaptador que
+    /// encerrou o `curl`: `encerrada`, com o `recebido` daquela amostra.
     pub fn baixando_de(
         self,
         url: &str,
         resposta: crate::portas::Transferencia,
-        andamento: &[u64],
+        amostras: &[crate::portas::Amostra],
     ) -> SistemaDeMentira {
-        self.downloads.borrow_mut().insert(
-            url.to_string(),
+        self.ensinar(
+            url,
             DownloadDeMentira {
                 resposta: Ok(resposta),
-                andamento: andamento.to_vec(),
+                amostras: amostras.to_vec(),
             },
-        );
-        self
+        )
     }
 
     /// A fonte de `url` nem chega a responder: o `curl` nao rodou, ou foi
     /// interrompido de um jeito que nao deixou resposta.
     pub fn recusando_o_download(self, url: &str, recusa: Erro) -> SistemaDeMentira {
-        self.downloads.borrow_mut().insert(
-            url.to_string(),
+        self.ensinar(
+            url,
             DownloadDeMentira {
                 resposta: Err(recusa),
-                andamento: Vec::new(),
+                amostras: Vec::new(),
             },
-        );
+        )
+    }
+
+    fn ensinar(self, url: &str, download: DownloadDeMentira) -> SistemaDeMentira {
+        self.downloads
+            .borrow_mut()
+            .entry(url.to_string())
+            .or_default()
+            .push_back(download);
         self
     }
 
@@ -1153,7 +1214,7 @@ impl Sistema for SistemaDeMentira {
         url: &str,
         destino: &Path,
         _limites: crate::portas::Limites,
-        andamento: &mut dyn FnMut(u64),
+        andamento: &mut dyn FnMut(crate::portas::Amostra) -> std::ops::ControlFlow<()>,
     ) -> Resultado<crate::portas::Transferencia> {
         // Registra **antes** de decidir se recusa, pelo mesmo motivo do
         // `reiniciar`: um download que falhou tambem foi tentado, e `arca
@@ -1161,17 +1222,29 @@ impl Sistema for SistemaDeMentira {
         self.baixados.borrow_mut().push(url.to_string());
         self.destinos.borrow_mut().push(destino.to_path_buf());
 
-        match self.downloads.borrow().get(url) {
-            None => Ok(entregou()),
-            Some(ensinado) => {
-                for bytes in &ensinado.andamento {
-                    andamento(*bytes);
-                }
-                match &ensinado.resposta {
-                    Ok(transferencia) => Ok(transferencia.clone()),
-                    Err(erro) => Err(clonar_a_recusa(erro)),
-                }
+        let mut downloads = self.downloads.borrow_mut();
+        let Some(fila) = downloads.get_mut(url) else {
+            return Ok(entregou());
+        };
+        let tirado = if fila.len() > 1 {
+            fila.pop_front()
+        } else {
+            None
+        };
+        let ensinado = tirado
+            .as_ref()
+            .or(fila.front())
+            .expect("uma URL ensinada tem ao menos uma resposta");
+
+        for amostra in &ensinado.amostras {
+            if andamento(*amostra).is_break() {
+                self.encerrados.borrow_mut().push(url.to_string());
+                return Ok(encerrada_com(amostra.recebido));
             }
+        }
+        match &ensinado.resposta {
+            Ok(transferencia) => Ok(transferencia.clone()),
+            Err(erro) => Err(clonar_a_recusa(erro)),
         }
     }
 
@@ -1485,6 +1558,19 @@ impl ArquivosQueRecusam {
         }
     }
 
+    /// O espaco livre do volume, para os testes que passam da pergunta do
+    /// espaco e chegam ao caminho recusado — a copia do `--iso` da WPC-220.
+    pub fn com_espaco_livre(mut self, bytes: u64) -> ArquivosQueRecusam {
+        self.dentro.espaco_livre = bytes;
+        self
+    }
+
+    /// O que foi escrito no que nao foi recusado. Ver
+    /// [`ArquivosEmMemoria::escritos`].
+    pub fn escritos(&self) -> Vec<PathBuf> {
+        self.dentro.escritos()
+    }
+
     /// Um arquivo que se lê normalmente, ao lado do recusado.
     pub fn com_arquivo(self, caminho: impl Into<PathBuf>, conteudo: &str) -> ArquivosQueRecusam {
         ArquivosQueRecusam {
@@ -1557,9 +1643,11 @@ impl Arquivos for ArquivosQueRecusam {
         self.dentro.listar(caminho)
     }
 
-    /// A recusa vale para a **origem**, que e o lado que se lê.
+    /// A recusa vale para os dois lados: a **origem**, que se lê, e, desde a
+    /// WPC-220, o **destino** — o `.parcial` que nao aceita a copia do
+    /// `--iso`, do criterio 22.
     fn copiar(&self, origem: &Path, destino: &Path) -> Resultado<()> {
-        match self.recusa(origem) {
+        match self.recusa(origem).or_else(|| self.recusa(destino)) {
             Some(erro) => Err(erro),
             None => self.dentro.copiar(origem, destino),
         }

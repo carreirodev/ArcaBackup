@@ -88,6 +88,7 @@
 //! [ADR-0014]: ../docs/adr/0014-o-arca-particiona-o-dispositivo.md
 //! [ADR-0028]: ../docs/adr/0028-nenhum-download-depois-do-ponto-sem-volta.md
 
+use crate::andamento::Lentidao;
 use crate::formato::tamanho;
 use crate::portas::{Limites, Transferencia};
 use crate::resumo::{Algoritmo, RecusaDoResumo, Resumo};
@@ -159,6 +160,28 @@ pub const LIMITES: Limites = Limites {
     parado: Duration::from_secs(60),
 };
 
+/// Quanto de medida julga uma fonte lenta, e de quanto e a velocidade que a
+/// tela mostra (PR-7, WPC-220).
+///
+/// # Por que a fonte lenta e julgada pelo que falta
+///
+/// Em 23/10/2026 o navegador baixava este pacote a 63,9 KB/s numa conexao de
+/// 800 Mb, e o mirror do projeto, no mesmo dia, o entregava a 5,1 MB/s. O
+/// limite de 60 s de [`LIMITES`] so larga uma fonte que nao manda um byte, e
+/// uma fonte a 64 KB/s manda: o ARCA ficaria nela mais de duas horas. Uma
+/// velocidade minima julgaria igual o comeco e o fim do pacote; o que falta
+/// nao — perto do fim, uma fonte lenta termina.
+///
+/// Os dois numeros moram aqui, com os 30 s e os 60 s, e sao ajustaveis do
+/// mesmo jeito. Ficam fora de [`Limites`] de proposito: quem julga e codigo
+/// puro, em [`crate::andamento`], e nao o adaptador (ADR-0029).
+pub const JANELA_DA_VELOCIDADE: Duration = Duration::from_secs(20);
+
+/// Uma fonte da primeira volta que, na velocidade de
+/// [`JANELA_DA_VELOCIDADE`], levaria mais do que isto para terminar perde a
+/// vez para a seguinte.
+pub const LENTA_SE_FALTAREM_MAIS_DE: Duration = Duration::from_secs(600);
+
 /// O pacote guardado, dentro da pasta do ARCA no PC (PR-7).
 pub fn guardado_em(pasta: &Path) -> PathBuf {
     pasta.join(ARQUIVO)
@@ -219,6 +242,11 @@ pub enum Resposta {
     },
     Http(u16),
 
+    /// A fonte perdeu a vez na primeira volta: o ARCA pediu ao adaptador para
+    /// encerrar o `curl`, e o `.parcial` ficou com o que veio. E a unica
+    /// resposta que leva a fonte a segunda volta (WPC-220).
+    Lenta(Lentidao),
+
     /// O `curl` nao conseguiu escrever no `.parcial`. Nao e uma resposta da
     /// fonte, e por isso nenhuma outra fonte e tentada: todas cairiam no
     /// mesmo arquivo (WPC-134, decidido pelo usuario em 04/10/2026).
@@ -244,6 +272,7 @@ impl fmt::Display for Resposta {
                 tamanho(TAMANHO_BYTES)
             ),
             Resposta::Http(codigo) => write!(f, "HTTP {codigo}"),
+            Resposta::Lenta(lentidao) => write!(f, "{lentidao}"),
             Resposta::NaoConseguiuEscrever(texto) | Resposta::Outra(texto) => f.write_str(texto),
         }
     }
@@ -418,10 +447,13 @@ pub enum RecusaDoPacote {
 
     /// PR-7: nenhuma das [`FONTES`] entregou o pacote.
     ///
-    /// `tentativas` e cada fonte, com o que ela respondeu, na ordem em que foi
-    /// tentada. O texto foi aprovado pelo usuario em 04/10/2026 (WPC-134), e
-    /// termina no caminho que nao depende do download do ARCA: o navegador e
-    /// o `--iso`.
+    /// `tentativas` e cada fonte, uma vez e na ordem de [`FONTES`], com o que
+    /// ela respondeu na ultima vez em que foi tentada. Ate a WPC-220 era cada
+    /// tentativa, e as duas coisas eram a mesma: cada fonte ia uma vez. Desde
+    /// a segunda volta, uma fonte lenta vai duas, e a recusa diz o que ela
+    /// respondeu por ultimo. O texto foi aprovado pelo usuario em 04/10/2026
+    /// (WPC-134), e termina no caminho que nao depende do download do ARCA: o
+    /// navegador e o `--iso`.
     ///
     /// # Por que a mensagem pode prometer que nada foi apagado
     ///
@@ -449,7 +481,7 @@ pub enum RecusaDoPacote {
 }
 
 /// Um megabyte, na base 1024 de [`crate::formato::tamanho`].
-const MEGABYTE: u64 = 1024 * 1024;
+pub(crate) const MEGABYTE: u64 = 1024 * 1024;
 
 impl fmt::Display for RecusaDoPacote {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -661,6 +693,21 @@ mod testes {
     }
 
     #[test]
+    fn os_limites_de_pr_7_continuam_30_e_60_s() {
+        // O criterio 17 da WPC-220: a fonte lenta entra ao lado dos dois
+        // limites de 04/10/2026, e nao no lugar deles.
+        assert_eq!(
+            LIMITES,
+            Limites {
+                conectar: Duration::from_secs(30),
+                parado: Duration::from_secs(60),
+            }
+        );
+        assert_eq!(JANELA_DA_VELOCIDADE, Duration::from_secs(20));
+        assert_eq!(LENTA_SE_FALTAREM_MAIS_DE, Duration::from_secs(600));
+    }
+
+    #[test]
     fn o_tamanho_compilado_decide_entre_retomar_e_recomecar() {
         // O espaco inteiro de entrada, com as duas bordas dos dois lados.
         for (tamanho_do_parcial, esperado) in [
@@ -685,6 +732,7 @@ mod testes {
             texto: texto.to_string(),
             http,
             parou: false,
+            encerrada: false,
             tamanho_no_destino: 0,
         }
     }
@@ -751,6 +799,7 @@ mod testes {
         // `curl` foi ele.
         let parada = Transferencia {
             parou: true,
+            encerrada: false,
             tamanho_no_destino: 125_829_120,
             ..transferencia(1, Some(200), "")
         };
