@@ -99,6 +99,7 @@ A linha inteira cabe em 120 colunas com qualquer valor, que é o que a deixa ser
 | Fonte que termina em até 10 minutos | vai até o fim | a linha viva até 100% |
 | Fonte lenta na primeira volta | sai depois de ao menos 20 s; o `.parcial` fica com o que veio, e a próxima continua dali | `Fonte abandonada ................ free.nchc.org.tw (oldstable) · lenta: faltariam 2 h 23 min a 64,0 KB/s` |
 | Fonte que nada entregou nos últimos 20 s, na primeira volta | sai por lenta (Key decision 1) | `Fonte abandonada ................ free.nchc.org.tw (oldstable) · lenta: nada veio nos ultimos 20 s` |
+| Fonte lenta na primeira volta, com o `.parcial` parado há 5 s ou mais | sai por lenta e volta na segunda como 0 B/s (emendado em 23/10/2026, na revisão do PR 1) | `Fonte abandonada ................ free.nchc.org.tw (oldstable) · lenta: parada ha 19 s` |
 | Todas as que sobraram saíram por lentas | segunda volta: a mais rápida medida volta e vai até o fim | `Fonte ........................... 3.3.3-15 · downloads.sourceforge.net · segunda volta · retomando de 31,2 MB` |
 | A da segunda volta para, perde a conexão ou dá erro HTTP | sai, e entra a seguinte mais rápida da segunda volta | a linha `Fonte abandonada` de hoje |
 | 404, sem conexão ou erro HTTP na primeira volta | sai como hoje e não entra na segunda | a linha `Fonte abandonada` de hoje |

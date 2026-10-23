@@ -11,7 +11,8 @@
 //! A velocidade e o "faltam" da linha `Baixando Clonezilla` saem da mesma
 //! [`Medicao`] que julga a fonte lenta, pelo mesmo caminho. Uma fonte nunca
 //! sai por lenta com a tela dizendo que falta pouco, e a linha que diz que ela
-//! saiu traz os dois numeros. Ver o ADR-0029.
+//! saiu diz o que a linha viva dizia: os dois numeros, ou ha quanto tempo a
+//! fonte parou. Ver o ADR-0029.
 
 use crate::formato::{em_megabytes, linha, tamanho};
 use crate::pacote::{JANELA_DA_VELOCIDADE, LENTA_SE_FALTAREM_MAIS_DE, TAMANHO_BYTES};
@@ -154,7 +155,9 @@ impl Medicao {
     /// uma que manda sai quando, na velocidade da janela, o que falta levaria
     /// mais de 600 s. A conta usa o tempo exato, e nao o arredondado da tela:
     /// a tela arredonda quanto falta para cima justamente para nunca mostrar
-    /// 10 minutos ou menos numa fonte que sai.
+    /// 10 minutos ou menos numa fonte que sai. Quem sai com a linha viva
+    /// dizendo `parada` sai dizendo que parou, e nao a velocidade da janela
+    /// ([`Lentidao::Parada`]).
     pub fn lentidao(&self) -> Option<Lentidao> {
         let atual = self.atual();
         if atual.decorrido < JANELA_DA_VELOCIDADE || atual.recebido >= TAMANHO_BYTES {
@@ -165,7 +168,19 @@ impl Medicao {
             return Some(Lentidao::NadaVeio);
         }
         let faltam = falta_em(atual.recebido, velocidade);
-        (faltam > LENTA_SE_FALTAREM_MAIS_DE).then_some(Lentidao::Faltariam {
+        if faltam <= LENTA_SE_FALTAREM_MAIS_DE {
+            return None;
+        }
+
+        // A janela ainda tem o que veio antes de parar, e
+        // `faltariam 36 min a 256,0 KB/s` embaixo de `0 B/s · parada ha 19 s`
+        // seria a tela desmentindo a si mesma. Achado na revisao do PR 1, e o
+        // texto decidido pelo usuario, em 23/10/2026. O criterio de saida e o
+        // mesmo; so muda o que a linha diz e o lugar na segunda volta.
+        if self.parada_ha() >= PARADA_APARECE_EM {
+            return Some(Lentidao::Parada(self.parada_ha()));
+        }
+        Some(Lentidao::Faltariam {
             faltam,
             velocidade: velocidade as u64,
         })
@@ -180,7 +195,8 @@ fn falta_em(recebido: u64, velocidade: f64) -> Duration {
 /// Por que uma fonte da primeira volta perdeu a vez.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lentidao {
-    /// O que falta levaria mais de 600 s na velocidade dos ultimos 20 s.
+    /// O que falta levaria mais de 600 s na velocidade dos ultimos 20 s, com
+    /// o `.parcial` ainda crescendo.
     Faltariam {
         faltam: Duration,
         /// Bytes por segundo.
@@ -189,14 +205,20 @@ pub enum Lentidao {
 
     /// Nada veio nos ultimos 20 s.
     NadaVeio,
+
+    /// O que falta levaria mais de 600 s na velocidade da janela, e o
+    /// `.parcial` nao cresce ha 5 s ou mais: a linha viva ja dizia `parada`.
+    Parada(Duration),
 }
 
 impl Lentidao {
-    /// A velocidade medida quando a fonte saiu, que ordena a segunda volta.
+    /// A velocidade que a tela mostrava quando a fonte saiu, que ordena a
+    /// segunda volta. A fonte que parou mostrava `0 B/s`, e volta atras das
+    /// que ainda mandavam.
     pub fn velocidade(&self) -> u64 {
         match self {
             Lentidao::Faltariam { velocidade, .. } => *velocidade,
-            Lentidao::NadaVeio => 0,
+            Lentidao::NadaVeio | Lentidao::Parada(_) => 0,
         }
     }
 }
@@ -215,6 +237,7 @@ impl fmt::Display for Lentidao {
                 "lenta: nada veio nos ultimos {} s",
                 JANELA_DA_VELOCIDADE.as_secs()
             ),
+            Lentidao::Parada(ha) => write!(f, "lenta: parada ha {} s", ha.as_secs()),
         }
     }
 }
@@ -560,11 +583,11 @@ mod testes {
     }
 
     #[test]
-    fn a_fonte_que_parou_dentro_da_janela_sai_com_a_velocidade_da_janela() {
-        // A excecao a "a linha que diz que a fonte saiu traz os numeros que a
-        // linha viva mostrava", achada na revisao do PR 1 em 23/10/2026: 5 MB
-        // no primeiro segundo e nada depois. A linha viva diz `parada` desde
-        // os 6 s, e o julgamento dos 20 s ainda ve os 5 MB na janela.
+    fn a_fonte_que_parou_dentro_da_janela_sai_dizendo_que_parou() {
+        // O caso da revisao do PR 1, em 23/10/2026: 5 MB no primeiro segundo e
+        // nada depois. A janela ainda ve os 5 MB, a 256 KB/s, e a fonte sai;
+        // a linha viva diz `parada` desde os 6 s, e a de saida diz o mesmo,
+        // no texto que o usuario escolheu.
         let mut medicao = Medicao::comecando_com(0);
         for segundos in 1..=20 {
             medicao.anotar(amostra(segundos as f64, 5_242_880));
@@ -575,9 +598,46 @@ mod testes {
             "{}",
             medicao.linha_viva()
         );
+        let lentidao = medicao.lentidao().expect("a 256 KB/s, do comeco, sai");
+        assert_eq!(lentidao, Lentidao::Parada(Duration::from_secs(19)));
+        assert_eq!(lentidao.to_string(), "lenta: parada ha 19 s");
+        assert_eq!(lentidao.velocidade(), 0, "a tela mostrava 0 B/s");
+    }
+
+    #[test]
+    fn a_saida_diz_parada_a_partir_dos_mesmos_5_s_da_linha_viva() {
+        // A borda: com 4 s sem crescer, a linha viva ainda estima, e a saida
+        // traz a velocidade; com 5 s, as duas dizem `parada`.
+        let a_64_kb_ate = |ultimo: u64| {
+            let mut medicao = Medicao::comecando_com(0);
+            for segundos in 1..=20 {
+                let recebido = segundos.min(ultimo) * 65_536;
+                medicao.anotar(amostra(segundos as f64, recebido));
+            }
+            medicao
+        };
+
+        let quase = a_64_kb_ate(16);
+        assert!(
+            quase.linha_viva().contains(" · faltam "),
+            "{}",
+            quase.linha_viva()
+        );
+        assert!(
+            matches!(quase.lentidao(), Some(Lentidao::Faltariam { .. })),
+            "{:?}",
+            quase.lentidao()
+        );
+
+        let parada = a_64_kb_ate(15);
+        assert!(
+            parada.linha_viva().ends_with(" · 0 B/s · parada ha 5 s"),
+            "{}",
+            parada.linha_viva()
+        );
         assert_eq!(
-            medicao.lentidao().map(|lentidao| lentidao.to_string()),
-            Some("lenta: faltariam 36 min a 256,0 KB/s".to_string())
+            parada.lentidao(),
+            Some(Lentidao::Parada(Duration::from_secs(5)))
         );
     }
 

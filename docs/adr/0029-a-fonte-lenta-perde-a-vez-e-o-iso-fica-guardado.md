@@ -48,7 +48,7 @@ Isso revoga a parte da decisão 6 do ADR-0028 pela qual uma fonte lenta nunca er
 
 ### 2. Nada é recusado por ser lento: as fontes vão em duas voltas
 
-Na primeira volta, cada fonte vai uma vez, na ordem de `FONTES`, sujeita à decisão 1. Na segunda volta, voltam só as que saíram por lentas, da mais rápida medida no momento em que saiu para a mais lenta, e as empatadas seguem a ordem de `FONTES`. Nenhuma é julgada lenta na segunda volta: a primeira dela vai até o fim. Só a parada de 60 s, a falta de conexão em 30 s, um erro HTTP ou o texto do `curl` a tiram, e então entra a seguinte da segunda volta. Nenhuma fonte é tentada mais de duas vezes por execução.
+Na primeira volta, cada fonte vai uma vez, na ordem de `FONTES`, sujeita à decisão 1. Na segunda volta, voltam só as que saíram por lentas, da mais rápida medida no momento em que saiu para a mais lenta, e as empatadas seguem a ordem de `FONTES`. A que saiu com `lenta: parada ha <N> s` (decisão 3) conta como 0 B/s, a velocidade que a tela mostrava. Nenhuma é julgada lenta na segunda volta: a primeira dela vai até o fim. Só a parada de 60 s, a falta de conexão em 30 s, um erro HTTP ou o texto do `curl` a tiram, e então entra a seguinte da segunda volta. Nenhuma fonte é tentada mais de duas vezes por execução.
 
 Uma fonte que saiu da primeira volta por 404, por não conectar ou com o texto do `curl` não volta. Ela não saiu por ser lenta, e a segunda volta existe para que nada seja recusado por isso.
 
@@ -65,6 +65,8 @@ A linha `Baixando Clonezilla` passa a ter uma barra de 20 casas, a porcentagem, 
 ```
 
 A velocidade e o "faltam" são a mesma medida que julga a fonte lenta, calculada pelo mesmo caminho: a `Medicao` de `src/andamento.rs`. Uma fonte nunca sai por lenta com a tela dizendo que falta pouco, e a linha que diz que ela saiu traz os dois números: `Fonte abandonada ................ free.nchc.org.tw (oldstable) · lenta: faltariam 2 h 23 min a 64,0 KB/s`.
+
+Quando a linha viva já dizia `parada`, com o `.parcial` sem crescer há 5 s ou mais, a linha que diz que a fonte saiu diz o mesmo, `lenta: parada ha <N> s`, e não a velocidade da janela, que ainda tem o que veio antes de parar. O critério de saída é o da decisão 1; muda só o que a linha diz e o lugar na segunda volta (decisão 2). A revisão do PR 1 achou a tela dizendo `0 B/s · parada ha 19 s` e, logo abaixo, `lenta: faltariam 36 min a 256,0 KB/s`, numa fonte que mandou 5 MB no primeiro segundo e nada depois. O texto foi escolhido pelo usuário em 23/10/2026, entre ele e o de dizer as duas coisas, `lenta: parada ha 19 s; nos ultimos 20 s, 256,0 KB/s`.
 
 A barra e a porcentagem arredondam para baixo, para 100% só aparecer com o pacote inteiro. Quanto falta arredonda para cima, na unidade em que sai (segundos abaixo de 1 min, minutos abaixo de 1 h, horas e minutos daí em diante), para a tela nunca mostrar 10 minutos ou menos numa fonte que sai por lenta. O julgamento usa o tempo exato, e não o arredondado. Um `.parcial` que não cresce há 5 s troca a estimativa por `0 B/s · parada ha <N> s`, porque a fonte vai sair. Antes de haver o que medir, a linha diz `medindo`.
 

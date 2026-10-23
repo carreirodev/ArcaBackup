@@ -953,11 +953,9 @@ fn tentar_a_fonte(
     // Quem julga a fonte lenta é código puro, sobre as amostras do
     // adaptador; o adaptador só encerra o `curl` (ADR-0029). A tela e o
     // julgamento saem da mesma `medicao`, e por isso a linha que diz que a
-    // fonte saiu traz os números que a linha viva mostrava — salvo quando a
-    // linha viva já dizia `parada`. Aí ela mostrava `0 B/s`, e a que diz que a
-    // fonte saiu traz a velocidade da janela de 20 s, que ainda tem o que veio
-    // antes de parar (achado na revisão do PR 1, em 23/10/2026; o teste é
-    // `andamento::testes::a_fonte_que_parou_dentro_da_janela_sai_com_a_velocidade_da_janela`).
+    // fonte saiu diz o que a linha viva dizia: os números, ou, se ela já
+    // dizia `parada`, há quanto tempo a fonte parou (`Lentidao::Parada`,
+    // decidido pelo usuário em 23/10/2026, na revisão do PR 1).
     let mut lentidao = None;
     let transferencia =
         contexto
@@ -4850,6 +4848,51 @@ mod testes {
                 "{linha}\nesperava: {esperada}"
             );
         }
+    }
+
+    #[test]
+    fn a_fonte_que_parou_dentro_da_janela_sai_dizendo_que_parou_e_volta_por_ultimo() {
+        // O caso da revisão do PR 1, em 23/10/2026: o oldstable manda 5 MB no
+        // primeiro segundo e para. A janela dos 20 s ainda o vê a 256 KB/s,
+        // mais rápido que o stable a 64 KB/s, mas a tela mostrava `0 B/s`, e é
+        // por ela que a segunda volta o põe atrás (decidido pelo usuário).
+        let mut bancada =
+            Bancada::nova("parada-na-janela", ConsoleDeMentira::mudo()).sem_pacote_guardado();
+        let [oldstable, stable, sourceforge] = pacote::FONTES;
+        let cinco_mb = 5_242_880;
+        bancada.sistema = SistemaDeMentira::novo()
+            .com_resumo(&bancada.parcial().to_string_lossy(), pacote::SHA256)
+            .baixando_de(
+                oldstable.url,
+                crate::duplos::entregou(),
+                &[amostra(1.0, cinco_mb), amostra(20.0, cinco_mb)],
+            )
+            .baixando_de(
+                stable.url,
+                crate::duplos::entregou(),
+                &[amostra(20.0, cinco_mb + VINTE_SEGUNDOS_A_64_KB)],
+            )
+            .baixando_de(stable.url, crate::duplos::entregou(), &[])
+            .baixando_de(
+                sourceforge.url,
+                nao_achou(cinco_mb + VINTE_SEGUNDOS_A_64_KB),
+                &[],
+            );
+
+        let (pacote, tela) = bancada.pre_voo(false, None);
+
+        assert!(pacote.is_ok(), "{pacote:?}");
+        assert!(tela.contains(" · 0 B/s · parada ha 19 s"), "{tela}");
+        assert!(
+            tela.contains(
+                "\n  Fonte abandonada ................ free.nchc.org.tw (oldstable) · lenta: parada ha 19 s\n"
+            ),
+            "{tela}"
+        );
+        assert_eq!(
+            *bancada.sistema.baixados.borrow(),
+            vec![oldstable.url, stable.url, sourceforge.url, stable.url]
+        );
     }
 
     #[test]
